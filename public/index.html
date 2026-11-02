@@ -160,6 +160,15 @@
         <button class="btn ghost close" id="settingsClose">Закрыть</button>
       </div>
       <div class="modal-body">
+        <nav class="settings-nav" aria-label="Разделы настроек">
+          <button type="button" data-target="set-models">Модели</button>
+          <button type="button" data-target="set-story">История</button>
+          <button type="button" data-target="set-rules">Механика</button>
+          <button type="button" data-target="set-memory">Память</button>
+          <button type="button" data-target="set-images">Картинки</button>
+        </nav>
+        <section class="settings-sec" id="set-models">
+          <h3 class="settings-sec-title">Модели</h3>
         <label class="field">
           <span class="field-label">Модель OpenRouter</span>
           <input type="text" id="modelInput" placeholder="openai/gpt-4o-mini" />
@@ -187,6 +196,9 @@
             <span class="field-hint">Держи 0. Выше — модель начинает терять знаки препинания.</span>
           </label>
         </div>
+        </section>
+        <section class="settings-sec" id="set-story">
+          <h3 class="settings-sec-title">История</h3>
         <label class="field">
           <span class="field-label">Мир</span>
           <textarea id="worldInput" rows="5" placeholder="Сеттинг, лор, законы мира…"></textarea>
@@ -216,6 +228,21 @@
           </div>
           <span class="field-hint">Насколько жёстко мир относится к герою: риск, поведение NPC и строгость учёта состояния.</span>
         </div>
+        <label class="field">
+          <span class="field-label">Рассказчик (поведение мастера)</span>
+          <textarea id="promptInput" rows="10"></textarea>
+          <span class="field-hint">Как рассказчик ведёт историю и управляет блоками. Меняй смело.</span>
+        </label>
+        </section>
+        <section class="settings-sec" id="set-rules">
+          <h3 class="settings-sec-title">Механика</h3>
+        <label class="field toggle-field">
+          <input type="checkbox" id="diceEnabledInput" />
+          <span class="toggle-text">
+            <span class="field-label">Проверки броском</span>
+            <span class="field-hint">Исход рискованных действий решает бросок кубика с учётом умений героя и его состояния, а не сама модель. Рассказчик только описывает результат.</span>
+          </span>
+        </label>
         <label class="field toggle-field">
           <input type="checkbox" id="stateSyncInput" />
           <span class="toggle-text">
@@ -231,10 +258,12 @@
           </select>
           <span class="field-hint">Можно сравнить на одной модели: журнал учёта под каждым ответом и сводка в «Статистике учёта» покажут разницу. Проверка полноты кодом работает при обеих.</span>
         </label>
-        <label class="field">
-          <span class="field-label">Рассказчик (поведение мастера)</span>
-          <textarea id="promptInput" rows="10"></textarea>
-          <span class="field-hint">Как рассказчик ведёт историю и управляет блоками. Меняй смело.</span>
+        <label class="field toggle-field">
+          <input type="checkbox" id="loreAutoWriteInput" />
+          <span class="toggle-text">
+            <span class="field-label">Рассказчик дополняет справочник мира</span>
+            <span class="field-hint">Разрешить записывать в «Мир» важные сведения, всплывшие по ходу. Твои записи он не тронет. Выключено — справочник ведёшь только ты.</span>
+          </span>
         </label>
         <div class="field">
           <span class="field-label">Каталог статусов</span>
@@ -242,15 +271,43 @@
           <span class="field-hint">Что делает каждый статус: штраф к броскам, урон за ход, сколько держится. Рассказчик ставит по названию, код применяет.</span>
         </div>
         <div class="field">
-          <span class="field-label">Заготовки для персонажей</span>
-          <button type="button" class="btn ghost" id="seedPoolBtn">Изюминки и тайны</button>
-          <span class="field-hint">Откуда рассказчик черпает странности и тайны для новых персонажей. Меняй под свой вкус — это задаёт характер всего мира.</span>
-        </div>
-        <div class="field">
           <span class="field-label">Палитра черт</span>
           <button type="button" class="btn ghost" id="traitPoolBtn">Настроить черты характера</button>
           <span class="field-hint">Из этого набора рассказчик выбирает черты для персонажей. Задай палитру — и мир населится теми, кого ты хочешь видеть.</span>
         </div>
+        <div class="field">
+          <span class="field-label">Заготовки для персонажей</span>
+          <button type="button" class="btn ghost" id="seedPoolBtn">Изюминки и тайны</button>
+          <span class="field-hint">Откуда рассказчик черпает странности и тайны для новых персонажей. Меняй под свой вкус — это задаёт характер всего мира.</span>
+        </div>
+        </section>
+        <section class="settings-sec" id="set-memory">
+          <h3 class="settings-sec-title">Память</h3>
+        <label class="field toggle-field">
+          <input type="checkbox" id="autoSummarizeInput" />
+          <span class="toggle-text">
+            <span class="field-label">Сжимать историю автоматически</span>
+            <span class="field-hint">Старые ходы сворачиваются в «Предысторию», чтобы контекст не разрастался на долгой игре.</span>
+          </span>
+        </label>
+        <label class="field">
+          <span class="field-label">Сырых ходов в памяти</span>
+          <input type="number" id="historyKeepInput" min="6" max="200" step="2" />
+          <span class="field-hint">Сколько последних сообщений держать дословно (6–200). Старшие уходят в предысторию пачкой — когда сверх этого наберётся ещё половина; сжатие идёт в фоне и ход не задерживает.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Предыстория</span>
+          <textarea id="summaryInput" rows="7" placeholder="Заполняется автоматически по мере игры…"></textarea>
+          <span class="field-hint">Конспект уже произошедшего, который всегда в контексте. Можно править вручную.</span>
+        </label>
+        <details class="field sync-stats" id="syncStats">
+          <summary class="field-label">Сводка учёта по этой истории</summary>
+          <div id="syncStatsBody"></div>
+          <span class="field-hint">Считается по журналам ходов. Переучтённые ходы попадают в строку той модели, которой их переучли, — так удобно сравнивать модели учёта на одних и тех же ходах.</span>
+        </details>
+        </section>
+        <section class="settings-sec" id="set-images">
+          <h3 class="settings-sec-title">Картинки</h3>
         <div class="field">
           <span class="field-label">Картинки — локальный Stable Diffusion (Automatic1111)</span>
           <div class="field-row">
@@ -259,11 +316,6 @@
           </div>
           <span class="field-hint" id="sdPingNote">Запусти webui с флагом <code>--api</code>. Портреты рисуются по полю «внешность», переведённому в теги моделью учёта.</span>
         </div>
-        <label class="field">
-          <span class="field-label">Стиль (добавляется в начало каждого промта)</span>
-          <textarea id="imageStyleInput" rows="2"></textarea>
-          <span class="field-hint">Для Pony-моделей обязательны теги score_9, score_8_up…; для реалистичных чекпойнтов замени на «photo, realistic, …».</span>
-        </label>
         <div class="field image-presets">
           <span class="field-label">Готовый стиль — подставит стиль и негатив для портретов и сцен</span>
           <div class="preset-row">
@@ -271,6 +323,11 @@
             <button type="button" class="btn ghost" data-image-preset="real">Полуреализм (как было)</button>
           </div>
         </div>
+        <label class="field">
+          <span class="field-label">Стиль (добавляется в начало каждого промта)</span>
+          <textarea id="imageStyleInput" rows="2"></textarea>
+          <span class="field-hint">Для Pony-моделей обязательны теги score_9, score_8_up…; для реалистичных чекпойнтов замени на «photo, realistic, …».</span>
+        </label>
         <label class="field">
           <span class="field-label">Негатив</span>
           <textarea id="imageNegativeInput" rows="2"></textarea>
@@ -314,43 +371,9 @@
             <label class="field" style="flex:2"><span class="field-label">Апскейлер</span><input type="text" id="hiresUpscalerInput" placeholder="R-ESRGAN 4x+" /></label>
           </div>
         </details>
-        <label class="field toggle-field">
-          <input type="checkbox" id="diceEnabledInput" />
-          <span class="toggle-text">
-            <span class="field-label">Проверки броском</span>
-            <span class="field-hint">Исход рискованных действий решает бросок кубика с учётом умений героя и его состояния, а не сама модель. Рассказчик только описывает результат.</span>
-          </span>
-        </label>
-        <label class="field toggle-field">
-          <input type="checkbox" id="loreAutoWriteInput" />
-          <span class="toggle-text">
-            <span class="field-label">Рассказчик дополняет справочник мира</span>
-            <span class="field-hint">Разрешить записывать в «Мир» важные сведения, всплывшие по ходу. Твои записи он не тронет. Выключено — справочник ведёшь только ты.</span>
-          </span>
-        </label>
-        <label class="field toggle-field">
-          <input type="checkbox" id="autoSummarizeInput" />
-          <span class="toggle-text">
-            <span class="field-label">Сжимать историю автоматически</span>
-            <span class="field-hint">Старые ходы сворачиваются в «Предысторию», чтобы контекст не разрастался на долгой игре.</span>
-          </span>
-        </label>
-        <label class="field">
-          <span class="field-label">Сырых ходов в памяти</span>
-          <input type="number" id="historyKeepInput" min="6" max="200" step="2" />
-          <span class="field-hint">Сколько последних сообщений держать дословно (6–200). Старшие уходят в предысторию пачкой — когда сверх этого наберётся ещё половина; сжатие идёт в фоне и ход не задерживает.</span>
-        </label>
-        <label class="field">
-          <span class="field-label">Предыстория</span>
-          <textarea id="summaryInput" rows="7" placeholder="Заполняется автоматически по мере игры…"></textarea>
-          <span class="field-hint">Конспект уже произошедшего, который всегда в контексте. Можно править вручную.</span>
-        </label>
-        <details class="field sync-stats" id="syncStats">
-          <summary class="field-label">Сводка учёта по этой истории</summary>
-          <div id="syncStatsBody"></div>
-          <span class="field-hint">Считается по журналам ходов. Переучтённые ходы попадают в строку той модели, которой их переучли, — так удобно сравнивать модели учёта на одних и тех же ходах.</span>
-        </details>
+        </section>
         <p class="field-note" id="keyNote"></p>
+      
       </div>
       <div class="modal-foot">
         <button class="btn ghost" id="settingsCancel">Отмена</button>

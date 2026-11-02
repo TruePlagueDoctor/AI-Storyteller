@@ -85,12 +85,17 @@ function renderSheet(character, animate) {
     title.className = 'group-title';
     title.textContent = TYPE_META[type].label;
     group.appendChild(title);
+    // Раздел — одна карточка со строками, как страница учётной книги: плотнее, чем карточка на каждый блок.
+    const rows = document.createElement('div');
+    rows.className = 'group-rows';
+    rows.style.setProperty('--type-color', TYPE_META[type].color || 'var(--brass)');
     for (const b of items) {
       const sig = blockSig(b);
       nextSigs[b.id] = sig;
       const changed = animate && blockSignatures[b.id] !== sig;
-      group.appendChild(renderBlock(b, changed));
+      rows.appendChild(renderBlock(b, changed));
     }
+    group.appendChild(rows);
     sheetEl.appendChild(group);
   }
   blockSignatures = nextSigs;
@@ -129,19 +134,29 @@ function renderBlock(b, animate) {
     if (tk && tk.stat) bits.push(tk.stat + ' ' + (tk.delta > 0 ? '+' : '') + tk.delta + '/ход');
     if (b.duration != null) bits.push(b.duration + ' х.');
     if (bits.length) {
-      const fx = document.createElement('span');
-      fx.className = 'block-value status-fx';
-      fx.textContent = bits.join(' · ');
-      row.appendChild(fx);
+      // Эффект — второй строкой: справа от названия он переносился кашей.
+      el.dataset.fx = bits.join(' · ');
     }
   } else if (b.value != null && b.value !== '') {
     const val = document.createElement('span');
     const numeric = b.type === 'stat' && b.max != null;
     val.className = 'block-value' + (numeric ? ' numeric' : '');
-    val.textContent = numeric ? `${b.value} / ${b.max}` : b.value;
+    if (numeric) val.innerHTML = `${esc(b.value)}<span class="block-max">/${esc(b.max)}</span>`;
+    else val.textContent = b.value;
     row.appendChild(val);
+    if (numeric) {
+      const ratio = Number(b.value) / b.max;
+      if (Number.isFinite(ratio) && ratio <= 0.25) el.classList.add('low');
+    }
   }
   el.appendChild(row);
+  if (el.dataset.fx) {
+    const fx = document.createElement('div');
+    fx.className = 'block-fx';
+    fx.textContent = el.dataset.fx;
+    el.appendChild(fx);
+    delete el.dataset.fx;
+  }
 
   if (b.type === 'stat' && b.max != null) {
     const num = Number(b.value);

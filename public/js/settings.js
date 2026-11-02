@@ -131,6 +131,7 @@ async function openSettings() {
     }
     if ($('syncStats').open) renderSyncStats();
     $('settingsModal').hidden = false;
+    markSettingsNav(true);
   } catch (err) { toast(err.message); }
 }
 function closeSettings() { $('settingsModal').hidden = true; }
@@ -335,3 +336,27 @@ function autoGrow() {
   inputEl.style.height = 'auto';
   inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
 }
+
+// Разделы настроек: строка переходов сверху, текущий раздел подсвечивается при прокрутке.
+function installSettingsNav() {
+  const nav = document.querySelector('.settings-nav');
+  if (!nav) return;
+  const scroller = nav.closest('.modal-body');
+  const buttons = [...nav.querySelectorAll('button[data-target]')];
+  nav.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-target]');
+    if (!b) return;
+    const sec = $(b.dataset.target);
+    scroller.scrollTo({ top: sec.offsetTop - nav.offsetHeight - 8, behavior: 'smooth' });
+  });
+  const mark = () => {
+    const y = scroller.scrollTop + nav.offsetHeight + 24;
+    let current = buttons[0];
+    for (const b of buttons) if ($(b.dataset.target).offsetTop <= y) current = b;
+    buttons.forEach((b) => b.classList.toggle('active', b === current));
+  };
+  scroller.addEventListener('scroll', mark, { passive: true });
+  // Пока окно скрыто, у разделов нет размеров — подсветку считаем при открытии.
+  markSettingsNav = (toTop) => { if (toTop) scroller.scrollTop = 0; mark(); };
+}
+let markSettingsNav = () => {};

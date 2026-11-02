@@ -21,7 +21,12 @@ function makeEntryEl(role, text, index, entry) {
       if (r.asked) label.title = `Рассказчик назвал проверку «${r.asked}» — засчитано умение «${r.skill}»`;
       const val = document.createElement('span');
       val.className = 'roll-value';
-      val.textContent = `${r.roll}${r.bonus ? '+' + r.bonus : ''}${r.penalty ? '−' + r.penalty : ''} = ${r.total} / ${r.target}`;
+      // Все слагаемые видны: раньше модификаторы от состояний и черт цели прятались («8 = 5»).
+      const sgn = (n) => (n > 0 ? ` +${n}` : ` −${Math.abs(n)}`);
+      val.textContent = `🎲 ${r.roll}${r.bonus ? sgn(r.bonus) : ''}${r.penalty ? sgn(-r.penalty) : ''}${r.traitMod ? sgn(r.traitMod) : ''} = ${r.total} против ${r.target}`;
+      val.title = [`бросок d20: ${r.roll}`, r.bonus ? `умение (${r.level}): +${r.bonus}` : `умение: ${r.level}`,
+        r.penalty ? `${r.penaltyReason}: −${r.penalty}` : '', ...(r.traitReasons || []),
+        r.target_npc ? `против: ${r.target_npc}` : '', `нужно ${r.target} (${r.difficulty})`].filter(Boolean).join('\n');
       const out = document.createElement('span');
       out.className = 'roll-outcome';
       out.textContent = r.outcome;
@@ -55,13 +60,19 @@ function makeEntryEl(role, text, index, entry) {
     warn.title = 'Расхождение с состоянием — рассказчику отправлено замечание';
     div.appendChild(warn);
   }
-  if (entry && role === 'narrator' && (entry.timing || (entry.sync && entry.sync.timing))) {
-    const t = renderTiming(entry);
-    if (t) div.appendChild(t);
-  }
+  // Время ответа — в строке журнала учёта, а не отдельной строкой: служебное не должно теснить текст.
+  const timing = entry && role === 'narrator' && (entry.timing || (entry.sync && entry.sync.timing)) ? renderTiming(entry) : null;
+  if (timing && !(entry.sync && entry.sync.status)) div.appendChild(timing);
   if (entry && entry.sync && entry.sync.status) {
     const isLast = index != null && index === app.log.length - 1;
     const box = renderSyncJournal(entry.sync);
+    if (timing) {
+      const t = document.createElement('span');
+      t.className = 'sum-time';
+      t.textContent = timing.textContent.replace(/ — .*/, '');
+      t.title = timing.title;
+      box.querySelector('summary').appendChild(t);
+    }
     for (const prev of entry.syncHistory || []) {
       const old = renderSyncJournal(prev, 'прежний ');
       old.classList.add('prev');

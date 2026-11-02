@@ -106,6 +106,7 @@ async function init() {
   $('settingsBtn').addEventListener('click', openSettings);
   $('settingsClose').addEventListener('click', closeSettings);
   $('settingsCancel').addEventListener('click', closeSettings);
+  installSettingsNav();
   $('settingsSave').addEventListener('click', saveSettings);
   $('settingsModal').addEventListener('click', (e) => { if (e.target.id === 'settingsModal') closeSettings(); });
 

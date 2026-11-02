@@ -27,6 +27,8 @@ stack.handlers.sync = () => reply('', [
   call('npc', { name: 'Ольт', attitude: 'насторожен', description: 'Стражник у ворот', wants: 'спокойной смены', voice_sample: 'Чего надо?' }),
   call('scene', { location: 'Городские ворота', present: ['Ольт'], elapsed_minutes: 5 }),
   call('event', { type: 'debt', text: 'Ян должен Ольту пять монет', participants: ['Ян', 'Ольт'] }),
+  call('block', { type: 'ability', name: 'Фехтование', value: 'опытный' }),
+  call('block', { type: 'status', name: 'Отравлен' }),
   call('thread', { action: 'open', title: 'Попасть в город' }),
 ]);
 const browser = await chromium.launch();
@@ -69,12 +71,20 @@ try {
     await page.click('#tabHeroes');
     await page.click('#dossierBtn');
     await page.waitForSelector('#dossierModal:not([hidden])');
+    const sections = await page.$$eval('#dossierBody .dossier-section > h3', (h) => h.map((x) => x.textContent));
+    for (const want of ['Внешность', 'Состояние', 'Умения', 'Снаряжение']) {
+      if (!sections.includes(want)) errors.push(`[${viewport.name}] в досье нет раздела «${want}»: ${sections.join(', ')}`);
+    }
     await page.click('#dossierClose');
     step('досье героя открывается');
     if (viewport.name === 'mobile') await page.click('#sheetClose').catch(() => {});
 
     await page.click('#settingsBtn');
     await page.waitForSelector('#settingsModal:not([hidden])');
+    if (await page.textContent('.settings-nav button.active') !== 'Модели') errors.push(`[${viewport.name}] при открытии настроек подсвечен не первый раздел`);
+    await page.click('.settings-nav button[data-target="set-images"]');
+    await page.waitForFunction(() => document.querySelector('.settings-nav button.active')?.dataset.target === 'set-images');
+    step('разделы настроек переключаются');
     await page.click('#settingsCancel');
     await page.click('#slotsBtn');
     await page.waitForSelector('#slotsModal:not([hidden])');

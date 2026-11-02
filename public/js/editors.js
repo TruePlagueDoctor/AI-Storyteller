@@ -145,118 +145,138 @@ async function deleteNpcFromModal() {
 }
 
 // ---- Досье героя ----
+// Уровни умений и пороги опыта — как в src/progress.js (рост от удачных бросков).
+const SKILL_LEVELS = ['новичок', 'ученик', 'опытный', 'мастер'];
+const SKILL_NEED = { 'ученик': 3, 'опытный': 7, 'мастер': 14 };
+
 function renderDossier() {
   const c = activeChar();
   if (!c) return;
   const body = $('dossierBody');
   body.innerHTML = '';
+  const el = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
+  const blocks = c.blocks || [];
+  const ofType = (t) => blocks.filter((b) => b.type === t);
 
-  const head = document.createElement('div');
-  head.className = 'dossier-head';
-  const portrait = document.createElement('div');
-  portrait.className = 'dossier-portrait';
+  // Шапка: портрет в раме, имя, раса и положение, описание.
+  const head = el('div', 'dossier-head');
+  const portrait = el('div', 'dossier-portrait' + (c.avatar ? ' has-image' : ''));
   portrait.addEventListener('click', () => { if (c.avatar) showImage(c.avatar, c.name); });
   if (c.avatar) portrait.style.backgroundImage = `url('/avatars/${c.avatar}')`;
-  else portrait.textContent = '\u2726';
+  else portrait.textContent = '✦';
   head.appendChild(portrait);
-
-  const ident = document.createElement('div');
-  ident.className = 'dossier-ident';
-  const nm = document.createElement('h3');
-  nm.className = 'dossier-name';
-  nm.textContent = c.name;
-  ident.appendChild(nm);
-  const tags = document.createElement('div');
-  tags.className = 'dossier-tags';
-  for (const t of [c.race, c.social].filter((x) => x && x.trim())) {
-    const tag = document.createElement('span');
-    tag.className = 'dossier-tag';
-    tag.textContent = t;
-    tags.appendChild(tag);
-  }
+  const ident = el('div', 'dossier-ident');
+  ident.appendChild(el('h3', 'dossier-name', c.name));
+  const tags = el('div', 'dossier-tags');
+  for (const t of [c.race, c.social].filter((x) => x && x.trim())) tags.appendChild(el('span', 'dossier-tag', t));
   if (tags.children.length) ident.appendChild(tags);
-  if (c.persona && c.persona.trim()) {
-    const p = document.createElement('div');
-    p.className = 'dossier-persona';
-    p.textContent = c.persona;
-    ident.appendChild(p);
-  }
+  if (c.persona && c.persona.trim()) ident.appendChild(el('div', 'dossier-persona', c.persona));
   head.appendChild(ident);
   body.appendChild(head);
 
-  const section = (title) => {
-    const sec = document.createElement('div');
-    sec.className = 'dossier-section';
-    const h = document.createElement('h3');
-    h.textContent = title;
-    sec.appendChild(h);
+  const section = (title, color) => {
+    const sec = el('div', 'dossier-section');
+    if (color) sec.style.setProperty('--type-color', color);
+    sec.appendChild(el('h3', null, title));
     body.appendChild(sec);
     return sec;
   };
-  const empty = (sec, text) => {
-    const e = document.createElement('p');
-    e.className = 'dossier-empty';
-    e.textContent = text;
-    sec.appendChild(e);
+  const empty = (sec, text) => sec.appendChild(el('p', 'dossier-empty', text));
+  const row = (name, value, desc) => {
+    const r = el('div', 'dossier-row');
+    const top = el('div', 'dossier-row-top');
+    top.appendChild(el('span', 'dossier-row-name', name));
+    if (value) top.appendChild(el('span', 'dossier-row-value', value));
+    r.appendChild(top);
+    if (desc) r.appendChild(el('div', 'dossier-row-desc', desc));
+    return r;
   };
 
   // Внешность
   const look = section('Внешность');
-  if (c.appearance && c.appearance.trim()) {
-    const t = document.createElement('div');
-    t.className = 'dossier-text';
-    t.textContent = c.appearance;
-    look.appendChild(t);
-  } else empty(look, 'Не описана. Задай её в редакторе героя — рассказчик будет дополнять по ходу.');
+  if (c.appearance && c.appearance.trim()) look.appendChild(el('div', 'dossier-text', c.appearance));
+  else empty(look, 'Не описана. Задай её в редакторе героя — рассказчик будет дополнять по ходу.');
 
-  // Умения
-  const abilities = (c.blocks || []).filter((b) => b.type === 'ability');
-  const ab = section('Умения');
+  // Состояние: показатели с полосами и состояния с эффектами.
+  const stats = ofType('stat');
+  const statuses = ofType('status');
+  if (stats.length || statuses.length) {
+    const sc = section('Состояние', 'var(--stat)');
+    if (stats.length) {
+      const grid = el('div', 'hero-stat-grid');
+      for (const st of stats) {
+        const cell = el('div', 'hero-stat');
+        const top = el('div', 'dossier-row-top');
+        top.appendChild(el('span', 'dossier-row-name', st.name));
+        top.appendChild(el('span', 'dossier-row-value', st.max != null ? `${st.value ?? '?'} / ${st.max}` : String(st.value ?? '')));
+        cell.appendChild(top);
+        const ratio = Number(st.value) / st.max;
+        if (st.max != null && Number.isFinite(ratio)) {
+          const bar = el('div', 'hero-stat-bar');
+          const fill = el('span');
+          fill.style.width = Math.max(0, Math.min(100, ratio * 100)) + '%';
+          if (ratio <= 0.25) cell.classList.add('low');
+          bar.appendChild(fill);
+          cell.appendChild(bar);
+        }
+        grid.appendChild(cell);
+      }
+      sc.appendChild(grid);
+    }
+    if (statuses.length) {
+      const chips = el('div', 'dossier-tags status-chips');
+      for (const st of statuses) {
+        const def = (app.statusCatalog || []).find((d) => d.name.toLowerCase() === st.name.toLowerCase());
+        const rm = st.rollMod ?? def?.rollMod;
+        const tk = st.tick ?? def?.tick;
+        const fx = [rm ? `${rm > 0 ? '+' : ''}${rm} к броскам` : '', tk && tk.stat ? `${tk.stat} ${tk.delta > 0 ? '+' : ''}${tk.delta}/ход` : '', st.duration != null ? `ещё ${st.duration} х.` : ''].filter(Boolean);
+        const chip = el('span', 'dossier-tag status-chip');
+        chip.appendChild(el('b', null, st.value ? `${st.name}: ${st.value}` : st.name));
+        if (fx.length) chip.appendChild(el('span', null, ' · ' + fx.join(' · ')));
+        if (st.description) chip.title = st.description;
+        chips.appendChild(chip);
+      }
+      sc.appendChild(chips);
+    }
+  }
+
+  // Умения: уровень делениями и опыт до следующего.
+  const ab = section('Умения', 'var(--relation)');
+  const abilities = ofType('ability');
   if (abilities.length) {
     for (const a of abilities) {
-      const row = document.createElement('div');
-      row.className = 'ability-row';
-      const wrap = document.createElement('div');
-      const nme = document.createElement('div');
-      nme.className = 'ability-name';
-      nme.textContent = a.name;
-      wrap.appendChild(nme);
-      if (a.description) {
-        const d = document.createElement('div');
-        d.className = 'ability-desc';
-        d.textContent = a.description;
-        wrap.appendChild(d);
+      const lvl = SKILL_LEVELS.indexOf(String(a.value || '').trim().toLowerCase());
+      const r = row(a.name, null, a.description);
+      const top = r.firstChild;
+      const pips = el('span', 'skill-pips');
+      if (lvl >= 0) {
+        for (let i = 0; i < SKILL_LEVELS.length; i++) pips.appendChild(el('i', i <= lvl ? 'on' : ''));
+        pips.title = a.value;
       }
-      row.appendChild(wrap);
-      if (a.value) {
-        const lv = document.createElement('span');
-        lv.className = 'ability-level';
-        lv.textContent = a.value;
-        row.appendChild(lv);
+      top.appendChild(el('span', 'dossier-row-value', a.value || ''));
+      top.appendChild(pips);
+      const next = lvl >= 0 ? SKILL_LEVELS[lvl + 1] : null;
+      if (next) {
+        const key = a.name.trim().toLowerCase();
+        const xp = Math.max((c.skillXp || {})[key] || 0, SKILL_NEED[SKILL_LEVELS[lvl]] || 0);
+        r.appendChild(el('div', 'skill-xp', `опыт ${xp} из ${SKILL_NEED[next]} до «${next}» — растёт от удачных проверок`));
       }
-      ab.appendChild(row);
+      ab.appendChild(r);
     }
   } else empty(ab, 'Пока никаких. Появятся, когда герой чему-то научится.');
 
-  // Характеристики
-  const stats = (c.blocks || []).filter((b) => b.type === 'stat');
-  if (stats.length) {
-    const sc = section('Характеристики');
-    const grid = document.createElement('div');
-    grid.className = 'dossier-grid';
-    for (const st of stats) {
-      const cell = document.createElement('div');
-      cell.className = 'dossier-stat';
-      const n = document.createElement('div');
-      n.className = 'dossier-stat-name';
-      n.textContent = st.name;
-      const v = document.createElement('div');
-      v.className = 'dossier-stat-value';
-      v.textContent = st.max != null ? `${st.value ?? '?'} / ${st.max}` : (st.value ?? '');
-      cell.append(n, v);
-      grid.appendChild(cell);
-    }
-    sc.appendChild(grid);
+  // Снаряжение
+  const items = ofType('item');
+  if (items.length) {
+    const it = section('Снаряжение', 'var(--item)');
+    for (const b of items) it.appendChild(row(b.name, b.value, b.description));
+  }
+
+  // Отношения с группами
+  const rels = ofType('relationship');
+  if (rels.length) {
+    const rs = section('Отношения', 'var(--relation)');
+    for (const b of rels) rs.appendChild(row(b.name, b.value, b.description));
   }
 
   // Другие герои — можно убрать из истории, не переключаясь на них.
@@ -264,49 +284,15 @@ function renderDossier() {
   if (others.length) {
     const os = section('Другие герои');
     for (const o of others) {
-      const row = document.createElement('div');
-      row.className = 'ability-row';
-      const wrap = document.createElement('div');
-      const nm = document.createElement('div');
-      nm.className = 'ability-name';
-      nm.textContent = o.name;
-      wrap.appendChild(nm);
-      if (o.persona) {
-        const d = document.createElement('div');
-        d.className = 'ability-desc';
-        d.textContent = o.persona;
-        wrap.appendChild(d);
-      }
-      row.appendChild(wrap);
-      const btn = document.createElement('button');
-      btn.className = 'btn ghost';
-      btn.style.fontSize = '11px';
-      btn.style.padding = '5px 11px';
-      btn.textContent = o.present === false ? 'Вернуть' : 'Убрать из истории';
+      const r = row(o.name + (o.present === false ? ' · не в истории' : ''), null, o.persona);
+      const btn = el('button', 'btn ghost small', o.present === false ? 'Вернуть' : 'Убрать из истории');
       btn.addEventListener('click', async () => {
         await togglePresence(o.id, o.present === false);
         renderDossier();
       });
-      row.appendChild(btn);
-      os.appendChild(row);
+      r.firstChild.appendChild(btn);
+      os.appendChild(r);
     }
-  }
-
-  // Состояния
-  const statuses = (c.blocks || []).filter((b) => b.type === 'status');
-  if (statuses.length) {
-    const ss = section('Состояния');
-    const tags2 = document.createElement('div');
-    tags2.className = 'dossier-tags';
-    for (const st of statuses) {
-      const t = document.createElement('span');
-      t.className = 'dossier-tag';
-      t.style.color = 'var(--status)';
-      t.style.borderColor = 'var(--status)';
-      t.textContent = st.value ? `${st.name}: ${st.value}` : st.name;
-      tags2.appendChild(t);
-    }
-    ss.appendChild(tags2);
   }
 }
 
