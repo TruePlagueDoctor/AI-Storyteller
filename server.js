@@ -93,6 +93,13 @@ function publicState() {
 }
 
 const ok = (res) => res.json(publicState());
+
+// Пока идёт ход, нельзя менять то, на что он опирается: партию, ленту, героев.
+// Иначе ответ хода запишется не туда (например, в другую партию).
+function whileIdle(_req, res, next) {
+  if (turnInFlight) return res.status(409).json({ error: 'Ход уже выполняется — дождись ответа.' });
+  next();
+}
 const fail = (res, err, code = 500) => res.status(code).json({ error: String(err.message || err) });
 
 app.get('/api/state', (_req, res) => ok(res));
@@ -106,18 +113,18 @@ app.post('/api/settings', async (req, res) => {
   try { await updateSettings(req.body || {}); ok(res); } catch (e) { fail(res, e); }
 });
 
-app.post('/api/reset', async (_req, res) => {
+app.post('/api/reset', whileIdle, async (_req, res) => {
   try { await resetGame(); ok(res); } catch (e) { fail(res, e); }
 });
 
 // ---- Герои ----
-app.post('/api/characters', async (req, res) => {
+app.post('/api/characters', whileIdle, async (req, res) => {
   try { await addCharacter(req.body || {}); ok(res); } catch (e) { fail(res, e); }
 });
 app.put('/api/characters/:id', async (req, res) => {
   try { await updateCharacter(req.params.id, req.body || {}); ok(res); } catch (e) { fail(res, e, 400); }
 });
-app.delete('/api/characters/:id', async (req, res) => {
+app.delete('/api/characters/:id', whileIdle, async (req, res) => {
   try {
     const doomed = getState().characters.find((c) => c.id === req.params.id);
     const avatar = doomed ? doomed.avatar : null;
@@ -130,7 +137,7 @@ app.post('/api/characters/:id/presence', async (req, res) => {
   try { await toggleCharacterPresence(req.params.id, req.body?.present); ok(res); } catch (e) { fail(res, e, 400); }
 });
 
-app.post('/api/characters/:id/activate', async (req, res) => {
+app.post('/api/characters/:id/activate', whileIdle, async (req, res) => {
   try { await setActiveCharacter(req.params.id); ok(res); } catch (e) { fail(res, e, 400); }
 });
 
@@ -152,23 +159,20 @@ app.delete('/api/characters/:id/blocks/:blockId', async (req, res) => {
 });
 
 // ---- История как дерево ----
-app.post('/api/log/:index/truncate', async (req, res) => {
-  if (turnInFlight) return res.status(409).json({ error: 'Ход уже выполняется — дождись ответа.' });
+app.post('/api/log/:index/truncate', whileIdle, async (req, res) => {
   try {
     const { restored } = await truncateLog(Number(req.params.index));
     res.json({ ...publicState(), restored });
   } catch (e) { fail(res, e, 400); }
 });
-app.post('/api/log/:index/swipe', async (req, res) => {
-  if (turnInFlight) return res.status(409).json({ error: 'Ход уже выполняется — дождись ответа.' });
+app.post('/api/log/:index/swipe', whileIdle, async (req, res) => {
   try { await switchVariant(Number(req.params.index), Number(req.body?.dir) || 1); ok(res); } catch (e) { fail(res, e, 400); }
 });
-app.post('/api/log/:index/branch', async (req, res) => {
-  if (turnInFlight) return res.status(409).json({ error: 'Ход уже выполняется — дождись ответа.' });
+app.post('/api/log/:index/branch', whileIdle, async (req, res) => {
   try { await branchAt(Number(req.params.index)); ok(res); } catch (e) { fail(res, e, 400); }
 });
 
-app.put('/api/log/:index', async (req, res) => {
+app.put('/api/log/:index', whileIdle, async (req, res) => {
   try {
     await editMessage(Number(req.params.index), String(req.body?.text ?? ''));
     ok(res);
@@ -238,10 +242,10 @@ app.put('/api/traits', async (req, res) => {
 // ---- Истории (слоты сохранений) ----
 app.get('/api/slots', (_req, res) => res.json(listSlots()));
 
-app.post('/api/slots', async (req, res) => {
+app.post('/api/slots', whileIdle, async (req, res) => {
   try { await createSlot(req.body?.name); ok(res); } catch (e) { fail(res, e, 400); }
 });
-app.post('/api/slots/:id/activate', async (req, res) => {
+app.post('/api/slots/:id/activate', whileIdle, async (req, res) => {
   try { await switchSlot(req.params.id); ok(res); } catch (e) { fail(res, e, 400); }
 });
 app.put('/api/slots/:id', async (req, res) => {
@@ -250,7 +254,7 @@ app.put('/api/slots/:id', async (req, res) => {
 app.post('/api/slots/:id/duplicate', async (req, res) => {
   try { await duplicateSlot(req.params.id); ok(res); } catch (e) { fail(res, e, 400); }
 });
-app.delete('/api/slots/:id', async (req, res) => {
+app.delete('/api/slots/:id', whileIdle, async (req, res) => {
   try { await deleteSlot(req.params.id); ok(res); } catch (e) { fail(res, e, 400); }
 });
 
@@ -599,7 +603,7 @@ app.post('/api/continue', async (_req, res) => {
     last.text = last.text + (/[.!?…»"]$/.test(last.text.trim()) ? '\n\n' : ' ') + narration;
     delete last.truncated;
     // Дописанный кусок тоже проходит учёт: там мог появиться предмет или рана.
-    const extra = await syncNarration({ state, apiKey: apiKey(), narration });
+    const extra = await syncNarration({ state, apiKey: apiKey(), narration, force: true });
     if (extra.calls.length || extra.status === 'failed') {
       const prev = last.sync || { status: 'done', calls: [] };
       last.sync = {
@@ -659,10 +663,10 @@ app.post('/api/regenerate', async (_req, res) => {
     return res.status(400).json({ error: 'Не задан OPENROUTER_API_KEY.' });
   }
   const state = getState();
+  if (turnInFlight) return res.status(409).json({ error: 'Ход уже выполняется — дождись ответа.' });
   if (!canRegenerate()) {
     return res.status(400).json({ error: 'Нечего перегенерировать.' });
   }
-  if (turnInFlight) return res.status(409).json({ error: 'Ход уже выполняется — дождись ответа.' });
   try {
     rewindLastTurn(); // мир, опыт, лорбук и номер хода — к точке до хода
     const lastUser = [...state.messages].reverse().find((m) => m.role === 'user');

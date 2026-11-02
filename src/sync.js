@@ -491,10 +491,11 @@ export async function syncState(state, apiKey, narration, journal = [], { model 
 }
 
 // Учёт для текста, появившегося вне обычного хода (например, «Договорить»).
-export async function syncNarration({ state, apiKey, narration }) {
+// force — не судить по длине: дописанный хвост короткий, но в нём может быть находка.
+export async function syncNarration({ state, apiKey, narration, force = false }) {
   const journal = [];
   const timer = [];
-  if (state.stateSync === false || !syncWorthwhile(state, narration)) return { status: 'skipped', calls: journal, timing: timer };
+  if (state.stateSync === false || !String(narration || '').trim() || (!force && !syncWorthwhile(state, narration))) return { status: 'skipped', calls: journal, timing: timer };
   try {
     await syncState(state, apiKey, narration, journal, { timer });
     return { status: 'done', calls: journal, timing: timer };
