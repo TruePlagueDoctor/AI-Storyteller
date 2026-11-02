@@ -1,0 +1,414 @@
+// Лента: реплики, история как дерево, ход, регенерация и свайпы.
+// Обычный (не модульный) скрипт: общие const/let и функции видны всем файлам из public/js.
+
+// ---- Лента ----
+function makeEntryEl(role, text, index, entry) {
+  const div = document.createElement('div');
+  div.className = `entry ${role}` + (entry && entry.failed ? ' failed' : '');
+  if (index != null) div.dataset.index = index;
+  const span = document.createElement('span');
+  span.className = 'entry-text';
+  renderRichText(span, text);
+  div.appendChild(span);
+  if (entry && role === 'narrator' && index != null && entry.images && entry.images.length) div.appendChild(sceneFigure(entry, index));
+  if (entry && entry.rolls && entry.rolls.length) {
+    for (const r of entry.rolls) {
+      const chip = document.createElement('div');
+      chip.className = 'roll' + (r.success ? ' ok' : ' bad');
+      const label = document.createElement('span');
+      label.className = 'roll-label';
+      label.textContent = `${r.skill} · ${r.difficulty}`;
+      if (r.asked) label.title = `Рассказчик назвал проверку «${r.asked}» — засчитано умение «${r.skill}»`;
+      const val = document.createElement('span');
+      val.className = 'roll-value';
+      val.textContent = `${r.roll}${r.bonus ? '+' + r.bonus : ''}${r.penalty ? '−' + r.penalty : ''} = ${r.total} / ${r.target}`;
+      const out = document.createElement('span');
+      out.className = 'roll-outcome';
+      out.textContent = r.outcome;
+      chip.append(label, val, out);
+      div.appendChild(chip);
+    }
+  }
+  if (entry && entry.truncated) {
+    const bar = document.createElement('div');
+    bar.className = 'trunc-bar';
+    const msg = document.createElement('span');
+    msg.className = 'trunc-msg';
+    msg.textContent = 'Ответ оборвался — модель упёрлась в лимит длины.';
+    const btn = document.createElement('button');
+    btn.className = 'btn primary continue-btn';
+    btn.textContent = 'Договорить';
+    bar.append(msg, btn);
+    div.appendChild(bar);
+  }
+  if (entry && ((entry.ticks && entry.ticks.length) || (entry.growth && entry.growth.length))) {
+    const fx = document.createElement('div');
+    fx.className = 'turn-fx';
+    for (const t of entry.ticks || []) { const l = document.createElement('div'); l.className = 'fx-tick'; l.textContent = '⏳ ' + t; fx.appendChild(l); }
+    for (const g of entry.growth || []) { const l = document.createElement('div'); l.className = 'fx-growth'; l.textContent = '✦ ' + g; fx.appendChild(l); }
+    div.appendChild(fx);
+  }
+  if (entry && entry.issues && entry.issues.length) {
+    const warn = document.createElement('div');
+    warn.className = 'issue';
+    warn.textContent = '⚠ ' + entry.issues.join(' ');
+    warn.title = 'Расхождение с состоянием — рассказчику отправлено замечание';
+    div.appendChild(warn);
+  }
+  if (entry && role === 'narrator' && (entry.timing || (entry.sync && entry.sync.timing))) {
+    const t = renderTiming(entry);
+    if (t) div.appendChild(t);
+  }
+  if (entry && entry.sync && entry.sync.status) {
+    const isLast = index != null && index === app.log.length - 1;
+    const box = renderSyncJournal(entry.sync);
+    for (const prev of entry.syncHistory || []) {
+      const old = renderSyncJournal(prev, 'прежний ');
+      old.classList.add('prev');
+      box.appendChild(old);
+    }
+    if (isLast && app.canResync && entry.sync.status !== 'inline') {
+      const bar = document.createElement('div');
+      bar.className = 'sync-acts';
+      const btn = document.createElement('button');
+      btn.className = 'link-btn';
+      btn.textContent = '↻ переучесть ход';
+      btn.title = 'Откатить записи этого хода и прогнать учёт заново — можно другой моделью. Прежний журнал останется для сравнения.';
+      btn.addEventListener('click', (e) => { e.preventDefault(); resyncTurn(btn); });
+      bar.appendChild(btn);
+      box.appendChild(bar);
+    }
+    div.appendChild(box);
+  }
+  if (entry && entry.failed) {
+    const bar = document.createElement('div');
+    bar.className = 'fail-bar';
+    const msg = document.createElement('span');
+    msg.className = 'fail-msg';
+    msg.textContent = entry.error || 'Рассказчик не ответил.';
+    const retry = document.createElement('button');
+    retry.className = 'btn primary retry-btn';
+    retry.textContent = 'Отправить снова';
+    bar.append(msg, retry);
+    div.appendChild(bar);
+    return div;
+  }
+  if (index != null) {
+    const tools = document.createElement('span');
+    tools.className = 'entry-tools';
+    const mk = (cls, title, txt) => { const b = document.createElement('button'); b.className = cls; b.title = title; b.textContent = txt; return b; };
+    tools.appendChild(mk('edit-btn', 'Редактировать', '✎'));
+    if (role === 'narrator') tools.appendChild(mk('illus-btn', 'Иллюстрировать сцену', '🖼'));
+    tools.appendChild(mk('branch-btn', 'Ветка отсюда: копия истории, обрезанная до этого места', '⑂'));
+    tools.appendChild(mk('cut-btn', role === 'narrator'
+      ? 'Обрезать после: всё, что ниже, исчезнет, мир вернётся к этому моменту'
+      : 'Обрезать здесь: ответ и всё ниже исчезнут, реплику можно отправить заново', '✂'));
+    div.appendChild(tools);
+  }
+  return div;
+}
+
+// ---- История как дерево ----
+async function cutAt(index) {
+  if (sending) return;
+  const e = app.log[index];
+  if (!e) return;
+  const below = app.log.length - 1 - index;
+  if (below > 0 && !confirm(`Обрезать историю? Исчезнет сообщений: ${below}. Мир откатится к этому моменту.`)) return;
+  try {
+    const data = await api(`/api/log/${index}/truncate`, { method: 'POST' });
+    applyFullState(data);
+    if (data.restored === false) toast('Обрезано. Для этого хода нет снимка мира (он сделан до обновления) — листы и НПС не откатывались.');
+  } catch (err) { toast(err.message); }
+}
+async function branchAt(index) {
+  if (sending) return;
+  try {
+    const data = await api(`/api/log/${index}/branch`, { method: 'POST' });
+    applyFullState(data);
+    toast('Создана ветка — ты в ней. Исходная история осталась в списке историй.');
+  } catch (err) { toast(err.message); }
+}
+async function swipe(index, dir) {
+  if (sending) return;
+  try {
+    const data = await api(`/api/log/${index}/swipe`, { method: 'POST', body: JSON.stringify({ dir }) });
+    applyFullState(data);
+  } catch (err) { toast(err.message); }
+}
+
+function renderLog(log) {
+  app.log = log || [];
+  const empty = $('emptyLog');
+  if (!app.log.length) { if (empty) empty.style.display = ''; return; }
+  if (empty) empty.remove();
+  logEl.innerHTML = '';
+  app.log.forEach((entry, i) => logEl.appendChild(makeEntryEl(entry.role, entry.text, i, entry)));
+  scrollLog();
+}
+
+function addEntry(role, text) {
+  const empty = $('emptyLog');
+  if (empty) empty.remove();
+  const div = makeEntryEl(role, text, null);
+  logEl.appendChild(div);
+  scrollLog();
+  return div;
+}
+
+function startEdit(entryEl) {
+  const index = Number(entryEl.dataset.index);
+  if (Number.isNaN(index) || !app.log[index]) return;
+  entryEl.classList.add('editing');
+  entryEl.innerHTML = '';
+  const ta = document.createElement('textarea');
+  ta.className = 'edit-area';
+  ta.value = app.log[index].text;
+  entryEl.appendChild(ta);
+  const bar = document.createElement('div');
+  bar.className = 'edit-bar';
+  const cancel = document.createElement('button');
+  cancel.className = 'btn ghost';
+  cancel.textContent = 'Отмена';
+  const save = document.createElement('button');
+  save.className = 'btn primary';
+  save.textContent = 'Сохранить';
+  bar.append(cancel, save);
+  entryEl.appendChild(bar);
+  const grow = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+  grow();
+  ta.focus();
+  ta.addEventListener('input', grow);
+  cancel.onclick = () => { renderLog(app.log); decorateLastNarrator(); };
+  save.onclick = async () => {
+    save.disabled = true;
+    try {
+      const data = await api(`/api/log/${index}`, { method: 'PUT', body: JSON.stringify({ text: ta.value }) });
+      renderLog(data.log);
+      decorateLastNarrator();
+    } catch (err) { toast(err.message); save.disabled = false; }
+  };
+}
+let thinkingTimer = null;
+function showThinking() {
+  const div = document.createElement('div');
+  div.className = 'entry narrator';
+  div.id = 'thinkingEntry';
+  div.innerHTML = '<span class="thinking"><span></span><span></span><span></span></span><span class="thinking-clock" id="thinkingClock"></span>';
+  logEl.appendChild(div);
+  scrollLog();
+  const t0 = Date.now();
+  clearInterval(thinkingTimer);
+  // Секундомер ожидания: видно, что запрос жив и сколько уже идёт.
+  thinkingTimer = setInterval(() => {
+    const c = $('thinkingClock');
+    if (!c) { clearInterval(thinkingTimer); return; }
+    const s = Math.floor((Date.now() - t0) / 1000);
+    c.textContent = s >= 1 ? `${s} с` : '';
+  }, 250);
+}
+function hideThinking() { clearInterval(thinkingTimer); const t = $('thinkingEntry'); if (t) t.remove(); }
+
+// ---- Ход ----
+async function performTurn(endpoint, body, optimistic) {
+  if (sending) return;
+  sending = true;
+  sendBtn.disabled = true;
+  inputEl.disabled = true;
+  if (optimistic && optimistic.text) addEntry(optimistic.role, optimistic.text);
+  inputEl.value = '';
+  autoGrow();
+  document.querySelectorAll('.regen-btn, .regen-bar').forEach((b) => b.remove());
+  showThinking();
+
+  const before = captureBefore();
+  try {
+    const data = await api(endpoint, { method: 'POST', body: JSON.stringify(body) });
+    applyTurnResult(data, before);
+  } catch (err) {
+    await recoverAfterTurnError(err);
+  } finally {
+    endBusy();
+  }
+}
+
+// ---- Единый путь применения ответа на ход ----
+// Ход, повтор, регенерация и «Договорить» раньше обновляли каждый свой набор
+// данных — сцена, нити, полоса героя оставались старыми до перезагрузки.
+function captureBefore() {
+  return { sigs: { ...charSigs }, npc: npcsCollectionSig(), active: app.activeCharacterId };
+}
+function applyTurnResult(data, before) {
+  hideThinking();
+  renderLog(data.log);
+  applyState(data, { animate: true });
+  for (const c of app.characters) {
+    const sig = charSig(c);
+    if (before && before.sigs[c.id] !== undefined && before.sigs[c.id] !== sig && c.id !== before.active) changedChars.add(c.id);
+  }
+  snapshotCharSigs();
+  renderTabs();
+  if (before && activePanel !== 'npcs' && npcsCollectionSig() !== before.npc) $('tabNpcs').classList.add('changed');
+  decorateLastNarrator();
+}
+// Сбой хода: сервер уже откатил мир — берём полное состояние, а не обрывок.
+async function recoverAfterTurnError(err) {
+  hideThinking();
+  toast(err.message);
+  try {
+    applyFullState(await api('/api/state'));
+  } catch {
+    if (err.payload && err.payload.log) renderLog(err.payload.log);
+    decorateLastNarrator();
+  }
+  ensureRetryAffordance();
+}
+// Перерисовать ленту (портреты у реплик), не сбрасывая прокрутку читателя.
+function refreshLogKeepScroll() {
+  if (!app.log || !app.log.length) return;
+  const top = logEl.scrollTop;
+  const atBottom = logEl.scrollHeight - logEl.clientHeight - top < 40;
+  const prevBehavior = logEl.style.scrollBehavior;
+  logEl.style.scrollBehavior = 'auto';
+  renderLog(app.log);
+  if (!atBottom) logEl.scrollTop = top;
+  logEl.style.scrollBehavior = prevBehavior;
+  decorateLastNarrator();
+}
+
+// Выход из «занят»: сначала снять флаг и разблокировать ввод, потом дорисовать
+// кнопки последнего ответа (↻, свайпы, «Отправить снова»). Раньше кнопки
+// рисовались, пока флаг ещё стоял, — и не появлялись до перезагрузки.
+function endBusy({ focus = true } = {}) {
+  refreshDiagBadge();
+  sending = false;
+  sendBtn.disabled = false;
+  inputEl.disabled = false;
+  decorateLastNarrator();
+  if (focus) inputEl.focus();
+}
+
+// Гарантирует, что у зависшего хода есть кнопка повтора.
+function ensureRetryAffordance() {
+  const last = app.log[app.log.length - 1];
+  if (!last || (last.role !== 'player' && last.role !== 'ooc')) return;
+  if (!last.failed) {
+    last.failed = true;
+    last.error = last.error || 'Ответ не получен.';
+    renderLog(app.log);
+  }
+}
+
+async function continueTurn() {
+  if (sending) return;
+  sending = true;
+  sendBtn.disabled = true;
+  document.querySelectorAll('.trunc-bar').forEach((b) => b.remove());
+  showThinking();
+  const before = captureBefore();
+  try {
+    const data = await api('/api/continue', { method: 'POST' });
+    applyTurnResult(data, before);
+  } catch (err) {
+    await recoverAfterTurnError(err);
+  } finally {
+    endBusy();
+  }
+}
+
+async function retryTurn() {
+  if (sending) return;
+  sending = true;
+  sendBtn.disabled = true;
+  inputEl.disabled = true;
+  document.querySelectorAll('.fail-bar').forEach((b) => b.remove());
+  showThinking();
+  const before = captureBefore();
+  try {
+    const data = await api('/api/retry', { method: 'POST' });
+    applyTurnResult(data, before);
+  } catch (err) {
+    await recoverAfterTurnError(err);
+  } finally {
+    endBusy();
+  }
+}
+
+function sendAction(text) { return performTurn('/api/action', { text }, { role: 'player', text }); }
+function sendOoc(text) { return performTurn('/api/ooc', { text }, { role: 'ooc', text }); }
+function submitInput(text) { return (oocMode ? sendOoc : sendAction)(text); }
+
+// ---- Кнопка регенерации на последней реплике рассказчика ----
+function decorateLastNarrator() {
+  document.querySelectorAll('.regen-btn, .regen-bar').forEach((b) => b.remove());
+  if (sending) return;
+
+  // Если последнее слово осталось за игроком — ответа не было.
+  // Показываем кнопку повтора всегда, не полагаясь на пометку о сбое.
+  const lastEntry = app.log[app.log.length - 1];
+  if (lastEntry && (lastEntry.role === 'player' || lastEntry.role === 'ooc')) {
+    const entries = logEl.querySelectorAll('.entry');
+    const el = entries[entries.length - 1];
+    if (el && !el.querySelector('.fail-bar') && !el.querySelector('.retry-inline')) {
+      const bar = document.createElement('div');
+      bar.className = 'fail-bar retry-inline';
+      const msg = document.createElement('span');
+      msg.className = 'fail-msg';
+      msg.textContent = lastEntry.error || 'Рассказчик не ответил на это сообщение.';
+      const btn = document.createElement('button');
+      btn.className = 'btn primary retry-btn';
+      btn.textContent = 'Отправить снова';
+      bar.append(msg, btn);
+      el.appendChild(bar);
+    }
+    return;
+  }
+  const narrators = [...logEl.querySelectorAll('.entry.narrator')].filter((e) => e.id !== 'thinkingEntry');
+  const last = narrators[narrators.length - 1];
+  if (!last) return;
+  const bar = document.createElement('span');
+  bar.className = 'regen-bar';
+  const idx = Number(last.dataset.index);
+  const entry = app.log[idx];
+  if (entry && entry.variants > 1) {
+    const prev = document.createElement('button');
+    prev.className = 'regen-btn swipe'; prev.textContent = '‹'; prev.title = 'Предыдущий вариант';
+    prev.disabled = entry.variant <= 0;
+    prev.addEventListener('click', () => swipe(idx, -1));
+    const cnt = document.createElement('span');
+    cnt.className = 'swipe-count'; cnt.textContent = `${entry.variant + 1}/${entry.variants}`;
+    const next = document.createElement('button');
+    next.className = 'regen-btn swipe'; next.textContent = '›'; next.title = 'Следующий вариант';
+    next.disabled = entry.variant >= entry.variants - 1;
+    next.addEventListener('click', () => swipe(idx, 1));
+    bar.append(prev, cnt, next);
+  }
+  const btn = document.createElement('button');
+  btn.className = 'regen-btn';
+  btn.title = entry && entry.variants > 1 ? 'Ещё вариант (прежние сохраняются)' : 'Перегенерировать ответ (прежний сохранится как вариант)';
+  btn.textContent = '↻';
+  btn.addEventListener('click', regenerate);
+  bar.appendChild(btn);
+  last.appendChild(bar);
+}
+
+async function regenerate() {
+  if (sending) return;
+  sending = true;
+  sendBtn.disabled = true;
+  inputEl.disabled = true;
+  document.querySelectorAll('.regen-btn, .regen-bar').forEach((b) => b.remove());
+
+  showThinking();
+
+  const before = captureBefore();
+  try {
+    const data = await api('/api/regenerate', { method: 'POST' });
+    applyTurnResult(data, before);
+  } catch (err) {
+    // Сервер уже убрал прежний ответ и откатил мир — на экране его быть не должно.
+    await recoverAfterTurnError(err);
+  } finally {
+    endBusy();
+  }
+}

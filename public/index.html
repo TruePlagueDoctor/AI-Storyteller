@@ -1039,6 +1039,18 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="app.js?v=31"></script>
+  <!-- Порядок важен: init.js — последним. Общие переменные и функции видны всем файлам. -->
+  <script src="js/core.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/diag.js"></script>
+  <script src="js/fill.js"></script>
+  <script src="js/images.js"></script>
+  <script src="js/scene.js"></script>
+  <script src="js/heroes.js"></script>
+  <script src="js/journal.js"></script>
+  <script src="js/feed.js"></script>
+  <script src="js/editors.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/init.js"></script>
 </body>
 </html>

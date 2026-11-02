@@ -1,0 +1,97 @@
+// Проверка интерфейса в настоящем браузере: сервер с поддельной моделью,
+// Playwright проходит основные действия и ловит ошибки в консоли.
+// Запуск: npm run test:ui   (нужен Playwright: npm i -D playwright && npx playwright install chromium)
+// Скриншоты — в папку, указанную в UI_SHOTS (по умолчанию не сохраняются).
+import { createRequire } from 'node:module';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { startStack } from '../test/harness.js';
+import { reply, call } from '../test/fake-llm.js';
+
+const require = createRequire(import.meta.url);
+let chromium;
+try { ({ chromium } = require('playwright')); } catch {
+  console.log('Playwright не установлен — проверка интерфейса пропущена.\nУстановить: npm i -D playwright && npx playwright install chromium');
+  process.exit(0);
+}
+
+const shots = process.env.UI_SHOTS;
+if (shots) mkdirSync(shots, { recursive: true });
+const errors = [];
+const step = (name) => console.log('  •', name);
+
+const stack = await startStack();
+stack.handlers.sync = () => reply('', [
+  call('block', { type: 'stat', name: 'Здоровье', value: '8', max: 10 }),
+  call('block', { type: 'item', name: 'Фляга' }),
+  call('npc', { name: 'Ольт', attitude: 'насторожен', description: 'Стражник у ворот', wants: 'спокойной смены', voice_sample: 'Чего надо?' }),
+  call('scene', { location: 'Городские ворота', present: ['Ольт'], elapsed_minutes: 5 }),
+  call('event', { type: 'debt', text: 'Ян должен Ольту пять монет', participants: ['Ян', 'Ольт'] }),
+  call('thread', { action: 'open', title: 'Попасть в город' }),
+]);
+const browser = await chromium.launch();
+try {
+  for (const viewport of [{ width: 1400, height: 900, name: 'desktop' }, { width: 390, height: 844, name: 'mobile' }]) {
+    console.log(`Экран ${viewport.name}:`);
+    if (viewport.name === 'mobile') await stack.api('POST', '/api/reset');
+    const page = await browser.newPage({ viewport });
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(`[${viewport.name}] console: ${m.text()}`); });
+    page.on('pageerror', (e) => errors.push(`[${viewport.name}] ${e.message}`));
+    await page.goto(stack.base + '/');
+    await page.waitForSelector('#startBtn', { state: 'visible' });
+    const version = await page.evaluate(() => document.title);
+    step(`страница открылась (${version})`);
+
+    await page.click('#startBtn');
+    await page.waitForSelector('.entry.narrator');
+    step('вступление пришло');
+
+    stack.handlers.narrator = () => reply('Ольт смотрит на бумаги и кивает: «Проходи».');
+    await page.fill('#input', 'Показываю бумаги');
+    await page.press('#input', 'Enter');
+    await page.waitForFunction(() => document.querySelectorAll('.entry.narrator').length === 2);
+    step('ход игрока отыгран');
+
+    stack.handlers.narrator = () => reply('Ольт хмурится: «Подделка», — и рвёт бумаги.');
+    await page.click('.regen-btn:not(.swipe)');
+    await page.waitForSelector('.swipe-count');
+    step('регенерация дала второй вариант');
+    await page.click('.regen-btn.swipe >> nth=0');
+    await page.waitForFunction(() => /Проходи/.test(document.querySelector('.entry.narrator:last-of-type')?.textContent || document.body.textContent));
+    step('свайп вернул прежний вариант');
+
+    if (viewport.name === 'mobile') { await page.click('#sheetToggle'); await page.waitForTimeout(300); }
+    for (const tab of ['tabNpcs', 'tabLore', 'tabThreads', 'tabEvents', 'tabHeroes']) await page.click('#' + tab);
+    step('вкладки панели переключаются');
+    await page.click('#tabNpcs');
+    await page.click('#npcList .npc >> nth=0');
+    if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-npcs.png`), fullPage: false });
+    await page.click('#tabHeroes');
+    await page.click('#dossierBtn');
+    await page.waitForSelector('#dossierModal:not([hidden])');
+    await page.click('#dossierClose');
+    step('досье героя открывается');
+    if (viewport.name === 'mobile') await page.click('#sheetClose').catch(() => {});
+
+    await page.click('#settingsBtn');
+    await page.waitForSelector('#settingsModal:not([hidden])');
+    await page.click('#settingsCancel');
+    await page.click('#slotsBtn');
+    await page.waitForSelector('#slotsModal:not([hidden])');
+    await page.click('#slotsClose');
+    step('настройки и список историй открываются');
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    if (overflow > 1) errors.push(`[${viewport.name}] горизонтальная прокрутка: лишние ${overflow}px`);
+    if (shots) await page.screenshot({ path: join(shots, `${viewport.name}.png`), fullPage: false });
+    await page.close();
+  }
+} finally {
+  await browser.close();
+  stack.stop();
+}
+if (errors.length) {
+  console.error('\nОШИБКИ:\n' + errors.join('\n'));
+  process.exit(1);
+}
+console.log('\nИнтерфейс в порядке.');

@@ -392,7 +392,8 @@ function applyFullSnapshot(snap) {
   if (snap.activeCharacterId && state.characters.some((c) => c.id === snap.activeCharacterId)) state.activeCharacterId = snap.activeCharacterId;
 }
 
-const stripEntry = (e) => { const { variants, variant, ...rest } = e; return rest; };
+// Номер варианта и их число — свойства ленты, в файл хода не пишем.
+const stripEntry = (e) => { const rest = { ...e }; delete rest.variants; delete rest.variant; return rest; };
 
 // Вызывается после удачного хода: кладёт реплику рассказчика и снимок мира
 // после неё в файл хода. Повторная генерация того же хода добавляет вариант.

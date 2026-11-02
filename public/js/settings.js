@@ -1,0 +1,337 @@
+// Истории (слоты), настройки, редактор героя, сброс, поле ввода.
+// Обычный (не модульный) скрипт: общие const/let и функции видны всем файлам из public/js.
+
+// ---- Истории (слоты) ----
+function renderSlots(data) {
+  const list = $('slotList');
+  list.innerHTML = '';
+  for (const sl of data.slots) {
+    const el = document.createElement('div');
+    el.className = 'slot' + (sl.active ? ' active' : '');
+    el.dataset.id = sl.id;
+
+    const main = document.createElement('div');
+    main.className = 'slot-main';
+    const nm = document.createElement('div');
+    nm.className = 'slot-name';
+    nm.textContent = sl.name;
+    const meta = document.createElement('div');
+    meta.className = 'slot-meta';
+    const d = new Date(sl.updatedAt);
+    meta.textContent = (sl.active ? 'сейчас · ' : '') + d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    main.append(nm, meta);
+    el.appendChild(main);
+
+    const acts = document.createElement('div');
+    acts.className = 'slot-acts';
+    for (const [act, glyph, title, cls] of [
+      ['rename', '✎', 'Переименовать', ''],
+      ['duplicate', '⧉', 'Сделать копию', ''],
+      ['delete', '✕', 'Удалить', 'danger'],
+    ]) {
+      const b = document.createElement('button');
+      b.className = 'slot-act ' + cls;
+      b.dataset.act = act;
+      b.title = title;
+      b.textContent = glyph;
+      acts.appendChild(b);
+    }
+    el.appendChild(acts);
+    list.appendChild(el);
+  }
+  const active = data.slots.find((x) => x.active);
+  if (active) $('slotName').textContent = active.name;
+}
+
+async function openSlots() {
+  try { renderSlots(await api('/api/slots')); $('slotsModal').hidden = false; }
+  catch (err) { toast(err.message); }
+}
+function closeSlots() { $('slotsModal').hidden = true; }
+
+// Переключение партии перерисовывает всё: история, герои, НПС, мир.
+function applyFullState(data) {
+  blockSignatures = {}; npcSigs = {}; charSigs = {}; changedChars.clear();
+  renderLog(data.log);
+  applyState(data, { animate: false });
+  snapshotCharSigs();
+  decorateLastNarrator();
+  if (data.slots) renderSlots({ slots: data.slots, activeSlotId: data.activeSlotId });
+}
+
+async function slotAction(id, act) {
+  try {
+    if (act === 'rename') {
+      const cur = (await api('/api/slots')).slots.find((x) => x.id === id);
+      const name = prompt('Название истории:', cur ? cur.name : '');
+      if (!name) return;
+      renderSlots(await api(`/api/slots/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }));
+      return;
+    }
+    if (act === 'duplicate') { renderSlots(await api(`/api/slots/${id}/duplicate`, { method: 'POST' })); return; }
+    if (act === 'delete') {
+      const cur = (await api('/api/slots')).slots.find((x) => x.id === id);
+      if (!confirm(`Удалить историю «${cur ? cur.name : ''}» со всеми героями и записями?`)) return;
+      applyFullState(await api(`/api/slots/${id}`, { method: 'DELETE' }));
+      return;
+    }
+    applyFullState(await api(`/api/slots/${id}/activate`, { method: 'POST' }));
+    closeSlots();
+  } catch (err) { toast(err.message); }
+}
+
+// ---- Настройки ----
+async function openSettings() {
+  try {
+    const s = await api('/api/state');
+    $('modelInput').value = s.model || '';
+    $('toolModelInput').value = s.toolModel || '';
+    $('temperatureInput').value = s.temperature ?? 0.8;
+    $('repetitionInput').value = s.repetitionPenalty ?? 0.3;
+    $('frequencyInput').value = s.frequencyPenalty ?? 0;
+    $('worldInput').value = s.worldPrompt || '';
+    $('scenarioInput').value = s.scenarioPrompt || '';
+    $('promptInput').value = s.systemPrompt || '';
+    for (const seg of document.querySelectorAll('#difficultySeg .seg')) {
+      seg.classList.toggle('active', seg.dataset.value === (s.difficulty || 'normal'));
+    }
+    for (const seg of document.querySelectorAll('#narrationSeg .seg')) {
+      seg.classList.toggle('active', seg.dataset.value === (s.narration || 'second_ty'));
+    }
+    $('stateSyncInput').checked = s.stateSync !== false;
+    $('loreAutoWriteInput').checked = s.loreAutoWrite === true;
+    $('syncPromptStyleInput').value = s.syncPromptStyle === 'legacy' ? 'legacy' : 'technical';
+    $('diceEnabledInput').checked = s.diceEnabled !== false;
+    $('autoSummarizeInput').checked = s.autoSummarize !== false;
+    $('sdUrlInput').value = s.sdUrl || 'http://127.0.0.1:7860';
+    $('imageStyleInput').value = s.imageStyle || '';
+    $('imageNegativeInput').value = s.imageNegative || '';
+    $('imageSizeInput').value = s.imageSize || '832x1216';
+    $('imageStepsInput').value = s.imageSteps ?? 25;
+    $('imageCfgInput').value = s.imageCfg ?? 6;
+    $('imageSamplerInput').value = s.imageSampler || 'DPM++ 2M';
+    $('sceneStyleInput').value = s.sceneStyle || '';
+    $('sceneNegativeInput').value = s.sceneNegative || '';
+    $('sceneSizeInput').value = s.sceneSize || '1216x832';
+    $('imageClipSkipInput').value = s.imageClipSkip ?? 2;
+    $('faceFixInput').checked = s.faceFix !== false;
+    $('sceneHiresInput').checked = s.sceneHires !== false;
+    $('hiresScaleInput').value = s.hiresScale ?? 1.5;
+    $('hiresDenoiseInput').value = s.hiresDenoise ?? 0.4;
+    $('hiresUpscalerInput').value = s.hiresUpscaler || 'R-ESRGAN 4x+';
+    $('historyKeepInput').value = s.historyKeep || 20;
+    $('summaryInput').value = s.summary || '';
+    const note = $('keyNote');
+    if (s.hasKey) {
+      note.className = 'field-note';
+      note.innerHTML = 'Ключ OpenRouter найден в <code>.env</code> — можно играть.';
+    } else {
+      note.className = 'field-note warn';
+      note.innerHTML = 'Ключ не найден. Создай <code>.env</code> из <code>.env.example</code> и впиши <code>OPENROUTER_API_KEY</code>.';
+    }
+    if ($('syncStats').open) renderSyncStats();
+    $('settingsModal').hidden = false;
+  } catch (err) { toast(err.message); }
+}
+function closeSettings() { $('settingsModal').hidden = true; }
+async function saveSettings() {
+  try {
+    const difficulty = document.querySelector('#difficultySeg .seg.active')?.dataset.value || 'normal';
+    const narration = document.querySelector('#narrationSeg .seg.active')?.dataset.value || 'second_ty';
+    const data = await api('/api/settings', {
+      method: 'POST',
+      body: JSON.stringify({
+        model: $('modelInput').value,
+        toolModel: $('toolModelInput').value,
+        temperature: $('temperatureInput').value,
+        repetitionPenalty: $('repetitionInput').value,
+        frequencyPenalty: $('frequencyInput').value,
+        worldPrompt: $('worldInput').value,
+        scenarioPrompt: $('scenarioInput').value,
+        sdUrl: $('sdUrlInput').value,
+        imageStyle: $('imageStyleInput').value,
+        imageNegative: $('imageNegativeInput').value,
+        imageSize: $('imageSizeInput').value,
+        imageSteps: $('imageStepsInput').value,
+        imageCfg: $('imageCfgInput').value,
+        imageSampler: $('imageSamplerInput').value,
+        sceneStyle: $('sceneStyleInput').value,
+        sceneNegative: $('sceneNegativeInput').value,
+        sceneSize: $('sceneSizeInput').value,
+        imageClipSkip: $('imageClipSkipInput').value,
+        faceFix: $('faceFixInput').checked,
+        sceneHires: $('sceneHiresInput').checked,
+        hiresScale: $('hiresScaleInput').value,
+        hiresDenoise: $('hiresDenoiseInput').value,
+        hiresUpscaler: $('hiresUpscalerInput').value,
+        difficulty,
+        narration,
+        stateSync: $('stateSyncInput').checked,
+        loreAutoWrite: $('loreAutoWriteInput').checked,
+        syncPromptStyle: $('syncPromptStyleInput').value,
+        diceEnabled: $('diceEnabledInput').checked,
+        autoSummarize: $('autoSummarizeInput').checked,
+        historyKeep: $('historyKeepInput').value,
+        summary: $('summaryInput').value,
+        systemPrompt: $('promptInput').value,
+      }),
+    });
+    modelLabel.textContent = data.model;
+    closeSettings();
+  } catch (err) { toast(err.message); }
+}
+
+// ---- Редактор героя ----
+function openCharModal(char) {
+  editingCharId = char ? char.id : null;
+  resetFill('hero');
+  $('charModalTitle').textContent = char ? 'Изменить героя' : 'Новый герой';
+  $('charName').value = char ? char.name : '';
+  $('charPersona').value = char ? char.persona : '';
+  $('charRace').value = char ? (char.race || '') : '';
+  $('charSocial').value = char ? (char.social || '') : '';
+  $('charAppearance').value = char ? (char.appearance || '') : '';
+  $('charLookLock').checked = Boolean(char && Array.isArray(char.locked) && char.locked.includes('appearance'));
+  syncFillLocks();
+  const prevLook = char && char.appearancePrev && char.appearancePrev !== char.appearance ? char.appearancePrev : '';
+  $('charLookRestore').hidden = !prevLook;
+  $('charLookRestore').onclick = () => {
+    $('charAppearance').value = prevLook;
+    toast('Подставлена прежняя внешность — нажми «Сохранить», чтобы вернуть её.');
+  };
+  $('charDelete').style.display = char && app.characters.length > 1 ? '' : 'none';
+  const isActive = char && char.id === app.activeCharacterId;
+  $('charPresent').checked = char ? char.present !== false : true;
+  $('charPresent').disabled = !char || isActive;
+  $('charPresentHint').textContent = isActive
+    ? 'Ты играешь за этого героя, поэтому он в истории. Чтобы убрать другого — нажми кружок на его вкладке.'
+    : 'Выключи, если этого героя сейчас нет в сцене — рассказчик перестанет его упоминать.';
+  setAvatarPreview(char ? char.avatar : null);
+  $('charPortraitTags').value = (char && char.portraitTags) || '';
+  // Портрет можно грузить только существующему герою.
+  $('charAvatarPick').disabled = !char;
+  $('charAvatarClear').disabled = !char || !char.avatar;
+  $('charModal').hidden = false;
+  $('charName').focus();
+}
+
+function setAvatarPreview(filename) {
+  const box = $('charAvatarPreview');
+  if (filename) {
+    box.style.backgroundImage = `url('/avatars/${filename}')`;
+    box.classList.add('has-image');
+  } else {
+    box.style.backgroundImage = '';
+    box.classList.remove('has-image');
+  }
+}
+
+// Уменьшает картинку в браузере до 256px и отдаёт data URL.
+function shrinkImage(file, max = 256) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Не удалось прочитать файл.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Не удалось открыть картинку.'));
+      img.onload = () => {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const png = file.type === 'image/png' || file.type === 'image/webp';
+        resolve(canvas.toDataURL(png ? 'image/png' : 'image/jpeg', 0.88));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadAvatar(file) {
+  if (!editingCharId || !file) return;
+  try {
+    const dataUrl = await shrinkImage(file);
+    const data = await api(`/api/characters/${editingCharId}/avatar`, {
+      method: 'POST',
+      body: JSON.stringify({ dataUrl }),
+    });
+    applyState(data, { animate: false });
+    const c = app.characters.find((x) => x.id === editingCharId);
+    setAvatarPreview(c ? c.avatar : null);
+    $('charAvatarClear').disabled = !(c && c.avatar);
+  } catch (err) { toast(err.message); }
+}
+
+async function clearAvatar() {
+  if (!editingCharId) return;
+  try {
+    const data = await api(`/api/characters/${editingCharId}/avatar`, { method: 'DELETE' });
+    applyState(data, { animate: false });
+    setAvatarPreview(null);
+    $('charAvatarClear').disabled = true;
+  } catch (err) { toast(err.message); }
+}
+function closeCharModal() { $('charModal').hidden = true; }
+async function saveChar() {
+  const name = $('charName').value.trim();
+  const persona = $('charPersona').value;
+  const present = $('charPresent').checked;
+  const race = $('charRace').value;
+  const social = $('charSocial').value;
+  const appearance = $('charAppearance').value;
+  const editing = editingCharId ? app.characters.find((c) => c.id === editingCharId) : null;
+  const locked = new Set(editing && Array.isArray(editing.locked) ? editing.locked : []);
+  if ($('charLookLock').checked) locked.add('appearance'); else locked.delete('appearance');
+  if (!name) { toast('У героя должно быть имя.'); return; }
+  try {
+    const data = editingCharId
+      ? await api(`/api/characters/${editingCharId}`, { method: 'PUT', body: JSON.stringify({ name, persona, race, social, appearance, present, locked: [...locked] }) })
+      : await api('/api/characters', { method: 'POST', body: JSON.stringify({ name, persona, race, social, appearance }) });
+    closeCharModal();
+    blockSignatures = {};
+    applyState(data, { animate: false });
+    for (const b of activeChar().blocks) blockSignatures[b.id] = blockSig(b);
+    snapshotCharSigs();
+  } catch (err) { toast(err.message); }
+}
+async function deleteChar() {
+  if (!editingCharId) return;
+  const c = app.characters.find((x) => x.id === editingCharId);
+  if (!confirm(`Удалить героя «${c ? c.name : ''}» вместе с его листом?`)) return;
+  try {
+    const data = await api(`/api/characters/${editingCharId}`, { method: 'DELETE' });
+    closeCharModal();
+    changedChars.delete(editingCharId);
+    blockSignatures = {};
+    applyState(data, { animate: false });
+    snapshotCharSigs();
+  } catch (err) { toast(err.message); }
+}
+
+// ---- Сброс ----
+async function resetGame() {
+  if (!confirm('Начать заново? История и листы героев будут стёрты (сами герои и настройки останутся).')) return;
+  try {
+    const data = await api('/api/reset', { method: 'POST' });
+    changedChars.clear();
+    blockSignatures = {};
+    npcSigs = {};
+    app.log = [];
+    $('tabNpcs').classList.remove('changed');
+    logEl.innerHTML = '<div class="empty-log" id="emptyLog">'
+      + '<p class="empty-title">Лист пуст, история ещё не начата.</p>'
+      + '<p class="empty-hint">Настрой мир, сценарий и героев — или просто нажми «Начать», и рассказчик задаст сцену сам.</p>'
+      + '<button class="btn primary" id="startBtn">Начать</button></div>';
+    applyState(data, { animate: false });
+    snapshotCharSigs();
+  } catch (err) { toast(err.message); }
+}
+
+// ---- Поле ввода ----
+function autoGrow() {
+  inputEl.style.height = 'auto';
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
+}
