@@ -1,31 +1,40 @@
 # Хроника — заметки для работы с кодом
 
-Локальная текстовая RPG: ИИ-рассказчик через OpenRouter, отдельный проход «учётчик» ведёт структурированное состояние мира (листы героев, НПС, сцена, нити, хроника фактов, лорбук). Node 18+, Express, без сборки; фронтенд — один `public/app.js` + `index.html` + `styles.css`. Пользователь общается по-русски, весь интерфейс и промты на русском.
+Локальная текстовая RPG: ИИ-рассказчик через OpenRouter, отдельный проход «учётчик» ведёт структурированное состояние мира (листы героев, НПС, сцена, нити, хроника фактов, лорбук). Node 18+, Express, без сборки; фронтенд — обычные (не модульные) скрипты `public/js/*.js` + `index.html` + `styles.css`. Пользователь общается по-русски, весь интерфейс и промты на русском.
 
 Подробная история решений и бэклог — в `docs/HISTORY.md`. Прочитай его перед заметными изменениями в учётчике, промтах или интерфейсе НПС.
 
 ## Запуск и проверка
 
 - `npm install`, `.env` с `OPENROUTER_API_KEY`, `node server.js` (порт 3000). После правок пользователь перезапускает сервер и обновляет страницу Ctrl+F5.
-- Версия интерфейса печатается в консоль браузера второй строкой `public/app.js`: `console.log('AI Storyteller UI vNN — …')`. **Повышай номер при каждом изменении фронтенда** — по нему пользователь проверяет, что подхватилась новая версия. Сейчас v41.
-- Тестов в репозитории пока нет (см. бэклог). Принятый способ проверки: модуль-заглушка `fetch` подключается через `node --import ./stub.mjs server.js` и отвечает вместо OpenRouter (и вместо A1111 на `/sdapi/v1/*`); затем запросы к API через curl и/или Playwright-скрипты со скриншотами. Перед коммитом сравнивай список функций и маршрутов с прежней версией (`grep -oE "^(export )?(async )?function \w+"`, `grep -oE "app\.(get|post|put|delete)\('[^']+'"`) — однажды при замене блока случайно удалилось сжатие истории.
-- Данные лежат в `data/` (в `.gitignore`): `settings.json` (общие настройки), `slots.json` + `slots/<id>.json` (партии), `slots/<id>.turns/<index>.json` (варианты ходов со снимками мира), `avatars/`, `scenes/`, `diag/`.
+- Версия интерфейса печатается в консоль браузера второй строкой `public/js/core.js`: `console.log('AI Storyteller UI vNN — …')`. **Повышай номер при каждом изменении фронтенда** — по нему пользователь проверяет, что подхватилась новая версия. Сейчас v42.
+- **Проверки — перед каждым коммитом:** `npm test` (node:test, без сети: данные во временной папке, OpenRouter подменён) и при правках интерфейса `npm run test:ui` (Playwright, сервер с поддельной моделью, экраны компьютера и телефона; `UI_SHOTS=папка` сохраняет скриншоты). Нашёл ошибку — сначала тест, который её ловит, потом исправление.
+  - `test/fake-llm.js` — `reply()`, `call()`, подмена `fetch` в процессе (для `src/*`); `test/harness.js` — настоящий `server.js` в отдельном процессе + поддельный OpenRouter/A1111 (`OPENROUTER_URL`, `STORYTELLER_DATA_DIR`); `test/helpers.js` — `makeState()`.
+  - Перед коммитом крупных переносов сравнивай список функций и маршрутов с прежней версией (`grep -oE "^(export )?(async )?function \w+"`, `grep -oE "app\.(get|post|put|delete)\('[^']+'"`) — однажды при замене блока случайно удалилось сжатие истории.
+- Данные лежат в `data/` (в `.gitignore`; `STORYTELLER_DATA_DIR` переносит их): `settings.json` (общие настройки), `slots.json` + `slots/<id>.json` (партии), `slots/<id>.turns/<index>.json` (варианты ходов со снимками мира), `avatars/`, `scenes/`, `diag/`.
 
 ## Устройство
 
 | Файл | Что внутри |
 |---|---|
-| `server.js` | маршруты API, `runPlayerTurn` (замок хода `turnInFlight`, снимки, тайминги), фоновое сжатие истории (`scheduleCompression`), генерация портретов/иллюстраций, `publicState()` |
-| `src/openrouter.js` | всё общение с моделью: `callOpenRouter` (цепочка откатов + запись в диагностику), `composeStorySystem` (промт рассказчика), `narrate`, `composeSyncSystem` + `technicalSyncHead`/`legacySyncHead`, `syncState` (2 раунда, `completenessHints`), сжатие (`planSummary`/`computeSummary`/`applySummary`), `sceneTags`, `fillField`, `portraitTags`, `replayRequest` |
-| `src/tools.js` | схемы инструментов и `executeTool`: `block`, `npc`, `scene`, `event`, `thread`, `update_hero`, `record_lore`, `nothing`, `roll_check`; нечёткое сопоставление имён (`sameName`, `caseStem`, `findNpc`, `findIndex`, `catalogStatusName`) |
+| `server.js` | маршруты API, `runPlayerTurn` (замок хода `turnInFlight`, `whileIdle` — запрет менять партию/ленту/героев во время хода), снимки, тайминги, фоновое сжатие истории (`scheduleCompression`), генерация портретов/иллюстраций, `publicState()` |
+| `src/llm.js` | `callOpenRouter` (цепочка откатов + запись в диагностику), `replayRequest`, `toolModelOf`, разбор утёкшей разметки (`stripToolMarkup`, `parseLeakedToolCalls`) |
+| `src/narrator.js` | `composeStorySystem` (промт рассказчика: лорбук, герои, НПС, хроника, сцена), `labelHeroes`, `narrate` (с `roll_check`) |
+| `src/sync.js` | `composeSyncSystem` + `technicalSyncHead`/`legacySyncHead`, `syncState` (2 раунда, `completenessHints`), `syncNarration`/`resyncNarration` |
+| `src/turn.js`, `src/journal.js` | `runTurn`, `afterSync` (противоречия + замечание рассказчику); журнал учёта (`journalEntry`, `FIX_SIGNAL`) |
+| `src/summary.js` | сжатие: `planSummary`/`computeSummary`/`applySummary` |
+| `src/art.js`, `src/fill.js` | `portraitTags`, `sceneTags`; `fillField` (✨) |
+| `src/paths.js` | где лежат данные (`STORYTELLER_DATA_DIR`) |
+| `src/tools.js` | схемы инструментов, `toolsFor`, и `executeTool`: `block`, `npc`, `scene`, `event`, `thread`, `update_hero`, `record_lore`, `nothing`, `roll_check`; нечёткое сопоставление имён (`sameName`, `caseStem`, `findNpc`, `findIndex`, `catalogStatusName`) |
 | `src/state.js` | загрузка/сохранение, миграции, слоты, снимки (`captureFullSnapshot`/`applyFullSnapshot`), варианты ходов (свайпы), ветки, ручные правки (`upsertBlock`, `updateNpcManual`, `upsertEvent`…), `entryContext`/`setEntryImages` |
 | `src/chronicle.js` | хроника фактов: типы, `#номера` для учётчика, сроки (`dueOf`/`isOverdue` по часам сцены), выборка для рассказчика |
 | `src/scene.js` | сцена: место, часы (`day`/`minute`), присутствующие, блок для промтов |
-| `src/dice.js`, `src/skills.js`, `src/progress.js` | бросок d20 + уровень умения; умение ищется по смыслу (`matchAbility`); опыт только у существующих умений, с учётом стартового уровня |
+| `src/dice.js`, `src/skills.js`, `src/progress.js` | бросок d20 + уровень умения; умение ищется по смыслу (`matchAbility`, `skillMatches` — и для черт цели); опыт только у существующих умений, с учётом стартового уровня |
 | `src/statuses.js`, `src/traits.js`, `src/seeds.js` | каталог состояний с эффектами, черты НПС с модификаторами, заготовки изюминок/тайн |
 | `src/contradictions.js` | проверка ответа рассказчика на противоречия листу/сцене |
 | `src/images.js` | локальный Automatic1111: `txt2img` (портреты/сцены, clip skip, Hires fix, ADetailer), `sdCaps`, `pingSd` |
 | `src/diag.js` | журнал запросов к модели (`data/diag`), `explainError` — человеческие тексты ошибок |
+| `public/js/*.js` | интерфейс по разделам: `core` (утилиты, `app`, `applyState`), `world` (лорбук, НПС, нити, хроника), `diag`, `fill`, `images`, `scene`, `heroes`, `journal`, `feed` (лента, ход, свайпы), `editors`, `settings`, `init` (последним). Обычные скрипты с общим глобальным пространством: имена не должны повторяться между файлами |
 | `src/prompt.js` | промт рассказчика по умолчанию (пользователь мог сохранить свой — правила, которые должны действовать всегда, добавляй кодом в `composeStorySystem`, а не сюда) |
 
 ### Ход
@@ -45,6 +54,7 @@
 - **Закреплённое игроком не меняется**: `block.locked` (целиком), `block.descLocked` (только описание/имя, значение меняется), `npc.locked[]` по полям, `character.locked` (`appearance`, `social`), `scene.locked`, `event.locked`.
 - **НПС не удаляются учётчиком — только в архив** (`archived`), при архивации убираются из `scene.present`. При переименовании прежнее имя сохраняется в `npc.aliases`.
 - **Нечёткие совпадения — только однозначные**: если кандидатов несколько, ничего не делать и вернуть список похожих.
+- Сохранения пишутся атомарно (временный файл + переименование); повреждённый файл не затирается молча, а копируется в `*.broken-<время>`.
 - Фронтенд: после любого действия — единый `applyState`/`applyTurnResult`, без частичных обновлений ленты; не рисовать кнопки последней реплики, пока `sending`.
 - Стиль UI: тёмный «чернила + латунь» (`--ink`, `--brass`, Cormorant Garamond для заголовков/имён, Spectral для текста, JetBrains Mono для мелких меток). Цветом выделять смысл (отношение НПС), а не раскрашивать поля.
 - Картинки: Pony SDXL, по умолчанию аниме-пресет; в негативах обязательно `child, teen, young, loli, shota`, в тегах внешности — явный взрослый возраст.
