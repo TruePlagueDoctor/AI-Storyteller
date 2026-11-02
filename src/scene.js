@@ -15,7 +15,8 @@ export function normalizeScene(raw) {
   s.note = String(s.note || '');
   s.present = Array.isArray(s.present) ? s.present.map((x) => String(x).trim()).filter(Boolean) : [];
   s.day = Math.max(1, Number(s.day) || 1);
-  s.minute = Math.min(1439, Math.max(0, Number(s.minute) || 0));
+  const minute = Number(s.minute);
+  s.minute = Number.isFinite(minute) ? Math.min(1439, Math.max(0, Math.round(minute))) : 9 * 60;
   s.locked = Array.isArray(s.locked) ? s.locked : [];
   return s;
 }
@@ -52,7 +53,7 @@ export function advanceClock(scene, minutes) {
 export function parseTimeHint(text) {
   const t = String(text || '').toLowerCase();
   const hm = t.match(/(\d{1,2})[:.](\d{2})/);
-  if (hm) return { minute: Math.min(1439, Number(hm[1]) * 60 + Number(hm[2])) };
+  if (hm) return { minute: Math.min(1439, Number(hm[1]) * 60 + Number(hm[2])), exact: true };
   const parts = [[/глубок.*ноч|за полночь/, 2 * 60], [/ранн.*утр|рассвет/, 6 * 60], [/утр/, 9 * 60], [/полдень|полден/, 12 * 60],
     [/день|днём|днем/, 14 * 60], [/вечер|закат|сумерк/, 19 * 60], [/ноч/, 23 * 60]];
   for (const [re, min] of parts) if (re.test(t)) return { minute: min };

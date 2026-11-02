@@ -4,17 +4,15 @@
 import { emptyScene, normalizeScene } from './scene.js';
 import { normalizeEvents, EVENT_TYPES } from './chronicle.js';
 import { DEFAULT_IMAGE_SETTINGS } from './images.js';
-import { readFile, writeFile, mkdir, unlink, rm, readdir, cp } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, unlink, rm, readdir, cp, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { DATA_DIR } from './paths.js';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_SYSTEM_PROMPT } from './prompt.js';
 import { DEFAULT_TRAITS } from './traits.js';
 import { DEFAULT_SEEDS, normalizeSeeds } from './seeds.js';
 import { normalizeStatusCatalog } from './statuses.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__dirname, '..', 'data');
 const SAVE_PATH = join(DATA_DIR, 'save.json');          // старый формат, для миграции
 const SLOTS_DIR = join(DATA_DIR, 'slots');
 const GLOBAL_PATH = join(DATA_DIR, 'settings.json');    // общие настройки: модель, промт рассказчика
@@ -223,13 +221,27 @@ export function oocWrap(text) {
     'Не считай это репликой или поступком персонажа.';
 }
 
+// Нет файла — fallback. Файл есть, но битый — тоже fallback, но громко: иначе
+// партия молча загрузилась бы пустой и следующее сохранение затёрло бы её.
 async function readJson(path, fallback) {
-  try { return JSON.parse(await readFile(path, 'utf8')); } catch { return fallback; }
+  let text;
+  try { text = await readFile(path, 'utf8'); } catch { return fallback; }
+  try { return JSON.parse(text); } catch (e) {
+    const bad = `${path}.broken-${Date.now()}`;
+    try { await writeFile(bad, text, 'utf8'); } catch { /* не вышло — хотя бы предупредим */ }
+    console.warn(`[сохранение] Файл ${path} повреждён (${e.message}). Копия: ${bad}`);
+    return fallback;
+  }
 }
 
+// Запись через временный файл и переименование: сбой посреди записи
+// (выключили компьютер, кончилось место) не оставит полузаписанную партию.
+let tmpSeq = 0;
 async function writeJson(path, data) {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(data, null, 2), 'utf8');
+  const tmp = `${path}.${process.pid}.${++tmpSeq}.tmp`;
+  await writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
+  await rename(tmp, path);
 }
 
 function pickGlobals(src) {
@@ -578,6 +590,10 @@ export function getState() {
 // ---- Управление героями ----
 export async function addCharacter({ name, persona } = {}) {
   const c = newCharacter((name || 'Новый герой').trim(), (persona || '').trim());
+  // Новый герой сразу становится активным — прежний запоминает, где остался,
+  // иначе после переключения обратно он оказался бы там, где ходил новый.
+  const prev = state.characters.find((x) => x.id === state.activeCharacterId);
+  if (prev && state.scene) prev.scene = deepCopy(state.scene);
   state.characters.push(c);
   state.activeCharacterId = c.id;
   await saveState();

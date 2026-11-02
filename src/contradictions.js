@@ -1,3 +1,5 @@
+import { VITAL_STAT } from './dice.js';
+
 // Сверка текста рассказчика с состоянием, которым владеет код.
 // Ловим только надёжные, однозначные расхождения — ложная тревога хуже пропуска.
 
@@ -49,9 +51,8 @@ export function findContradictions(state, narration) {
   if (active) {
     // Только показатели тела и духа: шкала вроде «Репутация 0/100» или
     // счётчик прогресса — не рана, бодрости не противоречит.
-    const VITAL = /(здоров|жизн|\bhp\b|рассуд|психик|вынослив|бодр|энерг|стамин|силы\b|сила\b)/i;
     const vital = (active.blocks || []).find(
-      (b) => b.type === 'stat' && b.max != null && VITAL.test(b.name || '') && Number(b.value) / b.max <= 0.15 && Number(b.value) >= 0
+      (b) => b.type === 'stat' && b.max != null && VITAL_STAT.test(b.name || '') && Number(b.value) / b.max <= 0.15 && Number(b.value) >= 0
     );
     if (vital && /(бодр|полон сил|свеж|без труда|легко вскак|как ни в чём)/i.test(text)) {
       issues.push({

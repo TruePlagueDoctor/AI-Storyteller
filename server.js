@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
@@ -15,22 +14,26 @@ import {
   listSlots, createSlot, switchSlot, renameSlot, deleteSlot, duplicateSlot,
   addLoreEntry, updateLoreEntry, deleteLoreEntry, addNpc, updateNpcManual, setNpcAvatar, updateTraitPool, mergeDefaultTraits, updateSeedPool, updateStatusCatalog, upsertThread, deleteThread,
 } from './src/state.js';
-import { runTurn, planSummary, computeSummary, applySummary, composeStorySystem, portraitTags, syncNarration, resyncNarration, afterSync, replayRequest, sceneTags, fillField } from './src/openrouter.js';
+import { runTurn, afterSync } from './src/turn.js';
+import { planSummary, computeSummary, applySummary } from './src/summary.js';
+import { composeStorySystem } from './src/narrator.js';
+import { syncNarration, resyncNarration } from './src/sync.js';
+import { replayRequest } from './src/llm.js';
+import { portraitTags, sceneTags } from './src/art.js';
+import { fillField } from './src/fill.js';
 import { listRequests, getRequest, clearRequests, diagCounts } from './src/diag.js';
 import { txt2img, pingSd } from './src/images.js';
 import { advanceStatuses } from './src/statuses.js';
+import { PUBLIC_DIR, AVATAR_DIR, SCENE_DIR } from './src/paths.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const AVATAR_DIR = join(__dirname, 'data', 'avatars');
-const SCENE_DIR = join(__dirname, 'data', 'scenes');  // иллюстрации сцен
 
 app.use(express.json({ limit: '6mb' }));
 // Статику не кэшируем: иначе браузер показывает старый app.js после обновления
 // и кажется, что правки не приехали.
-app.use(express.static(join(__dirname, 'public'), {
+app.use(express.static(PUBLIC_DIR, {
   etag: true,
   lastModified: true,
   setHeaders: (res, path) => {
@@ -634,7 +637,7 @@ app.post('/api/resync', async (req, res) => {
     restorePreSync();
     const model = String(req.body?.model || '').trim();
     const sync = await resyncNarration({ state, apiKey: apiKey(), narration: last.text, model });
-    const issues = afterSync(state, last.text, last.rolls || []);
+    const { issues } = afterSync(state, last.text, last.rolls || []);
     // Прежний учёт оставляем рядом — для сравнения моделей.
     if (last.sync) last.syncHistory = [...(last.syncHistory || []), last.sync].slice(-4);
     last.sync = sync;

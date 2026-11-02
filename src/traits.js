@@ -3,8 +3,10 @@
 //
 // effect: { skill: 'убеждение', mod: -2 } — модификатор к броску, когда герой
 // пытается воздействовать на этого персонажа соответствующим образом.
-// Ключ skill сопоставляется по вхождению, поэтому «убеждение» поймает и
-// «Убеждение», и «убеждение стражника».
+// Ключ skill сопоставляется по смыслу (skills.js): «убеждение» поймает и
+// «Убеждение», и «Убедить стражника», «запугивание» — «Угрозы».
+
+import { skillMatches } from './skills.js';
 
 export const TRAIT_CATEGORIES = [
   { id: 'temper', label: 'Нрав' },
@@ -83,13 +85,12 @@ export function findTrait(pool, label) {
 
 // Суммарный модификатор к проверке против конкретного персонажа.
 export function traitModifier(pool, traitLabels, skill) {
-  const s = String(skill || '').toLowerCase();
   let mod = 0;
   const reasons = [];
   for (const label of traitLabels || []) {
     const t = findTrait(pool, label);
     if (!t || !t.effect || !t.effect.skill) continue;
-    if (!s.includes(String(t.effect.skill).toLowerCase())) continue;
+    if (!skillMatches(t.effect.skill, skill)) continue;
     mod += Number(t.effect.mod) || 0;
     reasons.push(`${t.label}: ${t.effect.note || (t.effect.mod > 0 ? 'проще' : 'труднее')}`);
   }

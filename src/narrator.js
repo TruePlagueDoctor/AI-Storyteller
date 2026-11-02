@@ -1,0 +1,552 @@
+// Шаг рассказа: системный промт рассказчика (мир, сцена, герои, НПС, хроника,
+// лорбук) и сам запрос — с броском кубика, если он включён.
+
+import { ROLL_TOOL, toolsFor, executeTool, resolveCharacterFor } from './tools.js';
+import { rollCheck, describeRoll } from './dice.js';
+import { traitModifier } from './traits.js';
+import { statusRollMod, describeStatus } from './statuses.js';
+import { recordRoll } from './progress.js';
+import { sceneBlock } from './scene.js';
+import { chronicleBlock } from './chronicle.js';
+import { callOpenRouter, stripToolMarkup, applyLeakedCalls } from './llm.js';
+import { journalEntry } from './journal.js';
+
+const MAX_TOOL_ROUNDS = 6;
+
+const DIFFICULTY_DIRECTIVES = {
+  story:
+    'Уровень сложности: МЯГКИЙ. Мир склонен давать герою шанс. NPC чаще идут навстречу, ' +
+    'смертельные исходы почти исключены, последствия ошибок щадящие. Делай упор на историю, а не на выживание.',
+  normal:
+    'Уровень сложности: ОБЫЧНЫЙ. Соблюдай баланс: последствия реальны, но не жестоки. ' +
+    'Успех и неудача зависят от разумности действий героя. NPC доверяют и симпатизируют не всем и не сразу.',
+  hard:
+    'Уровень сложности: СУРОВЫЙ. Следуй правилам:\n' +
+    '1. Мир не подыгрывает герою; удобных совпадений в его пользу не бывает.\n' +
+    '2. NPC действуют по своим интересам — могут отказать, солгать, сопротивляться, напасть. Любят и доверяют не сразу.\n' +
+    '3. Отношение NPC берётся из вымысла, а не из вежливости: враждебные встречают героя враждебно, доверие зарабатывается делами.\n' +
+    '4. Неудачи, опасность и ощутимые потери — обычное дело, когда логичны. Не смягчай последствия искусственно.',
+  brutal:
+    'Уровень сложности: БЕСПОЩАДНЫЙ. Действуй по этим правилам жёстко и без исключений:\n' +
+    '1. Мир не заботится о герое и не подыгрывает ему: никаких удачных совпадений в его пользу, никаких спасений в последний миг, никакого «сюжетного иммунитета».\n' +
+    '2. Последствия реальны и остаются. Рискованные и необдуманные действия часто проваливаются; провал ведёт к ранениям, потере снаряжения, срыву целей, иногда к гибели героя.\n' +
+    '3. NPC преследуют свои цели и не обязаны любить, жалеть или щадить героя; помогают только когда им это выгодно.\n' +
+    '4. Отношение NPC определяется вымыслом, а не вежливостью. Незнакомец по умолчанию безразличен или насторожен. У кого есть причина враждовать (обиженный, соперник, стражник, пойманный на месте) — встречает героя ОТКРЫТО ВРАЖДЕБНО и остаётся таким, пока события не заставят измениться. Доверие зарабатывается медленно, за несколько поступков, а не с первого слова.\n' +
+    '5. Не смягчай сцену, чтобы защитить героя. Опасность, боль и отказ — норма, а не редкость.',
+};
+
+// Короткое напоминание в конце хода для суровых режимов (рычаг рекентности).
+const DIFFICULTY_REMINDER = {
+  hard: '[Напоминание: суровый режим. Мир не подыгрывает; NPC своекорыстны; последствия реальны и остаются.]',
+  brutal:
+    '[Напоминание: БЕСПОЩАДНЫЙ режим. NPC не обязаны любить или щадить героя; у кого есть причина — враждебен ' +
+    'с самого начала. Провал, боль и потери допустимы. Не спасай героя удобными совпадениями.]',
+};
+
+// Кто это — коротко, для однострочной записи отсутствующего НПС: первая фраза
+// описания, не длиннее ~80 знаков, по границе слова. Иначе рассказчик помнит
+// только имя и не знает, что «Эдмунд» — брат-близнец героини.
+export function whoShort(n, limit = 80) {
+  const d = String(n.description || '').replace(/\s+/g, ' ').trim();
+  if (!d) return '';
+  let first = d.split(/(?<=[.!?…])\s/)[0].replace(/[.!?…]+$/, '');
+  if (first.length > limit) first = first.slice(0, limit).replace(/[\s,;:—-]+\S*$/, '') + '…';
+  return first;
+}
+
+// ---- Лорбук ----
+// Записи подставляются в контекст только когда их ключи упомянуты в недавних
+// ходах — так мир не занимает контекст целиком.
+const SCAN_DEPTH = 6;        // сколько последних сообщений сканируем
+const MAX_ACTIVE_LORE = 8;   // предохранитель от разрастания
+
+// Сопоставление с учётом русской морфологии: для длинных ключей ищем слово,
+// начинающееся с основы (чтобы «маяк» ловил «маяка», «маяком»);
+// фразы — по точному вхождению; короткие ключи — отдельным словом с возможным
+// падежным окончанием: «кот» ловит «кота», но не «котёл».
+const SHORT_ENDING = '(?:ь|й|а|у|е|ом|ем|ой|ою|ы|и|ю|я|ям|ам|ях|ах|ов|ев|ей)?';
+export function keyMatches(key, haystack) {
+  const k = String(key).toLowerCase().trim();
+  if (!k) return false;
+  if (k.includes(' ')) return haystack.includes(k);
+  const short = k.length < 4;
+  // «эль» → «эл» + окончание: «эля», «элем».
+  const stem = short ? k.replace(/[ьй]$/, '') : k.length > 5 ? k.slice(0, Math.max(4, k.length - 2)) : k;
+  const esc = stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  try {
+    const tail = short ? `${SHORT_ENDING}(?![\\p{L}])` : '\\p{L}*';
+    return new RegExp(`(^|[^\\p{L}])${esc}${tail}`, 'u').test(haystack);
+  } catch {
+    return haystack.includes(k);
+  }
+}
+
+export function activeLoreEntries(state, extraText = '') {
+  const book = Array.isArray(state.lorebook) ? state.lorebook.filter((e) => e.enabled !== false) : [];
+  if (!book.length) return [];
+
+  const recent = (state.messages || [])
+    .slice(-SCAN_DEPTH)
+    .filter((m) => typeof m.content === 'string' && (m.role === 'user' || m.role === 'assistant'))
+    .map((m) => m.content)
+    .join('\n');
+  const haystack = (recent + '\n' + extraText).toLowerCase();
+
+  // Записи «всегда в контексте» не расходуют лимит — иначе девятая молча выпадала.
+  const always = book.filter((e) => e.always);
+  const matched = [];
+  for (const e of book) {
+    if (e.always) continue;
+    if (e.keys.some((k) => keyMatches(k, haystack))) matched.push(e);
+  }
+  return [...always, ...matched.slice(0, MAX_ACTIVE_LORE)];
+}
+
+function loreBlock(state, extraText) {
+  const entries = activeLoreEntries(state, extraText);
+  if (!entries.length) return '';
+  return '=== СВЕДЕНИЯ О МИРЕ ===\n' +
+    entries.map((e) => `• ${e.title}\n  ${e.content.trim()}`).join('\n\n');
+}
+
+const NARRATION_DIRECTIVES = {
+  third:
+    'ЛИЦО ПОВЕСТВОВАНИЯ: третье. Описывай героя со стороны, по имени и в третьем лице («Кейн шагнул к двери»). ' +
+    'Не обращайся к игроку напрямую.',
+  second_ty:
+    'ЛИЦО ПОВЕСТВОВАНИЯ: второе, на «ты». Обращайся к активному герою напрямую и неформально ' +
+    '(«ты шагаешь к двери», «холод обжигает тебе руки»).',
+  second_vy:
+    'ЛИЦО ПОВЕСТВОВАНИЯ: второе, на «вы». Обращайся к активному герою напрямую и уважительно ' +
+    '(«вы шагаете к двери», «холод обжигает вам руки»). Держи это обращение последовательно во всём тексте.',
+};
+
+// Снимок для повествования: "Здоровье 55/100; Отравлен; Факел".
+function sheetSnapshot(character, catalog) {
+  if (!character.blocks.length) return 'лист пуст';
+  return character.blocks
+    .map((b) => {
+      if (b.type === 'status') return describeStatus(catalog || [], b);
+      if (b.type === 'stat' && b.max != null) return `${b.name} ${b.value ?? '?'}/${b.max}`;
+      if (b.value) return `${b.name} — ${b.value}`;
+      return b.name;
+    })
+    .join('; ');
+}
+
+function threadsBlock(state) {
+  const open = (state.threads || []).filter((t) => t.status === 'open');
+  if (!open.length) return '';
+  let s = '=== ОТКРЫТЫЕ НИТИ ===\n';
+  s += 'Это то, что тянется через историю. Не давай нитям провисать: время от времени подбрасывай зацепку, ' +
+    'напоминание или осложнение по одной из них. Не решай их за игрока.\n';
+  s += open.map((t) => {
+    let line = `• ${t.title}`;
+    if (t.progress) line += ` — ${t.progress}`;
+    if (t.notes) line += `\n  Известно: ${t.notes}`;
+    return line;
+  }).join('\n');
+  return s;
+}
+
+function heroesBlock(state) {
+  const active = state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0];
+  // В контекст идёт только тот, кем играют, и спутники, отмеченные как
+  // присутствующие. Остальные заведены «про запас» и в истории их нет.
+  const inScene = state.characters.filter((c) => c.present !== false || c.id === active?.id);
+  const companions = inScene.filter((c) => c.id !== active?.id);
+
+  let s = '=== ГЕРОЙ ===\n';
+  s += `Игрок управляет героем: ${active ? active.name : '—'}.`;
+  if (companions.length) {
+    s += ` Рядом с ним: ${companions.map((c) => c.name).join(', ')}.`;
+  } else {
+    s += ' Он один — других играбельных героев в истории сейчас нет, не упоминай их.';
+  }
+  for (const c of inScene) {
+    s += `\n\n• ${c.name}${active && c.id === active.id ? ' (активный)' : ''}`;
+    if (c.persona && c.persona.trim()) s += `\n  ${c.persona.trim()}`;
+    const card = [];
+    if (c.race && c.race.trim()) card.push(`раса: ${c.race.trim()}`);
+    if (c.social && c.social.trim()) card.push(`положение: ${c.social.trim()}`);
+    if (card.length) s += `\n  ${card.join('; ')}`;
+    if (c.appearance && c.appearance.trim()) s += `\n  Внешность: ${c.appearance.trim()}`;
+    s += `\n  Лист: ${sheetSnapshot(c, state.statusCatalog)}`;
+  }
+  if (inScene.some((c) => (c.blocks || []).some((b) => b.type === 'ability'))) {
+    s += '\n\nУМЕНИЯ — НЕ ТОЛЬКО БОНУС К БРОСКУ. Это ещё и то, что герой замечает, понимает и умеет без проверки: ' +
+      'медик по ране поймёт, чем и когда её нанесли; взломщик с одного взгляда оценит замок; фехтовальщик узнает школу противника. ' +
+      'Давай такие сведения и возможности сам, когда умение уместно. Без подходящего умения — только то, что видно любому, ' +
+      'а сложное действие требует проверки. Уровень умения задаёт глубину: новичок — общее, мастер — тонкости.';
+  }
+  if (heroMultiplayer(state)) {
+    const others = state.characters.filter((c) => c.id !== active?.id);
+    s += '\n\nНЕСКОЛЬКО ГЕРОЕВ. Игрок ведёт историю то за одного героя, то за другого. В истории каждый ход помечен: [Ход за героя …], ' +
+      'а чужие эпизоды — [Эпизод героя …]. «Ты» в каждом фрагменте — тот герой, за которого был ход.\n' +
+      `Сейчас «ты» — ${active ? active.name : 'активный герой'}. Не переноси на него то, что случилось с другими: раны, предметы, ` +
+      'знакомства, обещания, увиденное и услышанное. Он знает о чужих эпизодах, только если был рядом или ему рассказали в сцене. ' +
+      'НПС из чужого эпизода не знают его, если не встречали. Свой ответ пометкой не начинай.';
+    const where = others.filter((c) => c.scene && c.scene.location).map((c) => `${c.name} — последний раз: ${c.scene.location}`);
+    if (where.length) s += '\n' + where.join('; ') + '.';
+  }
+  return s;
+}
+
+function npcBlock(state) {
+  const npcs = (state.npcs || []).filter((n) => !n.archived);
+  if (!npcs.length) return '';
+
+  // Полная карточка — только тем, кто в недавних ходах; остальным одна строка.
+  // Иначе с богатыми карточками контекст пухнет на каждом персонаже.
+  const recent = (state.messages || []).slice(-6)
+    .filter((m) => typeof m.content === 'string')
+    .map((m) => m.content.toLowerCase()).join('\n');
+  const present = (state.scene && state.scene.present || []).map((x) => x.toLowerCase());
+  const inScene = (n) => {
+    const first = n.name.toLowerCase().split(/\s+/)[0];
+    if (n.bound) return true; // спутник, голос в голове — всегда с героем
+    if (npcs.length <= 5) return true;
+    // Сцена ведётся — список «рядом» и есть ответ, кто в сцене.
+    if (present.length) return present.some((p) => p.includes(first) || n.name.toLowerCase().includes(p));
+    // Сцены ещё нет — запасной способ: упоминался в недавних ходах.
+    return first.length >= 3 && recent.includes(first);
+  };
+
+  let s = '=== ВСТРЕЧЕННЫЕ ПЕРСОНАЖИ (НПС) ===\n';
+  s += 'Держи их характеры, знания и отношение к игроку консистентными. ' +
+    'Говори за каждого его собственным голосом: следуй записанному характеру и манере речи, ' +
+    'персонажи не должны звучать одинаково.\n' +
+    'КАК ИГРАТЬ ПЕРСОНАЖА: у него есть своё желание — он двигает его в каждой сцене, ' +
+    'герой для него помеха или средство, а не центр мира. Если есть тайна — НЕ раскрывай её, ' +
+    'играй через оговорки, странные реакции, недомолвки; герой может заметить неладное, ' +
+    'если присмотрится (это повод для проверки «Проницательность»). Изюминка — не упоминай, а показывай. ' +
+    'Тайна — это то, что персонаж прячет ради СЕБЯ; она не повод утаивать имена, адреса и сведения, ' +
+    'которые герою нужны для дела и которые персонаж сам заинтересован сообщить.\n';
+
+  s += npcs.map((n) => {
+    let line = `• ${n.name}`;
+    const meta = [];
+    if (n.bound) meta.push('ВСЕГДА С ГЕРОЕМ — не в списке присутствующих, но в каждой сцене: слышит, видит, вставляет реплики');
+    if (n.attitude) meta.push(`отношение: ${n.attitude}`);
+    if (n.status) meta.push(`статус: ${n.status}`);
+    if (meta.length) line += ` — ${meta.join('; ')}`;
+    if (!inScene(n)) {
+      const who = whoShort(n);
+      return line + (who ? ` · ${who}` : '') + (n.quirk ? ` (${n.quirk})` : '');
+    }
+
+    if (n.description) line += `\n  ${n.description}`;
+    if (n.appearance) line += `\n  Внешность: ${n.appearance}`;
+    if (n.traits && n.traits.length) line += `\n  Черты: ${n.traits.join(', ')}`;
+    if (n.personality) line += `\n  Характер и речь: ${n.personality}`;
+    if (n.quirk) line += `\n  Изюминка: ${n.quirk}`;
+    if (n.wants) line += `\n  ХОЧЕТ: ${n.wants}`;
+    if (n.secret) line += `\n  СКРЫВАЕТ (герой не знает): ${n.secret}`;
+    if (n.links) line += `\n  Связи: ${n.links}`;
+    if (n.history) line += `\n  Было с героем: ${n.history}`;
+    const voice = [n.voiceStyle ? `манера: ${n.voiceStyle}` : '', n.voiceHumor ? `юмор: ${n.voiceHumor}` : '', n.voiceHabits ? `привычки: ${n.voiceHabits}` : ''].filter(Boolean);
+    if (voice.length) line += `\n  ГОЛОС — ${voice.join('; ')}`;
+    if (n.voiceMasks) line += `\n  Как прячет чувства: ${n.voiceMasks}`;
+    if (n.voiceTaboos) line += `\n  В речи никогда: ${n.voiceTaboos}`;
+    if (Array.isArray(n.voiceSamples) && n.voiceSamples.length) {
+      line += `\n  Как звучит (образцы интонации, НЕ повторяй дословно): ` + n.voiceSamples.slice(-5).map((s) => `«${s}»`).join(' ');
+    }
+    if (n.mood) line += `\n  НАСТРОЕНИЕ СЕЙЧАС: ${n.mood}${n.moodReason ? ` — потому что ${n.moodReason}` : ''}. Оно держится, пока нет причины измениться; характер при этом не исчезает.`;
+    return line;
+  }).join('\n');
+  return s;
+}
+
+
+// Системный контекст для ШАГА РАССКАЗА.
+// В двухпроходном режиме рассказчику инструменты недоступны — раздел базового
+// промта про управление листами тогда только противоречит хвосту. Убираем его.
+function narratorPrompt(state, withTools) {
+  const p = String(state.systemPrompt || '').trim();
+  if (withTools) return p;
+  const i = p.search(/^Управление листами героев:/m);
+  return i === -1 ? p : p.slice(0, i).trim();
+}
+
+export function composeStorySystem(state, { withTools = false } = {}) {
+  const parts = [narratorPrompt(state, withTools)];
+  if (state.worldPrompt && state.worldPrompt.trim()) parts.push('=== МИР ===\n' + state.worldPrompt.trim());
+  if (state.scenarioPrompt && state.scenarioPrompt.trim()) parts.push('=== СЦЕНАРИЙ ===\n' + state.scenarioPrompt.trim());
+  if (state.summary && state.summary.trim()) {
+    parts.push('=== ПРЕДЫСТОРИЯ (что уже произошло) ===\n' + state.summary.trim());
+  }
+  const lore = loreBlock(state);
+  if (lore) parts.push(lore);
+  const threads = threadsBlock(state);
+  if (threads) parts.push(threads);
+  const chron = chronicleBlock(state.events || [], {
+    sceneNames: [
+      ...state.characters.filter((c) => c.present !== false || c.id === state.activeCharacterId).map((c) => c.name),
+      ...((state.scene && state.scene.present) || []),
+      ...(state.npcs || []).filter((n) => n.bound && !n.archived).map((n) => n.name),
+    ],
+    recentText: (state.messages || []).slice(-4).map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n'),
+    scene: state.scene,
+  });
+  if (chron) parts.push(chron);
+  const sceneText = sceneBlock(state.scene, state);
+  if (sceneText) parts.push(sceneText);
+  parts.push(heroesBlock(state));
+  const npcs = npcBlock(state);
+  if (npcs) parts.push(npcs);
+
+  // Финальный блок — самый весомый: он ближе всего к генерации.
+  const directive = DIFFICULTY_DIRECTIVES[state.difficulty] || DIFFICULTY_DIRECTIVES.normal;
+  let tail = '=== КАК ВЕСТИ ЭТОТ ХОД ===\n' + directive + '\n\n';
+  if (withTools) {
+    tail +=
+      'Строго веди учёт состояния: любое ранение, получение или трата предмета, изменение показателя или ' +
+      'отношений сразу отражай вызовом инструмента над листом нужного героя (указывай character — имя героя). ' +
+      'Лучше вызвать инструмент лишний раз, чем оставить лист неактуальным.';
+  } else {
+    tail +=
+      'Веди только повествование. Опирайся на состояние выше, но не описывай игровую механику ' +
+      'и не пиши служебных пометок — учёт инвентаря, статусов и характеристик ведёт отдельная система. ' +
+      'На этом шаге инструменты недоступны: НЕ выводи никаких вызовов инструментов, тегов invoke/function/tool_call ' +
+      'и любой служебной разметки — только художественный текст истории.';
+  }
+  tail += '\n\n' + (NARRATION_DIRECTIVES[state.narration] || NARRATION_DIRECTIVES.second_ty) +
+    ' Это указание имеет приоритет: если выше в промте рассказчика сказано иначе, следуй именно этому.';
+  tail += ' Пиши только на русском языке, живым и естественным слогом, без иностранных слов и без дословных повторов. ' +
+    '\n\nЖИВАЯ РЕЧЬ И ХАРАКТЕР:\n' +
+    '• Диалог — устная речь, а не литература: допустимы недосказанность, перебивания, оговорки, смена темы, насмешка, ответ не на тот вопрос. ' +
+    'Запрещены: искусственно драматичные рубленые фразы («Нет. Не выход. Ловушка.»), повторяющиеся риторические конструкции, напыщенность, афоризмы, ' +
+    'и одинаково правильная, вежливая, эмоционально зрелая речь у всех. Персонаж может быть груб, глуп, легкомыслен, вульгарен, непоследователен — если он такой.\n' +
+    '• Не каждая реплика обязана двигать сюжет или нести информацию. Персонаж вправе заговорить первым, пошутить, пожаловаться, заметить нелепость, ' +
+    'отвлечься на хорошенькую трактирщицу, рассказать историю — когда ситуация к этому располагает. Болтовня, флирт, ссора, неловкость — полноценные сцены.\n' +
+    '• Характер НПС не выцветает с ходами. Серьёзные события меняют настроение, но не стирают юмор, манеру и словечки. ' +
+    'Одно и то же чувство каждый выражает по-своему: один прячет страх за сарказмом, другой начинает командовать, третий замолкает — смотри «как прячет чувства» в карточке.\n' +
+    '• Настроение имеет причину и инерцию: обиду не забывают через две реплики, но и игривость не исчезает оттого, что десять ходов были серьёзными.\n' +
+    '• Образцы реплик в карточке — камертон, не цитатник: держи интонацию, придумывай новое. Не повторяй шутки и обороты; не делай каждую реплику остроумной — ' +
+    'меткая шутка на фоне обычного разговора бьёт сильнее, чем фейерверк.\n\n' +
+    'НЕПРОТИВОРЕЧИВОСТЬ (обязательно): прежде чем назвать любой конкретный факт — возраст, срок, число, ' +
+    'родство, расстояние, время — сверься с карточками персонажей, сведениями о мире, предысторией, ' +
+    'описаниями персонажей и недавними ходами. Если факт уже прозвучал, повтори его ТОЧНО так же. ' +
+    'Не придумывай новых чисел и сроков там, где они уже названы, и следи, чтобы они не противоречили друг другу ' +
+    '(например, кто здесь дольше, кто старше, сколько времени прошло). ' +
+    'Если точное ЧИСЛО или СРОК неизвестны — лучше выразиться неопределённо («давно», «несколько лет»), чем назвать новое число.\n\n' +
+    'ПОСЛЕДСТВИЯ ДЛЯ ЛИСТА (обязательно): когда с героем что-то происходит телесно или в кармане — называй это так, чтобы было что записать. ' +
+    'Рана — какая и насколько серьёзна; трата — сколько заплачено; предмет — израсходован, сломан, отдан или подобран; ' +
+    'отдых и лечение — что именно восстановило силы. Не цифрами из листа, а ясными словами в тексте сцены.\n\n' +
+    'ЖИВАЯ СЦЕНА (обязательно):\n' +
+    '• Игрок заявляет НАМЕРЕНИЕ, исход решаешь ты. Если игрок пишет «это было несложно», «мне поверили», «провёл вечер как положено» — ' +
+    'это заявка, а не факт: разыграй её, а где исход не предрешён — запроси проверку. Перевоплощение, обман, убеждение среди ' +
+    'внимательных людей — всегда проверка.\n' +
+    '• Где есть люди — есть речь. В каждой сцене с персонажами хотя бы один живой обмен репликами прямой речью, с именами говорящих. ' +
+    'Пересказ «он представился, они поговорили» вместо реплик — запрещён.\n' +
+    '• «Провожу два часа», «осматриваюсь», «жду» — не повод для одной атмосферы: в таком отрезке что-то происходит — ' +
+    'вопрос, чей-то интерес, осложнение, находка. Но событие — не обязательно опасность: спокойный разговор у костра, ' +
+    'в котором спутник сказал то, чего раньше не говорил, — тоже событие. Не гони сюжет ради темпа; два тихих хода подряд допустимы, три — нет.\n' +
+    '• Заканчивай ход не настроением, а точкой, где игроку есть что решить или на что ответить.\n' +
+    '• В реплике через тире называй говорящего авторской ремаркой в той же строке («— …, — сказала Рита») — ' +
+    'при первой реплике и при каждой смене говорящего. Безымянные «— сказал он» на три абзаца запрещены.\n' +
+    '• Исключение — тишина по делу: слежка, скрытность, одиночество, подготовка. Там речь не нужна, но событие или наблюдение, ' +
+    'меняющее положение героя, — всё равно нужно.\n\n' +
+    'ИМЕНА: это правило НЕ касается имён. Имена придумывай смело и сразу. Каждый новый персонаж, место, ' +
+    'заведение или цель задания получают конкретное имя в тот момент, когда по сюжету оно должно быть известно: ' +
+    'заказчик называет цель по имени, вывеска читается, стражник представляется, в письме стоит подпись. ' +
+    'Не прячься за «тот человек», «некто», «цель» и не заставляй героя выпрашивать имя, если у говорящего нет ' +
+    'причины его скрывать. Раз придумав имя — держись его. Скрывать имя можно только когда это сознательный ход ' +
+    'персонажа или условие сюжета, и тогда покажи, что он скрывает его нарочно.';
+  if (state.directorNote && state.directorNote.trim()) {
+    tail += '\n\nНАПРАВЛЕНИЕ ОТ ИГРОКА (приоритет выше сценария — это то, куда он хочет вести историю; ' +
+      'веди к этому через события и персонажей, не объявляя вслух): ' + state.directorNote.trim();
+  }
+  const tone = toneReminder(state);
+  if (tone) {
+    tail += '\n\nЖАНР И ТЕМЫ ЭТОЙ ИСТОРИИ (держи в каждом ходу, это не фон, а то, о чём история): ' + tone +
+      ' Хотя бы одна из заявленных тем должна проявляться в каждой сцене — через события, выбор или реплики персонажей, ' +
+      'а не через описания погоды.';
+  }
+  parts.push(tail);
+  return parts.join('\n\n');
+}
+
+// Строки сценария вида «Жанр: …», «Тон: …», «Темы: …» дублируются в самый конец
+// промта: то, что ближе к генерации, модель держит крепче, а сценарий в середине
+// длинного контекста легко «проседает».
+function toneReminder(state) {
+  const lines = String(state.scenarioPrompt || '').split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => /^(жанр|тон|темы|тема|стиль|настроение|атмосфера)\s*:/i.test(l));
+  return lines.length ? lines.join(' ') : '';
+}
+
+export function lastPlayerAction(state) {
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    if (state.messages[i].role === 'user') return state.messages[i].content;
+  }
+  return '';
+}
+
+// Несколько героев: в истории помечаем, за кого был каждый ход. Повествование
+// идёт на «ты», и без пометок модель после переключения считает «ты» из чужих
+// эпизодов новым героем — путает раны, знакомства, обещания и знания.
+export function heroMultiplayer(state) {
+  const ids = new Set((state.messages || []).map((m) => m.hero).filter(Boolean));
+  return state.characters.length > 1 && (ids.size > 1 || [...ids].some((h) => h !== state.activeCharacterId));
+}
+export function labelHeroes(state, msgs) {
+  if (!heroMultiplayer(state)) return msgs.map(({ hero, ...m }) => m);
+  const nameOf = (id) => (state.characters.find((c) => c.id === id) || {}).name;
+  const active = state.activeCharacterId;
+  const activeName = nameOf(active) || 'герой';
+  return msgs.map(({ hero, ...m }) => {
+    if (!hero || m.ooc || typeof m.content !== 'string') return m;
+    const who = nameOf(hero);
+    if (!who) return m;
+    if (m.role === 'user') return { ...m, content: `[Ход за героя ${who}] ${m.content}` };
+    if (m.role === 'assistant' && hero !== active) {
+      return { ...m, content: `[Эпизод героя ${who}: «ты» здесь — ${who}, не ${activeName}]\n${m.content}` };
+    }
+    return m;
+  });
+}
+const stripHeroLabel = (t) => String(t || '').replace(/^\s*\[(?:Эпизод героя|Ход за героя)[^\]]*\]\s*/i, '');
+
+// Описание броска со списком умений героев: модель выбирает из них, а не придумывает
+// формулировку, которая потом не найдётся.
+function rollToolFor(state) {
+  const heroes = state.characters.filter((c) => c.present !== false || c.id === state.activeCharacterId);
+  const lines = heroes.map((c) => {
+    const ab = (c.blocks || []).filter((b) => b.type === 'ability').map((b) => `${b.name}${b.value ? ` (${b.value})` : ''}`);
+    return ab.length ? `${c.name}: ${ab.join(', ')}` : '';
+  }).filter(Boolean);
+  if (!lines.length) return ROLL_TOOL;
+  const f = ROLL_TOOL.function;
+  return { ...ROLL_TOOL, function: { ...f, parameters: { ...f.parameters, properties: { ...f.parameters.properties,
+    skill: { type: 'string', description: 'Что проверяем. Если действие подходит под умение героя — его название ТОЧНО из списка: ' +
+      lines.join('; ') + '. Подходящего нет — навык по смыслу ("Скрытность", "Убеждение"), бросок пойдёт без бонуса.' },
+  } } } };
+}
+
+export async function narrate(state, apiKey, withTools, { allowDice = true, journal = null, timer = null } = {}) {
+  const messages = [{ role: 'system', content: composeStorySystem(state, { withTools }) }, ...labelHeroes(state, state.messages)];
+
+  const notes = [DIFFICULTY_REMINDER[state.difficulty], state.correctionNote, state.tickNote].filter(Boolean);
+  if (notes.length && messages.length) {
+    const last = messages[messages.length - 1];
+    if (last && last.role === 'user') {
+      messages[messages.length - 1] = { ...last, content: `${last.content}\n\n${notes.join('\n')}` };
+    }
+  }
+
+  const dice = allowDice && state.diceEnabled !== false;
+  const narrationParts = [];
+  let finishReason = null;
+  const rolls = [];
+  const rounds = withTools ? MAX_TOOL_ROUNDS : (dice ? 3 : 1);
+
+  for (let round = 0; round < rounds; round++) {
+    let tools;
+    if (withTools) tools = dice ? [...toolsFor(state), rollToolFor(state)] : toolsFor(state);
+    else if (dice) tools = [rollToolFor(state)];
+
+    const data = await callOpenRouter({
+      purpose: withTools ? 'рассказчик (с инструментами)' : 'рассказчик',
+      model: state.model,
+      timer,
+      messages,
+      apiKey,
+      tools,
+      temperature: state.temperature ?? 0.8,
+      presencePenalty: state.repetitionPenalty ?? 0.3,
+      frequencyPenalty: state.frequencyPenalty ?? 0,
+    });
+    const msg = data?.choices?.[0]?.message;
+    if (!msg) throw new Error('Пустой ответ от модели.');
+    finishReason = data?.choices?.[0]?.finish_reason;
+    if (process.env.DEBUG && !withTools) {
+      console.log(`  [рассказ] finish_reason=${finishReason ?? 'нет'} символов=${(msg.content || '').length}`);
+    }
+
+    messages.push(msg);
+    if (withTools) state.messages.push({ ...msg, hero: state.activeCharacterId });
+
+    if (msg.content && msg.content.trim()) {
+      const clean = stripToolMarkup(msg.content);
+      if (clean) narrationParts.push(clean);
+    }
+
+    const calls = msg.tool_calls || [];
+    if (!calls.length) {
+      if (withTools) applyLeakedCalls(msg.content, state);
+      break;
+    }
+
+    for (const call of calls) {
+      let args = {};
+      try { args = JSON.parse(call.function.arguments || '{}'); } catch { args = {}; }
+      let result;
+      if (call.function.name === 'roll_check') {
+        const character = resolveCharacterFor(state, args.character);
+        // Черты цели влияют на исход: труса легче запугать, упрямца труднее убедить.
+        const tgt = String(args.target || '').trim().toLowerCase();
+        const targetNpc = tgt
+          ? (state.npcs || []).find((n) => n.name.toLowerCase() === tgt)
+            || (state.npcs || []).find((n) => !n.archived && n.name.toLowerCase().split(/\s+/)[0].slice(0, 4) === tgt.split(/\s+/)[0].slice(0, 4) && tgt.length >= 3)
+          : null;
+        const tm = targetNpc
+          ? traitModifier(state.traitPool || [], targetNpc.traits || [], args.skill)
+          : { mod: 0, reasons: [] };
+        const sm = statusRollMod(state.statusCatalog || [], character);
+        const r = rollCheck({
+          character, skill: args.skill, difficulty: args.difficulty,
+          traitMod: tm.mod + sm.mod,
+          traitReasons: [...tm.reasons, ...sm.reasons],
+        });
+        r.target_npc = targetNpc ? targetNpc.name : undefined;
+        const grew = recordRoll(character, r);
+        if (grew) { r.growth = grew; (state._growth ||= []).push(grew); }
+        rolls.push(r);
+        result = describeRoll(r);
+      } else {
+        result = executeTool(call.function.name, args, state);
+        if (journal) journal.push(journalEntry(call.function.name, args, result, round + 1));
+      }
+      const toolMsg = { role: 'tool', tool_call_id: call.id, content: result };
+      messages.push(toolMsg);
+      if (withTools) state.messages.push(toolMsg);
+    }
+  }
+
+  // Ответ оборвался на полуслове по лимиту токенов — просим договорить
+  // и подклеиваем продолжение, чтобы игрок не видел обрубок.
+  // Некоторые провайдеры не ставят finish_reason='length'. Считаем обрывом и тот
+  // случай, когда текст кончается без завершающего знака препинания.
+  const looksCut = narrationParts.length
+    && !/[.!?…»"*)\]]\s*$/.test(narrationParts[narrationParts.length - 1].trim());
+  if ((finishReason === 'length' || looksCut) && narrationParts.length) {
+    try {
+      const soFar = narrationParts.join('\n\n');
+      messages.push({ role: 'assistant', content: soFar });
+      messages.push({ role: 'user', content: 'Продолжи ровно с того места, где оборвалось. Не повторяй уже написанное, не начинай заново.' });
+      const cont = await callOpenRouter({
+        purpose: 'рассказчик: продолжение',
+        model: state.model, messages, apiKey, timer,
+        temperature: state.temperature ?? 0.8,
+        presencePenalty: state.repetitionPenalty ?? 0.3,
+        frequencyPenalty: state.frequencyPenalty ?? 0,
+      });
+      const tail = cont?.choices?.[0]?.message?.content;
+      if (tail && tail.trim()) {
+        const clean = stripToolMarkup(tail).trim();
+        // Приклеиваем без разрыва абзаца, если фраза оборвалась на середине.
+        const glue = /[.!?…»"]$/.test(soFar.trim()) ? '\n\n' : ' ';
+        narrationParts[narrationParts.length - 1] = narrationParts[narrationParts.length - 1] + glue + clean;
+        finishReason = cont?.choices?.[0]?.finish_reason;
+      }
+    } catch { /* не вышло — отдаём что есть */ }
+  }
+
+  // В сохранённую историю кладём только чистый текст: служебные вызовы броска
+  // не должны засорять контекст следующих ходов.
+  const narration = stripHeroLabel(narrationParts.join('\n\n')).trim();
+  if (!withTools && narration) state.messages.push({ role: 'assistant', content: narration, hero: state.activeCharacterId });
+  return { narration, rolls, truncated: finishReason === 'length' };
+}

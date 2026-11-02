@@ -2,7 +2,7 @@
 // и их исполнители. Блоки принадлежат конкретному герою.
 
 import { randomUUID } from 'node:crypto';
-import { normalizeScene, advanceClock, parseTimeHint, clockLabel } from './scene.js';
+import { normalizeScene, advanceClock, parseTimeHint, clockLabel, dayPart } from './scene.js';
 import { findSimilar, EVENT_TYPES, OUTCOMES, typeLabel, outcomeLabel } from './chronicle.js';
 
 // Инструмент проверки доступен ТОЛЬКО в проходе рассказа: модель запрашивает
@@ -372,10 +372,13 @@ const HERO_TOOLS = ['update_hero'];
 const SCENE_TOOLS = ['scene'];
 const EVENT_TOOLS = ['event'];
 
+// Номер из хроники («#4», «4», «запись 4») — позиция; иначе настоящий id записи.
 function findEventById(events, id) {
-  const m = String(id || '').match(/\d+/);
-  if (m) return events[Number(m[0]) - 1] || null;
-  return events.find((e) => e.id === id) || null;
+  const raw = String(id || '').trim();
+  const byId = events.find((e) => e.id === raw);
+  if (byId) return byId;
+  const m = raw.match(/^(?:#|№|запись\s*)?\s*(\d+)$/i);
+  return m ? events[Number(m[1]) - 1] || null : null;
 }
 
 function executeEventTool(args, state) {
@@ -432,6 +435,17 @@ function executeEventTool(args, state) {
   return `В хронику #${state.events.length}: [${typeLabel(type)}] ${text}${when ? ` (когда: ${when})` : ''}.`;
 }
 
+// Перевести часы на названное время. Время идёт только вперёд: «утро», сказанное
+// вечером, — это следующее утро. Но «вечер», сказанный вечером, — тот же вечер
+// (часы не трогаем), а явные часы чуть раньше текущих — поправка, не новые сутки.
+function moveClockTo(s, hint) {
+  if (hint.minute >= s.minute) { s.minute = hint.minute; return; }
+  if (!hint.exact && dayPart(hint.minute) === dayPart(s.minute)) return;
+  if (hint.exact && s.minute - hint.minute <= 90) { s.minute = hint.minute; return; }
+  s.day += 1;
+  s.minute = hint.minute;
+}
+
 function executeSceneTool(args, state) {
   const s = state.scene = normalizeScene(state.scene);
   const locked = s.locked || [];
@@ -450,7 +464,7 @@ function executeSceneTool(args, state) {
     if (locked.includes('clock') || locked.includes('time')) skipped.push('время');
     else {
       const hint = parseTimeHint(a.time);
-      if (hint) { if (hint.minute < s.minute) s.day += 1; s.minute = hint.minute; }
+      if (hint) moveClockTo(s, hint);
       s.time = a.time.trim();
       changed.push('время');
     }
@@ -856,4 +870,12 @@ export function executeTool(name, args, state) {
   }
   if (descNote) notes += descNote;
   return `У героя «${char.name}» обновлён блок "${block.name}" (${type})${block.value ? `: ${block.value}` : ''}.${notes}`;
+}
+
+// Набор инструментов для запроса: лишние описания — шум, снижающий точность остальных.
+// Если игрок не разрешил дописывать справочник мира, record_lore не отправляем вовсе.
+export function toolsFor(state) {
+  const drop = new Set();
+  if (state.loreAutoWrite !== true) drop.add('record_lore');
+  return TOOL_DEFINITIONS.filter((t) => !drop.has(t.function.name));
 }

@@ -16,6 +16,10 @@ export const DIFFICULTY_TARGET = {
   'очень сложно': 17,
 };
 
+// Показатели тела и духа: раненый, измотанный, теряющий рассудок герой действует хуже.
+// Граница слова — через (?!\p{L}): обычный \b в JS не видит кириллицу, и «Сила» не находилась.
+export const VITAL_STAT = /(здоров|жизн|(?<![\p{L}])hp(?![\p{L}])|рассуд|психик|вынослив|бодр|энерг|стамин|(?<![\p{L}])сил[аы](?![\p{L}]))/iu;
+
 // Насколько уровень владения влияет на бросок. Умение не найдено — без бонуса.
 // Умение ищется по смыслу (см. skills.js): «Взлом» находит «Взлом замков».
 function bonusFor(character, skillName) {
@@ -30,8 +34,7 @@ function bonusFor(character, skillName) {
 // Штраф за тяжёлое состояние: раненый герой действует хуже.
 function conditionPenalty(character) {
   // Только показатели тела и духа: пустой кошелёк не мешает драться.
-  const BODILY = /(здоров|жизн|\bhp\b|рассуд|психик|вынослив|бодр|энерг|стамин|силы\b|сила\b)/i;
-  const stats = (character.blocks || []).filter((b) => b.type === 'stat' && b.max != null && BODILY.test(b.name || ''));
+  const stats = (character.blocks || []).filter((b) => b.type === 'stat' && b.max != null && VITAL_STAT.test(b.name || ''));
   for (const s of stats) {
     const v = Number(s.value);
     if (Number.isFinite(v) && s.max > 0) {

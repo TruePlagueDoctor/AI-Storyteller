@@ -5,12 +5,10 @@
 // Пишется в фоне: диагностика никогда не должна ронять ход.
 
 import { readFile, writeFile, mkdir, unlink, readdir } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { DIAG_DIR } from './paths.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DIAG_DIR = process.env.DIAG_DIR || join(__dirname, '..', 'data', 'diag');
 const LIST_PATH = join(DIAG_DIR, 'requests.json');
 const FULL_DIR = join(DIAG_DIR, 'full');
 const MAX_RECORDS = 100;

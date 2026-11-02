@@ -25,6 +25,8 @@ export const looksTimed = (e) => e.type === 'plan' || Boolean(e.when) || FUTURE_
 
 const fmtClock = (c) => `день ${c.day}, ${String(Math.floor(c.minute / 60)).padStart(2, '0')}:${String(c.minute % 60).padStart(2, '0')}`;
 
+const WORD_NUM = { один: 1, одну: 1, два: 2, две: 2, пару: 2, три: 3, четыре: 4, пять: 5, шесть: 6, семь: 7, восемь: 8, девять: 9, десять: 10 };
+
 // Срок по сцене: от момента записи (at) и словесного «когда» («в полдень», «завтра вечером», «18:00»).
 export function dueOf(e) {
   // Срок не указан отдельно, но сам факт про будущее («в полдень ожидает приём») — берём время из текста.
@@ -33,10 +35,10 @@ export function dueOf(e) {
   const hint = parseTimeHint(when);
   const tomorrow = /завтра/i.test(when);
   const after = /послезавтра/i.test(when) ? 2 : tomorrow ? 1 : 0;
-  const rel = String(when).match(/через\s+(\d+)?\s*(час|день|дн|сут)/i);
+  const rel = String(when).match(/через\s+(\d+|[а-яё]+)?\s*(час|день|дн|сут|недел)/i);
   if (rel) {
-    const n = Number(rel[1]) || 1;
-    const add = /час/i.test(rel[2]) ? n * 60 : n * 1440;
+    const n = Number(rel[1]) || WORD_NUM[String(rel[1] || '').toLowerCase()] || 1;
+    const add = /час/i.test(rel[2]) ? n * 60 : /недел/i.test(rel[2]) ? n * 7 * 1440 : n * 1440;
     const total = e.at.minute + add;
     return { day: e.at.day + Math.floor(total / 1440), minute: total % 1440 };
   }

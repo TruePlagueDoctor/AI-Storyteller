@@ -13,9 +13,9 @@ export function skillStems(name) {
 const SYNONYMS = [
   ['взлом', 'вскры', 'отмыч', 'замок', 'замк'],
   ['скрыт', 'красть', 'краст', 'прокр', 'тайко', 'незам'],
-  ['убежд', 'уговор', 'дипло', 'перег'],
+  ['убежд', 'убеди', 'уговор', 'дипло', 'перег'],
   ['обман', 'блеф', 'ложь', 'солга', 'хитр'],
-  ['запуг', 'угроз', 'устра'],
+  ['запуг', 'угроз', 'угрож', 'устра'],
   ['фехто', 'клино', 'мечом', 'меча', 'мечн', 'шпаг', 'рапир'],
   ['стрел', 'лучни', 'лука'],
   ['медиц', 'лечен', 'лекар', 'враче', 'перев'],
@@ -24,6 +24,27 @@ const SYNONYMS = [
   ['верхо', 'наезд', 'конно', 'лошад'],
 ];
 const group = (s) => SYNONYMS.findIndex((g) => g.some((x) => s.startsWith(x) || x.startsWith(s)));
+
+// Насколько формулировки совпадают по смыслу: доля общих основ (синоним — 0.8).
+function overlap(a, s) {
+  let common = 0;
+  for (const x of a) {
+    if (s.some((y) => y === x || y.startsWith(x) || x.startsWith(y))) common += 1;
+    else { const g = group(x); if (g !== -1 && s.some((y) => group(y) === g)) common += 0.8; }
+  }
+  return common / Math.min(a.length, s.length);
+}
+
+// Подходит ли навык броска под ключ («убеждение» ↔ «Убедить стражника», «запугивание» ↔ «Угрозы»).
+// Ключ короткий (одно слово черты), поэтому достаточно, чтобы совпала любая его основа.
+export function skillMatches(key, skillName) {
+  const k = String(key || '').trim().toLowerCase();
+  const n = String(skillName || '').trim().toLowerCase();
+  if (!k || !n) return false;
+  if (n.includes(k)) return true;
+  const a = skillStems(k); const b = skillStems(n);
+  return a.length > 0 && b.length > 0 && overlap(a, b) * Math.min(a.length, b.length) >= 0.8;
+}
 
 // Возвращает блок умения или null. Точное совпадение — сразу; иначе лучшее по общим основам
 // (и по синонимам), если совпадение не случайное.
@@ -39,12 +60,7 @@ export function matchAbility(blocks, skillName) {
   for (const b of abil) {
     const s = skillStems(b.name);
     if (!s.length) continue;
-    let common = 0;
-    for (const x of a) {
-      if (s.some((y) => y === x || y.startsWith(x) || x.startsWith(y))) common += 1;
-      else { const g = group(x); if (g !== -1 && s.some((y) => group(y) === g)) common += 0.8; }
-    }
-    const score = common / Math.min(a.length, s.length);
+    const score = overlap(a, s);
     if (score > bestScore) { bestScore = score; best = b; }
   }
   return bestScore >= 0.5 ? best : null;
