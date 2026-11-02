@@ -7,7 +7,7 @@
 ## Запуск и проверка
 
 - `npm install`, `.env` с `OPENROUTER_API_KEY`, `node server.js` (порт 3000). После правок пользователь перезапускает сервер и обновляет страницу Ctrl+F5.
-- Версия интерфейса печатается в консоль браузера второй строкой `public/js/core.js`: `console.log('AI Storyteller UI vNN — …')`. **Повышай номер при каждом изменении фронтенда** — по нему пользователь проверяет, что подхватилась новая версия. Сейчас v43.
+- Версия интерфейса печатается в консоль браузера второй строкой `public/js/core.js`: `console.log('AI Storyteller UI vNN — …')`. **Повышай номер при каждом изменении фронтенда** — по нему пользователь проверяет, что подхватилась новая версия. Сейчас v44.
 - **Проверки — перед каждым коммитом:** `npm test` (node:test, без сети: данные во временной папке, OpenRouter подменён) и при правках интерфейса `npm run test:ui` (Playwright, сервер с поддельной моделью, экраны компьютера и телефона; `UI_SHOTS=папка` сохраняет скриншоты). Нашёл ошибку — сначала тест, который её ловит, потом исправление.
   - `test/fake-llm.js` — `reply()`, `call()`, подмена `fetch` в процессе (для `src/*`); `test/harness.js` — настоящий `server.js` в отдельном процессе + поддельный OpenRouter/A1111 (`OPENROUTER_URL`, `STORYTELLER_DATA_DIR`); `test/helpers.js` — `makeState()`.
   - Учётчик на настоящей модели: `npm run eval:sync -- --model …` (сцены в `evals/sync-scenes.js`, отчёт в `data/evals/`). Меняешь промт учётчика или `completenessHints` — попроси пользователя прогнать до и после и сравнить цифры. Новая сцена: `must`/`forbid` проверяют итоговый мир, `ideal` — вызовы идеального учётчика (по ним `npm test` проверяет саму сцену).
@@ -26,11 +26,11 @@
 | `src/summary.js` | сжатие: `planSummary`/`computeSummary`/`applySummary` |
 | `src/art.js`, `src/fill.js` | `portraitTags`, `sceneTags`; `fillField` (✨) |
 | `src/paths.js` | где лежат данные (`STORYTELLER_DATA_DIR`) |
-| `src/tools.js` | схемы инструментов, `toolsFor`, и `executeTool`: `block`, `npc`, `scene`, `event`, `thread`, `update_hero`, `record_lore`, `nothing`, `roll_check`; нечёткое сопоставление имён (`sameName`, `caseStem`, `findNpc`, `findIndex`, `catalogStatusName`) |
+| `src/tools.js` | схемы инструментов, `toolsFor`, и `executeTool`: `block`, `npc`, `scene`, `event`, `thread`, `practice` (опыт за тренировку/урок, раз в игровой день на умение — `character.practiceDays`), `update_hero`, `record_lore`, `nothing`, `roll_check`; нечёткое сопоставление имён (`sameName`, `caseStem`, `findNpc`, `findIndex`, `catalogStatusName`) |
 | `src/state.js` | загрузка/сохранение, миграции, слоты, снимки (`captureFullSnapshot`/`applyFullSnapshot`), варианты ходов (свайпы), ветки, ручные правки (`upsertBlock`, `updateNpcManual`, `upsertEvent`…), `entryContext`/`setEntryImages` |
 | `src/chronicle.js` | хроника фактов: типы, `#номера` для учётчика, сроки (`dueOf`/`isOverdue` по часам сцены), выборка для рассказчика |
 | `src/scene.js` | сцена: место, часы (`day`/`minute`), присутствующие, блок для промтов |
-| `src/dice.js`, `src/skills.js`, `src/progress.js` | бросок d20 + уровень умения; умение ищется по смыслу (`matchAbility`, `skillMatches` — и для черт цели); опыт только у существующих умений, с учётом стартового уровня |
+| `src/dice.js`, `src/skills.js`, `src/progress.js` | бросок d20 + уровень умения; умение ищется по смыслу (`matchAbility`, `skillMatches` — и для черт цели); опыт только у существующих умений, с учётом стартового уровня (`addXp` — общий для бросков и тренировок) |
 | `src/statuses.js`, `src/traits.js`, `src/seeds.js` | каталог состояний с эффектами, черты НПС с модификаторами, заготовки изюминок/тайн |
 | `src/contradictions.js` | проверка ответа рассказчика на противоречия листу/сцене |
 | `src/images.js` | локальный Automatic1111: `txt2img` (портреты/сцены, clip skip, Hires fix, ADetailer), `sdCaps`, `pingSd` |

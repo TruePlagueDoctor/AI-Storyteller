@@ -259,7 +259,7 @@ function renderDossier() {
       if (next) {
         const key = a.name.trim().toLowerCase();
         const xp = Math.max((c.skillXp || {})[key] || 0, SKILL_NEED[SKILL_LEVELS[lvl]] || 0);
-        r.appendChild(el('div', 'skill-xp', `опыт ${xp} из ${SKILL_NEED[next]} до «${next}» — растёт от удачных проверок`));
+        r.appendChild(el('div', 'skill-xp', `опыт ${xp} из ${SKILL_NEED[next]} до «${next}» — растёт от удачных проверок и тренировок`));
       }
       ab.appendChild(r);
     }

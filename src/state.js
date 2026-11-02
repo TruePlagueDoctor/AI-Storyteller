@@ -110,6 +110,7 @@ function migrate(s) {
     // чтобы рассказчик не вплетал персонажей, которых в сцене нет.
     if (typeof c.present !== 'boolean') c.present = true;
     if (!c.skillXp || typeof c.skillXp !== 'object') c.skillXp = {};
+    if (!c.practiceDays || typeof c.practiceDays !== 'object') c.practiceDays = {}; // умение → игровой день последней тренировки
     if (!Array.isArray(c.blocks)) c.blocks = [];
     for (const b of c.blocks) if (!b.id) b.id = randomUUID();
   }
@@ -371,7 +372,7 @@ export async function duplicateSlot(id) {
 function captureFullSnapshot() {
   return {
     blocksByChar: Object.fromEntries(state.characters.map((c) => [c.id, deepCopy(c.blocks)])),
-    charsByid: Object.fromEntries(state.characters.map((c) => [c.id, { skillXp: deepCopy(c.skillXp || {}), appearance: c.appearance, social: c.social }])),
+    charsByid: Object.fromEntries(state.characters.map((c) => [c.id, { skillXp: deepCopy(c.skillXp || {}), practiceDays: deepCopy(c.practiceDays || {}), appearance: c.appearance, social: c.social }])),
     npcs: deepCopy(state.npcs),
     threads: deepCopy(state.threads),
     scene: deepCopy(state.scene),
@@ -675,7 +676,7 @@ export async function resetGame() {
   state.summary = '';
   state.lastSnapshot = null;
   try { await rm(turnsDir(activeSlotId), { recursive: true, force: true }); } catch { /* пусто */ }
-  for (const c of state.characters) { c.blocks = []; c.skillXp = {}; }
+  for (const c of state.characters) { c.blocks = []; c.skillXp = {}; c.practiceDays = {}; }
   await saveState();
   return state;
 }
@@ -697,6 +698,7 @@ function applySnapshot(snap) {
     const extra = snap.charsByid && snap.charsByid[c.id];
     if (extra) {
       c.skillXp = deepCopy(extra.skillXp || {});
+      c.practiceDays = deepCopy(extra.practiceDays || {});
       if (extra.appearance !== undefined) c.appearance = extra.appearance;
       if (extra.social !== undefined) c.social = extra.social;
     }

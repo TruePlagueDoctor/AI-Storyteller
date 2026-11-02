@@ -224,3 +224,20 @@ test('ручные правки через API', async () => {
   assert.ok(data.traitPool.length > 10);
   assert.equal((await api('PUT', '/api/characters/nope', { name: 'x' })).status, 400);
 });
+
+test('тренировка: опыт и рост уровня в ленте, регенерация откатывает', async () => {
+  let { data } = await api('GET', '/api/state');
+  const hid = data.characters[0].id;
+  await api('POST', `/api/characters/${hid}/blocks`, { type: 'ability', name: 'Фехтование', value: 'новичок' });
+  handlers.narrator = () => reply('Весь день мастер Горан гоняет тебя по двору: «Плечо ниже! Ещё раз!» К вечеру выпады выходят чище.');
+  handlers.sync = () => reply('', [call('practice', { skill: 'Фехтование', kind: 'lesson', reason: 'урок у Горана' })]);
+  ({ data } = await api('POST', '/api/action', { text: 'Учусь у Горана' }));
+  const n = lastNarr(data);
+  assert.ok(n.sync.calls.some((c) => c.name === 'practice' && /\+2 опыта/.test(c.result)), JSON.stringify(n.sync.calls));
+  assert.equal(data.characters[0].skillXp['фехтование'], 2);
+  handlers.sync = () => reply('', [call('nothing', {})]);
+  handlers.narrator = () => reply('Ты весь день просидел в таверне, глядя, как дождь заливает двор.');
+  ({ data } = await api('POST', '/api/regenerate'));
+  assert.equal(data.characters[0].skillXp['фехтование'], undefined, 'опыт откатился вместе с ходом');
+  assert.deepEqual(data.characters[0].practiceDays, {});
+});

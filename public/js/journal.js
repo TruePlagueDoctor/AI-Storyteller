@@ -5,7 +5,7 @@
 const TOOL_LABEL = {
   block: 'лист', create_block: 'лист', update_block: 'лист', remove_block: 'лист',
   npc: 'НПС', create_npc: 'НПС', update_npc: 'НПС', remove_npc: 'НПС',
-  scene: 'сцена', event: 'факт', thread: 'нить', update_hero: 'герой', record_lore: 'мир', nothing: '—',
+  scene: 'сцена', event: 'факт', thread: 'нить', update_hero: 'герой', record_lore: 'мир', practice: 'опыт', nothing: '—',
 };
 // Короткая строка «что сделано» из аргументов вызова.
 function describeCall(c) {
@@ -24,6 +24,7 @@ function describeCall(c) {
     case 'event': return a.action === 'close' ? `закрыто ${a.id || ''}${a.outcome ? ` (${OUTCOME_LABEL[a.outcome] || a.outcome})` : ''}${a.text ? ': ' + a.text : ''}`
       : a.action === 'update' ? `поправлено ${a.id || ''}: ${a.text || a.when || ''}` : `${a.text || ''}${a.when ? ` ⏱ ${a.when}` : ''}`;
     case 'thread': return `${a.title || ''}${a.action && a.action !== 'update' ? ' — ' + a.action : ''}${a.progress ? ': ' + a.progress : ''}`;
+    case 'practice': return `${a.skill || '?'}${a.kind === 'lesson' ? ' (урок)' : ''}${a.reason ? ': ' + a.reason : ''}`;
     case 'nothing': return 'без изменений';
     default: return Object.values(a).join(' · ');
   }

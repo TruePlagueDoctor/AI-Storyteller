@@ -1,5 +1,5 @@
-// Прогресс умений через использование: успешная проверка даёт опыт навыку,
-// на порогах уровень растёт. Данные берутся из бросков.
+// Прогресс умений: опыт дают удачные проверки (бросок) и тренировки/уроки в истории
+// (инструмент учётчика practice). На порогах уровень растёт.
 
 export const LEVELS = ['новичок', 'ученик', 'опытный', 'мастер'];
 export const THRESHOLDS = { 'ученик': 3, 'опытный': 7, 'мастер': 14 };
@@ -24,17 +24,30 @@ export function recordRoll(character, roll) {
   if (block.locked) return null; // закреплённое игроком умение не растёт само
   const gain = roll.outcome === 'критический успех' ? 2 : roll.success ? 1 : 0;
   if (!gain) return null;
+  return addXp(character, block, gain).grew;
+}
+
+// Начислить опыт умению. Стартовый уровень засчитывается: «опытному» до мастера — 14 − 7,
+// а не 14 с нуля. Возвращает { xp, grew } — grew: строка о росте уровня или null.
+export function addXp(character, block, gain, note = '') {
   if (!character.skillXp || typeof character.skillXp !== 'object') character.skillXp = {};
-  // Стартовый уровень засчитывается: «опытному» до мастера — 14 − 7, а не 14 с нуля.
+  const k = key(block.name);
   const floor = THRESHOLDS[key(block.value)] || 0;
   character.skillXp[k] = Math.max(character.skillXp[k] || 0, floor) + gain;
   const target = levelForXp(character.skillXp[k]);
   if (levelIndex(target) > levelIndex(block.value)) {
     const was = block.value || 'новичок';
     block.value = target;
-    return `${character.name}: «${block.name}» выросло — ${was} → ${target}`;
+    return { xp: character.skillXp[k], grew: `${character.name}: «${block.name}» выросло — ${was} → ${target}${note ? ` (${note})` : ''}` };
   }
-  return null;
+  return { xp: character.skillXp[k], grew: null };
+}
+
+// Сколько опыта до следующего уровня (для ответа инструмента и досье).
+export function nextLevel(block, xp) {
+  const i = levelIndex(block.value);
+  const next = LEVELS[i + 1];
+  return next ? { level: next, need: THRESHOLDS[next], xp } : null;
 }
 
 export function progressInfo(character, skillName) {

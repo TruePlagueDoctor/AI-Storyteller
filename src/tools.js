@@ -4,6 +4,8 @@
 import { randomUUID } from 'node:crypto';
 import { normalizeScene, advanceClock, parseTimeHint, clockLabel, dayPart } from './scene.js';
 import { findSimilar, EVENT_TYPES, OUTCOMES, typeLabel, outcomeLabel } from './chronicle.js';
+import { matchAbility } from './skills.js';
+import { addXp, nextLevel, LEVELS } from './progress.js';
 
 // Инструмент проверки доступен ТОЛЬКО в проходе рассказа: модель запрашивает
 // бросок, исход считает код. Он намеренно не входит в TOOL_DEFINITIONS.
@@ -191,6 +193,25 @@ export const TOOL_DEFINITIONS = [
           present: { type: 'array', items: { type: 'string' }, description: 'ПОЛНЫЙ список, кто сейчас ФИЗИЧЕСКИ рядом с героем (имена НПС). Пустой массив — никого. Спутников и голоса в голове, помеченных «всегда с героем», не перечисляй.' },
           note: { type: 'string', description: 'Обстановка одной фразой: погода, шум, опасность, что происходит вокруг.' },
         },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'practice',
+      description:
+        'Опыт умению героя за обучение: тренировался, упражнялся, учился у наставника, долго практиковал ремесло. ' +
+        'Только для умения, которое уже есть в листе. Применение умения в деле — не практика (опыт за это даёт бросок).',
+      parameters: {
+        type: 'object',
+        properties: {
+          skill: { type: 'string', description: 'Умение из листа героя.' },
+          kind: { type: 'string', enum: ['practice', 'lesson'], description: 'practice — сам (+1), lesson — у наставника или учителя (+2).' },
+          reason: { type: 'string', description: 'Что делал, одной фразой.' },
+          character: characterParam,
+        },
+        required: ['skill', 'reason'],
       },
     },
   },
@@ -504,6 +525,36 @@ function keptShare(oldText, newText) {
   return a.filter((w) => b.has(w)).length / a.length;
 }
 
+// Опыт за обучение. Раз в игровой день на умение — иначе «тренируюсь» каждый ход
+// разгоняло бы уровень за пару минут игры.
+function executePracticeTool(args, state) {
+  const a = args || {};
+  const skill = String(a.skill || '').trim();
+  if (!skill) return 'Ошибка: укажи skill — умение из листа героя.';
+  const c = resolveCharacter(state, a.character);
+  const block = matchAbility(c.blocks, skill);
+  if (!block) {
+    const have = (c.blocks || []).filter((b) => b.type === 'ability').map((b) => b.name);
+    return `Ошибка: у героя «${c.name}» нет умения «${skill}».` + (have.length ? ` Есть: ${have.join(', ')}.` : '') +
+      ' Если он начал учиться новому — заведи его: block type:ability value:новичок.';
+  }
+  if (block.locked) return `Умение «${block.name}» закреплено игроком — опыт не начисляется.`;
+  if (LEVELS.indexOf(String(block.value || '').trim().toLowerCase()) === LEVELS.length - 1) return `«${block.name}»: герой уже мастер — расти некуда.`;
+  const day = (state.scene && state.scene.day) || 1;
+  if (!c.practiceDays || typeof c.practiceDays !== 'object') c.practiceDays = {};
+  const k = block.name.trim().toLowerCase();
+  if (c.practiceDays[k] === day) return `Тренировка «${block.name}» уже засчитана сегодня (день ${day}) — опыт не добавлен. Следующая — завтра по часам истории.`;
+  const lesson = a.kind === 'lesson';
+  const gain = lesson ? 2 : 1;
+  c.practiceDays[k] = day;
+  const { xp, grew } = addXp(c, block, gain, lesson ? 'урок' : 'тренировка');
+  if (grew) (state._growth ||= []).push(grew);
+  const next = nextLevel(block, xp);
+  return `«${block.name}»: +${gain} опыта (${lesson ? 'урок' : 'тренировка'})` +
+    (grew ? ` — ${grew.replace(/^[^:]*: «[^»]*» выросло — /, '').replace(/ \(.*\)$/, '')}` : '') +
+    (next ? `; до «${next.level}»: ${next.xp} из ${next.need}.` : '.');
+}
+
 function executeHeroTool(args, state) {
   const { character, appearance, appearance_change: change, social } = args || {};
   const c = resolveCharacter(state, character);
@@ -772,10 +823,10 @@ function executeNpcTool(name, args, state) {
 
 // Применяет один вызов инструмента к состоянию. Возвращает строку-результат.
 const KNOWN_TOOLS = new Set(['block', 'npc', 'nothing', 'create_block', 'update_block', 'remove_block',
-  'create_npc', 'update_npc', 'remove_npc', 'record_lore', 'thread', 'update_hero', 'scene', 'event']);
+  'create_npc', 'update_npc', 'remove_npc', 'record_lore', 'thread', 'update_hero', 'scene', 'event', 'practice']);
 
 export function executeTool(name, args, state) {
-  if (!KNOWN_TOOLS.has(name)) return `Ошибка: инструмента «${name}» нет. Доступны: block, npc, scene, event, thread, update_hero, nothing.`;
+  if (!KNOWN_TOOLS.has(name)) return `Ошибка: инструмента «${name}» нет. Доступны: block, npc, scene, event, thread, practice, update_hero, nothing.`;
   if (name === 'nothing') return 'Принято: без изменений.';
   // block / npc — единые инструменты вместо пар create/update (они всё равно
   // работали как «есть — обновить, нет — завести»). Старые имена остаются
@@ -788,6 +839,7 @@ export function executeTool(name, args, state) {
   if (HERO_TOOLS.includes(name)) return executeHeroTool(args, state);
   if (SCENE_TOOLS.includes(name)) return executeSceneTool(args, state);
   if (EVENT_TOOLS.includes(name)) return executeEventTool(args, state);
+  if (name === 'practice') return executePracticeTool(args, state);
 
   const { type, name: blockName, value, max, description, character } = args || {};
 
