@@ -203,6 +203,13 @@ function renderNpcCard(n, animate, here = false) {
   main.appendChild(row);
   main.appendChild(mk('div', 'npc-attitude', n.attitude || 'отношение не ясно'));
   if (n.status) main.appendChild(mk('div', 'npc-where', n.status));
+  // Умелость: профессионала и мастера видно сразу — против них проверки труднее.
+  if ((n.competence && n.competence !== 'обычный') || (n.skills || []).length) {
+    const lv = n.competence && n.competence !== 'обычный' ? n.competence : '';
+    const c = mk('div', 'npc-competence' + (lv === 'мастер' ? ' master' : ''), [lv, (n.skills || []).join(', ')].filter(Boolean).join(' · '));
+    c.title = lv ? `Против его умений проверки труднее: ${lv === 'мастер' ? '−4' : '−2'}` : 'Ключевые умения';
+    main.appendChild(c);
+  }
   if (n.traits && n.traits.length) {
     const tr = mk('div', 'npc-traits');
     for (const t of n.traits) {

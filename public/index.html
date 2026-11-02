@@ -572,6 +572,22 @@
                 <div class="lock-label"><span class="field-label">Черты</span><button type="button" class="lock" data-field="traits" title="Закрепить">🔓</button></div>
                 <div id="npcTraits" class="trait-picker"></div>
               </div>
+              <div class="field-row">
+                <div class="field" style="flex:1">
+                  <div class="lock-label"><span class="field-label">Умелость</span><button type="button" class="lock" data-field="competence" title="Закрепить">🔓</button></div>
+                  <select id="npcCompetence" class="trait-cat" style="width:100%">
+                    <option value="">не задана</option>
+                    <option value="обычный">обычный</option>
+                    <option value="профессионал">профессионал (−2)</option>
+                    <option value="мастер">мастер (−4)</option>
+                  </select>
+                </div>
+                <div class="field" style="flex:2">
+                  <span class="field-label">Ключевые умения</span>
+                  <input type="text" id="npcSkills" placeholder="следствие, допрос" />
+                </div>
+              </div>
+              <p class="field-hint">Проверки героя против его умений труднее: обмануть следователя, проскользнуть мимо стражи, перефехтовать мастера клинка.</p>
             </section>
 
             <section class="npc-section">

@@ -1882,3 +1882,9 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
   .settings-nav { flex-wrap: nowrap; overflow-x: auto; }
   .settings-nav button { flex: 0 0 auto; }
 }
+
+/* Умелость НПС в карточке */
+.npc-competence { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.3px; color: var(--stat); margin-top: 3px; }
+.npc-competence.master { color: var(--brass); }
+.npc-competence.master::before { content: '◆ '; }
+#npcCompetence { height: 40px; font-size: 13px; }

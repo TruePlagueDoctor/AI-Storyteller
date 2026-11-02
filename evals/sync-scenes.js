@@ -268,6 +268,16 @@ export const SCENES = [
     ideal: [['block', { type: 'item', name: 'Сушёный зверобой', value: '2 пучка' }], ['block', { type: 'item', name: 'Отвар зверобоя' }]],
   },
   {
+    id: 'npc-competence', title: 'Мастер своего дела',
+    setup: and(hero(STD), scene({ location: 'Управа', present: [] })),
+    action: 'Иду к следователю',
+    narration: 'За столом сидит сухой седой человек в сером сюртуке. «Инспектор Варг, — представляется он, не поднимая глаз от бумаг. — Двадцать лет в сыске. Врать мне бесполезно: я слышу ложь раньше, чем вы её придумаете».',
+    must: [['Варг заведён профессионалом или мастером', (st) => ['профессионал', 'мастер'].includes(npc(st, 'варг')?.competence)],
+      ['записаны его умения', (st) => (npc(st, 'варг')?.skills || []).length > 0]],
+    forbid: [['один Варг', (st) => st.npcs.filter((n) => like(n.name, 'варг')).length > 1]],
+    ideal: [['npc', { name: 'Инспектор Варг', description: 'следователь, двадцать лет в сыске', appearance: 'сухой, седой, серый сюртук', attitude: 'холодно-деловит', wants: 'добраться до правды', competence: 'мастер', skills: ['следствие', 'допрос'] }], ['scene', { present: ['Инспектор Варг'] }]],
+  },
+  {
     id: 'potion', title: 'Выпил зелье',
     setup: hero([{ type: 'stat', name: 'Здоровье', value: '6', max: 20 }, { type: 'item', name: 'Зелье лечения', value: '2' }]),
     action: 'Пью зелье',

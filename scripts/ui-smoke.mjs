@@ -24,7 +24,7 @@ const stack = await startStack();
 stack.handlers.sync = () => reply('', [
   call('block', { type: 'stat', name: 'Здоровье', value: '8', max: 10 }),
   call('block', { type: 'item', name: 'Фляга' }),
-  call('npc', { name: 'Ольт', attitude: 'насторожен', description: 'Стражник у ворот', wants: 'спокойной смены', voice_sample: 'Чего надо?' }),
+  call('npc', { name: 'Ольт', attitude: 'насторожен', description: 'Стражник у ворот', wants: 'спокойной смены', voice_sample: 'Чего надо?', competence: 'профессионал', skills: ['стража'] }),
   call('scene', { location: 'Городские ворота', present: ['Ольт'], elapsed_minutes: 5 }),
   call('event', { type: 'debt', text: 'Ян должен Ольту пять монет', participants: ['Ян', 'Ольт'] }),
   call('block', { type: 'ability', name: 'Фехтование', value: 'опытный' }),
@@ -67,6 +67,7 @@ try {
     step('вкладки панели переключаются');
     await page.click('#tabNpcs');
     await page.click('#npcList .npc >> nth=0');
+    if (!/профессионал · стража/.test(await page.textContent('#npcList .npc-competence').catch(() => ''))) errors.push(`[${viewport.name}] в карточке НПС нет умелости`);
     if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-npcs.png`), fullPage: false });
     await page.click('#tabHeroes');
     await page.click('#dossierBtn');

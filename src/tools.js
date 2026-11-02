@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto';
 import { normalizeScene, advanceClock, parseTimeHint, clockLabel, dayPart } from './scene.js';
 import { findSimilar, EVENT_TYPES, OUTCOMES, typeLabel, outcomeLabel } from './chronicle.js';
-import { matchAbility } from './skills.js';
+import { matchAbility, COMPETENCE } from './skills.js';
 import { addXp, nextLevel, LEVELS } from './progress.js';
 
 // Инструмент проверки доступен ТОЛЬКО в проходе рассказа: модель запрашивает
@@ -23,7 +23,7 @@ export const ROLL_TOOL = {
         skill: { type: 'string', description: 'Что проверяем: название умения героя или навык по смыслу ("Скрытность", "Убеждение").' },
         difficulty: { type: 'string', enum: ['легко', 'обычно', 'сложно', 'очень сложно'], description: 'Насколько это трудно в данных обстоятельствах.' },
         character: { type: 'string', description: 'Имя героя. Без него — активный.' },
-        target: { type: 'string', description: 'Имя НПС, против которого проверка (убеждение, обман, запугивание). Его черты повлияют на исход.' },
+        target: { type: 'string', description: 'Имя НПС, против которого проверка (убеждение, обман, запугивание, бой). Его черты и умелость повлияют на исход.' },
       },
       required: ['skill', 'difficulty'],
     },
@@ -106,6 +106,8 @@ export const TOOL_DEFINITIONS = [
           voice_sample: { type: 'string', description: 'Одна характерная реплика дословно.' },
           voice_masks: { type: 'string', description: 'Как прячет чувства.' },
           voice_taboos: { type: 'string', description: 'Чего в речи не делает.' },
+          competence: { type: 'string', enum: COMPETENCE, description: 'Насколько хорош в своём деле (только у значимых, у кого есть ремесло).' },
+          skills: { type: 'array', items: { type: 'string' }, description: '1–3 ключевых умения: «следствие», «фехтование», «стража». Список целиком.' },
           mood: { type: 'string', description: 'Настроение сейчас.' },
           mood_reason: { type: 'string', description: 'Почему такое настроение.' },
         },
@@ -656,7 +658,11 @@ function findNpc(state, name) {
 
 function executeNpcTool(name, args, state) {
   const { name: npcName, new_name: newName, description, appearance, personality, attitude, status, history, traits, wants, secret, quirk, links,
-    voice_style, voice_humor, voice_habits, voice_sample, voice_masks, voice_taboos, mood, mood_reason } = args || {};
+    voice_style, voice_humor, voice_habits, voice_sample, voice_masks, voice_taboos, mood, mood_reason, competence, skills } = args || {};
+  // Умелость — только из списка; умения — до трёх коротких строк.
+  const level = typeof competence === 'string' && COMPETENCE.includes(competence.trim().toLowerCase()) ? competence.trim().toLowerCase() : undefined;
+  const skillList = Array.isArray(skills) ? skills.map((x) => String(x).trim()).filter(Boolean).slice(0, 3)
+    : typeof skills === 'string' && skills.trim() ? skills.split(/[,;]/).map((x) => x.trim()).filter(Boolean).slice(0, 3) : undefined;
   const VOICE_MAP = { voiceStyle: voice_style, voiceHumor: voice_humor, voiceHabits: voice_habits, voiceMasks: voice_masks, voiceTaboos: voice_taboos };
   const addSample = (n, s) => {
     const line = String(s || '').trim().replace(/^[«"“\s—-]+|[»"”\s]+$/g, '');
@@ -753,6 +759,8 @@ function executeNpcTool(name, args, state) {
     for (const [k, v] of Object.entries(VOICE_MAP)) if (v !== undefined) npc[k] = String(v);
     addSample(npc, voice_sample);
     if (mood !== undefined) { npc.mood = String(mood); npc.moodReason = String(mood_reason || ''); npc.moodTurn = state.turn || 0; }
+    if (level) npc.competence = level;
+    if (skillList) npc.skills = skillList;
     npc.locked = [];
     npc.updatedTurn = state.turn || 0;
     state.npcs.push(npc);
@@ -802,6 +810,8 @@ function executeNpcTool(name, args, state) {
   if (allow('links', links)) npc.links = String(links);
   for (const [k, v] of Object.entries(VOICE_MAP)) if (allow('voice', v)) npc[k] = String(v);
   if (allow('voice', voice_sample)) addSample(npc, voice_sample);
+  if (allow('competence', level)) npc.competence = level;
+  if (allow('competence', skillList)) npc.skills = skillList;
   if (allow('mood', mood)) { npc.mood = String(mood); npc.moodReason = String(mood_reason || ''); npc.moodTurn = state.turn || 0; }
   // Тайна: пустая строка = раскрыта и снята. Иначе — обновлена.
   if (allow('secret', secret)) npc.secret = String(secret);

@@ -188,6 +188,8 @@ function migrate(s) {
     if (typeof n.updatedTurn !== 'number') n.updatedTurn = 0;
     if (typeof n.attitude !== 'string') n.attitude = '';
     if (typeof n.status !== 'string') n.status = '';
+    if (n.competence !== undefined && !['обычный', 'профессионал', 'мастер'].includes(n.competence)) delete n.competence;
+    if (n.skills !== undefined && !Array.isArray(n.skills)) delete n.skills;
   }
   if (typeof out.model !== 'string' || !out.model) out.model = DEFAULT_MODEL;
   if (typeof out.toolModel !== 'string') out.toolModel = '';
@@ -913,13 +915,20 @@ export async function deleteBlock(characterId, blockId) {
 }
 
 const NPC_FIELDS = ['name', 'description', 'appearance', 'personality', 'attitude', 'status', 'history', 'wants', 'secret', 'quirk', 'links',
-  'voiceStyle', 'voiceHumor', 'voiceHabits', 'voiceMasks', 'voiceTaboos', 'mood', 'moodReason'];
-const NPC_ARRAY_FIELDS = ['traits', 'voiceSamples'];
+  'voiceStyle', 'voiceHumor', 'voiceHabits', 'voiceMasks', 'voiceTaboos', 'mood', 'moodReason', 'competence'];
+const NPC_ARRAY_FIELDS = ['traits', 'voiceSamples', 'skills'];
+
+// Умелость — только из списка (пусто — не задана), умения — до трёх непустых строк.
+function tidyCompetence(n) {
+  if (!['обычный', 'профессионал', 'мастер'].includes(n.competence)) delete n.competence;
+  if (Array.isArray(n.skills)) { n.skills = n.skills.map((x) => String(x).trim()).filter(Boolean).slice(0, 3); if (!n.skills.length) delete n.skills; }
+}
 
 export async function addNpc(data = {}) {
   const npc = { id: randomUUID(), name: (data.name || 'Новый персонаж').trim(), description: '', appearance: '', personality: '', attitude: '', status: '', history: '', wants: '', secret: '', quirk: '', links: '', traits: [], avatar: null, locked: [], updatedTurn: state.turn };
   for (const f of NPC_FIELDS) if (typeof data[f] === 'string') npc[f] = data[f].trim();
   for (const f of NPC_ARRAY_FIELDS) if (Array.isArray(data[f])) npc[f] = data[f].map(String);
+  tidyCompetence(npc);
   if (typeof data.bound === 'boolean') npc.bound = data.bound;
   if (Array.isArray(data.locked)) npc.locked = data.locked.filter((x) => [...NPC_FIELDS, ...NPC_ARRAY_FIELDS].includes(x));
   state.npcs.push(npc);
@@ -937,6 +946,7 @@ export async function updateNpcManual(id, data = {}) {
   }
   for (const f of NPC_FIELDS) if (typeof data[f] === 'string') n[f] = data[f].trim();
   for (const f of NPC_ARRAY_FIELDS) if (Array.isArray(data[f])) n[f] = data[f].map(String);
+  tidyCompetence(n);
   if (typeof data.bound === 'boolean') { if (data.bound) n.bound = true; else delete n.bound; }
   if (Array.isArray(data.locked)) n.locked = data.locked.filter((x) => [...NPC_FIELDS, ...NPC_ARRAY_FIELDS, 'voice'].includes(x));
   if (!n.name) n.name = 'Без имени';

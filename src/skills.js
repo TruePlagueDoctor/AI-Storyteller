@@ -65,3 +65,37 @@ export function matchAbility(blocks, skillName) {
   }
   return bestScore >= 0.5 ? best : null;
 }
+
+// ---- Компетентность НПС ----
+// Умелость НПС в его деле делает проверки героя против него труднее — но только когда
+// действие героя упирается в эти умения: следователя трудно обмануть, а не обогнать.
+export const COMPETENCE = ['обычный', 'профессионал', 'мастер'];
+const COMPETENCE_MOD = { 'обычный': 0, 'профессионал': -2, 'мастер': -4 };
+
+// Что чему противостоит: [навыки героя] ↔ [умения НПС]. Одинаковые умения противостоят и так.
+const OPPOSE = [
+  [['обман', 'ложь', 'блеф', 'убеждение', 'уговоры', 'подкуп', 'лесть', 'переговоры', 'торговля', 'маскировка'],
+    ['проницательность', 'следствие', 'допрос', 'дознание', 'интриги', 'дипломатия', 'торговля', 'переговоры', 'сыск', 'шпионаж']],
+  [['скрытность', 'кража', 'карманник', 'прокрасться', 'слежка', 'взлом', 'маскировка'],
+    ['внимательность', 'наблюдательность', 'стража', 'охрана', 'слежка', 'следопыт', 'сыск', 'шпионаж']],
+  [['фехтование', 'бой', 'драка', 'рукопашный', 'борьба', 'кулачный', 'топор', 'копьё', 'оружие'],
+    ['фехтование', 'бой', 'драка', 'рукопашный', 'борьба', 'воин', 'наёмник', 'солдат', 'стража', 'охрана', 'дуэль']],
+  [['запугивание', 'угрозы'], ['хладнокровие', 'допрос', 'командование', 'воин', 'наёмник']],
+  [['погоня', 'бег', 'атлетика'], ['следопыт', 'охота', 'атлетика', 'бег']],
+];
+const anyMatch = (list, name) => list.some((k) => skillMatches(k, name));
+
+function opposes(npcSkill, heroSkill) {
+  if (skillMatches(npcSkill, heroSkill) || skillMatches(heroSkill, npcSkill)) return true;
+  return OPPOSE.some(([hero, npc]) => anyMatch(hero, heroSkill) && anyMatch(npc, npcSkill));
+}
+
+// Модификатор к броску героя против НПС: { mod, reason }.
+export function competenceMod(npc, heroSkill) {
+  const level = String(npc?.competence || '').trim().toLowerCase();
+  const mod = COMPETENCE_MOD[level] || 0;
+  const skills = Array.isArray(npc?.skills) ? npc.skills.filter(Boolean) : [];
+  if (!mod || !skills.length || !heroSkill) return { mod: 0, reason: '' };
+  if (!skills.some((s) => opposes(s, heroSkill))) return { mod: 0, reason: '' };
+  return { mod, reason: `${npc.name} — ${level} (${skills.join(', ')})` };
+}

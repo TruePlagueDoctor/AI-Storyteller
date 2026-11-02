@@ -4,6 +4,7 @@
 import { ROLL_TOOL, toolsFor, executeTool, resolveCharacterFor } from './tools.js';
 import { rollCheck, describeRoll } from './dice.js';
 import { traitModifier } from './traits.js';
+import { competenceMod } from './skills.js';
 import { statusRollMod, describeStatus } from './statuses.js';
 import { recordRoll } from './progress.js';
 import { sceneBlock } from './scene.js';
@@ -238,6 +239,8 @@ function npcBlock(state) {
     if (n.description) line += `\n  ${n.description}`;
     if (n.appearance) line += `\n  Внешность: ${n.appearance}`;
     if (n.traits && n.traits.length) line += `\n  Черты: ${n.traits.join(', ')}`;
+    if (n.competence && n.competence !== 'обычный') line += `\n  Умелость: ${n.competence}${(n.skills || []).length ? ' — ' + n.skills.join(', ') : ''} (против этого героя проверки труднее)`;
+    else if ((n.skills || []).length) line += `\n  Умеет: ${n.skills.join(', ')}`;
     if (n.personality) line += `\n  Характер и речь: ${n.personality}`;
     if (n.quirk) line += `\n  Изюминка: ${n.quirk}`;
     if (n.wants) line += `\n  ХОЧЕТ: ${n.wants}`;
@@ -494,6 +497,9 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
         const tm = targetNpc
           ? traitModifier(state.traitPool || [], targetNpc.traits || [], args.skill)
           : { mod: 0, reasons: [] };
+        // Умелость цели: мастера-следователя обмануть труднее, чем крестьянина.
+        const cm = competenceMod(targetNpc, args.skill);
+        if (cm.mod) { tm.mod += cm.mod; tm.reasons = [...tm.reasons, cm.reason]; }
         const sm = statusRollMod(state.statusCatalog || [], character);
         const r = rollCheck({
           character, skill: args.skill, difficulty: args.difficulty,
