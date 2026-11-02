@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Хроника — ИИ-рассказчик</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23141019'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%23c8a24c'%3E%E2%9C%A6%3C/text%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Spectral:ital,wght@0,400;0,500;1,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css?v=28" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">&#10022;</span>
+        <h1>Хроника</h1>
+        <span class="brand-sub" id="modelLabel">—</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn ghost" id="slotsBtn" title="Истории"><span class="btn-ico">📖</span><span class="btn-label" id="slotName">—</span></button>
+        <button class="btn ghost diag-btn" id="diagBtn" title="Диагностика: запросы к модели и ошибки"><span class="btn-ico">🩺</span><span class="btn-label">Диагностика</span><span class="diag-dot" id="diagDot" hidden></span></button>
+        <button class="btn ghost" id="settingsBtn" title="Настройки"><span class="btn-ico">⚙</span><span class="btn-label">Настройки</span></button>
+        <button class="btn ghost danger" id="resetBtn" title="Начать историю заново"><span class="btn-ico">↺</span><span class="btn-label">Заново</span></button>
+        <button class="btn ghost sheet-toggle" id="sheetToggle" title="Лист героя, НПС, мир"><span class="btn-ico">☰</span><span class="btn-label">Лист</span></button>
+      </div>
+    </header>
+
+    <main class="stage">
+      <!-- Лента повествования -->
+      <section class="chronicle" aria-label="Повествование">
+        <div class="log" id="log">
+          <div class="empty-log" id="emptyLog">
+            <p class="empty-title">Лист пуст, история ещё не начата.</p>
+            <p class="empty-hint">Настрой мир, сценарий и героев — или просто нажми «Начать», и рассказчик задаст сцену сам.</p>
+            <button class="btn primary" id="startBtn">Начать</button>
+          </div>
+        </div>
+        <form class="composer" id="composer" autocomplete="off">
+          <div class="composer-inner">
+            <div class="composer-tools">
+              <button type="button" class="ooc-toggle" id="oocToggle" title="Писать рассказчику вне истории (не как персонаж)">вне истории</button>
+              <button type="button" class="ooc-toggle" id="directorBtn" title="Куда вести историю — постоянное указание рассказчику">направление</button>
+              <span class="composer-hint">Enter — отправить · Shift+Enter — новая строка</span>
+            </div>
+            <div class="composer-row">
+              <textarea id="input" rows="1" placeholder="Что ты делаешь?"></textarea>
+              <button class="btn primary send" id="sendBtn" type="submit">Действовать</button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <!-- Правая панель: Герои / НПС -->
+      <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+      <aside class="sheet" id="sidebar" aria-label="Панель игры">
+        <div class="sheet-mobile-head"><span class="panel-caption">Лист и мир</span><button class="icon-btn" id="sheetClose" title="Закрыть">✕</button></div>
+        <button class="scene-card" id="sceneCard" type="button" title="Сцена: где герой, время, кто рядом. Нажми, чтобы править.">
+          <span class="scene-loc"><span class="scene-glyph">📍</span><span id="sceneLocation">Место не задано</span></span>
+          <span class="scene-time" id="sceneTime">день 1, 09:00</span>
+          <span class="scene-faces" id="sceneFaces"></span>
+          <span class="scene-empty" id="scenePresent">никого рядом</span>
+          <span class="scene-note" id="sceneNote"></span>
+        </button>
+        <div class="panel-tabs">
+          <button class="panel-tab active" id="tabHeroes" data-panel="heroes">Герои</button>
+          <button class="panel-tab" id="tabNpcs" data-panel="npcs">НПС<span class="tab-count" id="npcCount"></span></button>
+          <button class="panel-tab" id="tabLore" data-panel="lore">Мир<span class="tab-count" id="loreCount"></span></button>
+          <button class="panel-tab" id="tabThreads" data-panel="threads">Нити<span class="tab-count" id="threadCount"></span></button>
+          <button class="panel-tab" id="tabEvents" data-panel="events" title="Хроника: обещания, долги, ложь, факты">Факты<span class="tab-count" id="eventCount"></span></button>
+        </div>
+
+        <div class="panel" id="panelHeroes">
+          <div class="panel-scroll">
+            <div class="hero-switch" id="heroSwitch">
+              <div class="char-tabs" id="charTabs"></div>
+            </div>
+            <div class="hero-card" id="heroStrip" hidden>
+              <div class="hero-portrait" id="heroPortrait" title="Открыть во весь размер"></div>
+              <div class="hero-card-text">
+                <div class="hero-strip-name" id="heroStripName"></div>
+                <div class="hero-strip-sub" id="heroStripSub"></div>
+                <div class="hero-card-acts">
+                  <button class="link-btn" id="dossierBtn" title="Досье героя">досье</button>
+                  <button class="link-btn" id="charEditBtn" title="Изменить героя">изменить</button>
+                  <button class="link-btn" id="charAddBtn" title="Добавить ещё одного героя в историю">＋ герой</button>
+                </div>
+              </div>
+            </div>
+            <div class="sheet-list" id="sheet">
+              <p class="sheet-empty" id="sheetEmpty">Здесь появятся состояния, предметы, характеристики и связи героя — рассказчик вписывает их по ходу истории.</p>
+            </div>
+            <button class="add-row" id="blockAddBtn" title="Добавить состояние, предмет, характеристику…">＋ добавить в лист</button>
+          </div>
+        </div>
+
+        <div class="panel" id="panelNpcs" hidden>
+          <div class="sheet-head">
+            <div class="sheet-title-row">
+              <span class="panel-caption">Встреченные персонажи</span>
+              <div class="sheet-head-actions">
+                <button class="icon-btn" id="npcAddBtn" title="Добавить персонажа">＋</button>
+              </div>
+            </div>
+            <input type="text" id="npcSearch" class="npc-search" placeholder="Поиск по имени…" />
+            <label class="field check npc-archive-toggle"><input type="checkbox" id="npcShowArchived" /><span>показать архив</span></label>
+          </div>
+          <div class="npc-body" id="npcList">
+            <p class="sheet-empty" id="npcEmpty">Ты ещё никого не встретил. Персонажи, с которыми столкнёшься, появятся здесь — с их отношением к тебе и статусом.</p>
+          </div>
+        </div>
+
+        <div class="panel" id="panelLore" hidden>
+          <div class="sheet-head">
+            <div class="sheet-title-row">
+              <span class="panel-caption">Записи о мире</span>
+              <div class="sheet-head-actions">
+                <button class="icon-btn" id="loreAddBtn" title="Добавить запись">＋</button>
+              </div>
+            </div>
+          </div>
+          <div class="npc-body" id="loreList">
+            <p class="sheet-empty" id="loreEmpty">Записи о мире подставляются в контекст только когда упомянуты их ключевые слова — так подробный лор не съедает контекст. Нажми ＋, чтобы добавить первую.</p>
+          </div>
+        </div>
+        <div class="panel" id="panelThreads" hidden>
+          <div class="sheet-head">
+            <div class="sheet-title-row">
+              <span class="panel-caption">Сюжетные нити</span>
+              <div class="sheet-head-actions">
+                <button class="icon-btn" id="threadAddBtn" title="Завести нить">＋</button>
+              </div>
+            </div>
+          </div>
+          <div class="npc-body" id="threadList"></div>
+        </div>
+
+        <div class="panel" id="panelEvents" hidden>
+          <div class="sheet-head">
+            <div class="sheet-title-row">
+              <span class="panel-caption">Хроника: установленные факты</span>
+              <div class="sheet-head-actions">
+                <button class="icon-btn" id="eventAddBtn" title="Записать факт">＋</button>
+              </div>
+            </div>
+            <input type="text" id="eventSearch" class="npc-search" placeholder="Поиск по тексту и именам…" />
+          </div>
+          <div class="npc-body" id="eventList"></div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Настройки -->
+  <div class="modal-overlay" id="settingsModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-head">
+        <h2 id="settingsTitle">Настройки</h2>
+        <button class="btn ghost close" id="settingsClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span class="field-label">Модель OpenRouter</span>
+          <input type="text" id="modelInput" placeholder="openai/gpt-4o-mini" />
+          <span class="field-hint">Модель рассказа. Любая с поддержкой инструментов: <code>deepseek/deepseek-v3.2:exacto</code>, <code>z-ai/glm-4.7:exacto</code>, <code>mistralai/mistral-large</code>.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Модель учёта (необязательно)</span>
+          <input type="text" id="toolModelInput" placeholder="как модель рассказа" />
+          <span class="field-hint">Отдельная модель для прохода учёта (вызовы инструментов). Пусто — та же, что для рассказа. Ставь сюда надёжную по tool-call, напр. <code>deepseek/deepseek-v3.2:exacto</code>.</span>
+        </label>
+        <div class="field field-row">
+          <label class="field-col">
+            <span class="field-label">Температура</span>
+            <input type="number" id="temperatureInput" min="0" max="2" step="0.1" />
+            <span class="field-hint">Выше — разнообразнее, ниже — стабильнее.</span>
+          </label>
+          <label class="field-col">
+            <span class="field-label">Штраф за повтор</span>
+            <input type="number" id="repetitionInput" min="0" max="2" step="0.1" />
+            <span class="field-hint">Против повтора тем и оборотов (0.3–0.6).</span>
+          </label>
+          <label class="field-col">
+            <span class="field-label">Частотный штраф</span>
+            <input type="number" id="frequencyInput" min="0" max="2" step="0.1" />
+            <span class="field-hint">Держи 0. Выше — модель начинает терять знаки препинания.</span>
+          </label>
+        </div>
+        <label class="field">
+          <span class="field-label">Мир</span>
+          <textarea id="worldInput" rows="5" placeholder="Сеттинг, лор, законы мира…"></textarea>
+          <span class="field-hint">Всегда в контексте. Опиши место действия, эпоху, важные детали мира.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Сценарий</span>
+          <textarea id="scenarioInput" rows="4" placeholder="Ситуация, с которой начинается история…"></textarea>
+          <span class="field-hint">Конкретная завязка: где герои, что происходит, какая цель.</span>
+        </label>
+        <div class="field">
+          <span class="field-label">Лицо повествования</span>
+          <div class="segmented" id="narrationSeg">
+            <button type="button" class="seg" data-value="third">От третьего</button>
+            <button type="button" class="seg" data-value="second_ty">На «ты»</button>
+            <button type="button" class="seg" data-value="second_vy">На «вы»</button>
+          </div>
+          <span class="field-hint">Как рассказчик обращается к герою. Перебивает указание о лице в промте рассказчика.</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Сложность</span>
+          <div class="segmented" id="difficultySeg">
+            <button type="button" class="seg" data-value="story">Мягкий</button>
+            <button type="button" class="seg" data-value="normal">Обычный</button>
+            <button type="button" class="seg" data-value="hard">Суровый</button>
+            <button type="button" class="seg" data-value="brutal">Беспощадный</button>
+          </div>
+          <span class="field-hint">Насколько жёстко мир относится к герою: риск, поведение NPC и строгость учёта состояния.</span>
+        </div>
+        <label class="field toggle-field">
+          <input type="checkbox" id="stateSyncInput" />
+          <span class="toggle-text">
+            <span class="field-label">Строгий учёт состояния</span>
+            <span class="field-hint">Отдельный проход после каждого ответа сверяет историю с листами и обновляет блоки. Надёжнее (модель не «забивает» на инструменты), но +1 запрос к модели за ход.</span>
+          </span>
+        </label>
+        <label class="field">
+          <span class="field-label">Инструкция учётчика</span>
+          <select id="syncPromptStyleInput" class="trait-cat" style="width:100%">
+            <option value="technical">Техническая — алгоритм, карта «событие → инструмент», связки последствий</option>
+            <option value="legacy">Прежняя — порядок важности и правила по разделам</option>
+          </select>
+          <span class="field-hint">Можно сравнить на одной модели: журнал учёта под каждым ответом и сводка в «Статистике учёта» покажут разницу. Проверка полноты кодом работает при обеих.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Рассказчик (поведение мастера)</span>
+          <textarea id="promptInput" rows="10"></textarea>
+          <span class="field-hint">Как рассказчик ведёт историю и управляет блоками. Меняй смело.</span>
+        </label>
+        <div class="field">
+          <span class="field-label">Каталог статусов</span>
+          <button type="button" class="btn ghost" id="statusCatalogBtn">Эффекты состояний</button>
+          <span class="field-hint">Что делает каждый статус: штраф к броскам, урон за ход, сколько держится. Рассказчик ставит по названию, код применяет.</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Заготовки для персонажей</span>
+          <button type="button" class="btn ghost" id="seedPoolBtn">Изюминки и тайны</button>
+          <span class="field-hint">Откуда рассказчик черпает странности и тайны для новых персонажей. Меняй под свой вкус — это задаёт характер всего мира.</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Палитра черт</span>
+          <button type="button" class="btn ghost" id="traitPoolBtn">Настроить черты характера</button>
+          <span class="field-hint">Из этого набора рассказчик выбирает черты для персонажей. Задай палитру — и мир населится теми, кого ты хочешь видеть.</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Картинки — локальный Stable Diffusion (Automatic1111)</span>
+          <div class="field-row">
+            <input type="text" id="sdUrlInput" placeholder="http://127.0.0.1:7860" style="flex:1" />
+            <button class="btn ghost" id="sdPingBtn" type="button">Проверить</button>
+          </div>
+          <span class="field-hint" id="sdPingNote">Запусти webui с флагом <code>--api</code>. Портреты рисуются по полю «внешность», переведённому в теги моделью учёта.</span>
+        </div>
+        <label class="field">
+          <span class="field-label">Стиль (добавляется в начало каждого промта)</span>
+          <textarea id="imageStyleInput" rows="2"></textarea>
+          <span class="field-hint">Для Pony-моделей обязательны теги score_9, score_8_up…; для реалистичных чекпойнтов замени на «photo, realistic, …».</span>
+        </label>
+        <div class="field image-presets">
+          <span class="field-label">Готовый стиль — подставит стиль и негатив для портретов и сцен</span>
+          <div class="preset-row">
+            <button type="button" class="btn ghost" data-image-preset="anime">Аниме</button>
+            <button type="button" class="btn ghost" data-image-preset="real">Полуреализм (как было)</button>
+          </div>
+        </div>
+        <label class="field">
+          <span class="field-label">Негатив</span>
+          <textarea id="imageNegativeInput" rows="2"></textarea>
+        </label>
+        <div class="field-row">
+          <label class="field" style="flex:1"><span class="field-label">Размер</span><input type="text" id="imageSizeInput" placeholder="832x1216" /></label>
+          <label class="field" style="flex:1"><span class="field-label">Шаги</span><input type="text" id="imageStepsInput" placeholder="25" /></label>
+          <label class="field" style="flex:1"><span class="field-label">CFG</span><input type="text" id="imageCfgInput" placeholder="6" /></label>
+          <label class="field" style="flex:1"><span class="field-label">Сэмплер</span><input type="text" id="imageSamplerInput" placeholder="DPM++ 2M" /></label>
+          <label class="field" style="flex:1"><span class="field-label">Clip skip</span><input type="text" id="imageClipSkipInput" placeholder="2" /></label>
+        </div>
+        <label class="field toggle-field">
+          <input type="checkbox" id="faceFixInput" />
+          <span class="toggle-text">
+            <span class="field-label">Дорисовывать лица (ADetailer)</span>
+            <span class="field-hint">Находит лица и перерисовывает их в высоком разрешении — без этого на сценах глаза и рты рвутся. Нужно расширение adetailer в A1111 (Extensions → Available → adetailer); «Проверить» выше скажет, установлено ли.</span>
+          </span>
+        </label>
+        <details class="field scene-settings">
+          <summary class="field-label">Иллюстрации сцен — свой стиль, негатив и размер</summary>
+          <label class="field">
+            <span class="field-label">Стиль сцены</span>
+            <textarea id="sceneStyleInput" rows="2"></textarea>
+            <span class="field-hint">rating_safe держит картинки приличными; убери, если нужно жёстче. Шаги, CFG и сэмплер — общие с портретами.</span>
+          </label>
+          <label class="field">
+            <span class="field-label">Негатив сцены</span>
+            <textarea id="sceneNegativeInput" rows="2"></textarea>
+          </label>
+          <label class="field"><span class="field-label">Размер кадра</span><input type="text" id="sceneSizeInput" placeholder="1216x832" /></label>
+          <label class="field toggle-field">
+            <input type="checkbox" id="sceneHiresInput" />
+            <span class="toggle-text">
+              <span class="field-label">Второй проход (Hires fix)</span>
+              <span class="field-hint">Картинка дорисовывается в большем разрешении — детали и лица заметно чище. Генерация примерно вдвое дольше.</span>
+            </span>
+          </label>
+          <div class="field-row">
+            <label class="field" style="flex:1"><span class="field-label">Увеличение</span><input type="text" id="hiresScaleInput" placeholder="1.5" /></label>
+            <label class="field" style="flex:1"><span class="field-label">Denoise</span><input type="text" id="hiresDenoiseInput" placeholder="0.4" /></label>
+            <label class="field" style="flex:2"><span class="field-label">Апскейлер</span><input type="text" id="hiresUpscalerInput" placeholder="R-ESRGAN 4x+" /></label>
+          </div>
+        </details>
+        <label class="field toggle-field">
+          <input type="checkbox" id="diceEnabledInput" />
+          <span class="toggle-text">
+            <span class="field-label">Проверки броском</span>
+            <span class="field-hint">Исход рискованных действий решает бросок кубика с учётом умений героя и его состояния, а не сама модель. Рассказчик только описывает результат.</span>
+          </span>
+        </label>
+        <label class="field toggle-field">
+          <input type="checkbox" id="loreAutoWriteInput" />
+          <span class="toggle-text">
+            <span class="field-label">Рассказчик дополняет справочник мира</span>
+            <span class="field-hint">Разрешить записывать в «Мир» важные сведения, всплывшие по ходу. Твои записи он не тронет. Выключено — справочник ведёшь только ты.</span>
+          </span>
+        </label>
+        <label class="field toggle-field">
+          <input type="checkbox" id="autoSummarizeInput" />
+          <span class="toggle-text">
+            <span class="field-label">Сжимать историю автоматически</span>
+            <span class="field-hint">Старые ходы сворачиваются в «Предысторию», чтобы контекст не разрастался на долгой игре.</span>
+          </span>
+        </label>
+        <label class="field">
+          <span class="field-label">Сырых ходов в памяти</span>
+          <input type="number" id="historyKeepInput" min="6" max="200" step="2" />
+          <span class="field-hint">Сколько последних сообщений держать дословно (6–200). Старшие уходят в предысторию пачкой — когда сверх этого наберётся ещё половина; сжатие идёт в фоне и ход не задерживает.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Предыстория</span>
+          <textarea id="summaryInput" rows="7" placeholder="Заполняется автоматически по мере игры…"></textarea>
+          <span class="field-hint">Конспект уже произошедшего, который всегда в контексте. Можно править вручную.</span>
+        </label>
+        <details class="field sync-stats" id="syncStats">
+          <summary class="field-label">Сводка учёта по этой истории</summary>
+          <div id="syncStatsBody"></div>
+          <span class="field-hint">Считается по журналам ходов. Переучтённые ходы попадают в строку той модели, которой их переучли, — так удобно сравнивать модели учёта на одних и тех же ходах.</span>
+        </details>
+        <p class="field-note" id="keyNote"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" id="settingsCancel">Отмена</button>
+        <button class="btn primary" id="settingsSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Редактор героя -->
+  <div class="modal-overlay" id="charModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="charModalTitle">
+      <div class="modal-head">
+        <h2 id="charModalTitle">Герой</h2>
+        <button class="btn ghost close" id="charModalClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <div class="avatar-editor">
+          <div class="avatar-preview" id="charAvatarPreview"><span class="avatar-placeholder">✦</span></div>
+          <div class="avatar-controls">
+            <button class="btn ghost" id="charAvatarPick" type="button">Загрузить портрет</button>
+            <button class="btn ghost" id="charAvatarDraw" type="button" title="Нарисовать по тегам ниже (если пусто — по описанию внешности)">🎨 Нарисовать</button>
+            <button class="btn ghost" id="charAvatarRedraw" type="button" title="Заново перевести текущую внешность в теги и нарисовать — после смены облика">↻ по описанию</button>
+            <button class="btn ghost danger" id="charAvatarClear" type="button">Убрать</button>
+            <span class="field-hint">PNG, JPEG или WebP. Картинка уменьшается автоматически.</span>
+            <textarea id="charPortraitTags" rows="2" placeholder="Теги для портрета заполнятся после первой генерации — можно править и рисовать заново"></textarea>
+            <span class="field-hint">«Нарисовать» рисует по тегам из поля — они не следят за описанием. Изменил внешность — жми «↻ по описанию».</span>
+          </div>
+          <input type="file" id="charAvatarFile" accept="image/png,image/jpeg,image/webp" hidden />
+        </div>
+        <label class="field">
+          <span class="field-label">Имя</span>
+          <input type="text" id="charName" placeholder="Имя героя" />
+        </label>
+        <label class="field toggle-field">
+          <input type="checkbox" id="charPresent" />
+          <span class="toggle-text">
+            <span class="field-label">В истории</span>
+            <span class="field-hint" id="charPresentHint">Выключи, если этого героя сейчас нет в сцене.</span>
+          </span>
+        </label>
+        <div class="field field-row">
+          <label class="field-col">
+            <span class="field-label">Раса</span>
+            <input type="text" id="charRace" placeholder="человек, полуэльф…" />
+          </label>
+          <label class="field-col">
+            <span class="field-label">Положение</span>
+            <input type="text" id="charSocial" placeholder="наёмник, дворянин…" />
+          </label>
+        </div>
+        <div class="field">
+          <span class="field-label">Внешность</span>
+          <textarea id="charAppearance" rows="4" placeholder="Рост, сложение, лицо, одежда, приметы…"></textarea>
+          <span class="field-hint">Учётчик дописывает сюда перемены по ходу истории (шрамы, превращения). Полностью переписать может, только сохранив большую часть прежнего.</span>
+          <div class="char-look-acts">
+            <label class="field check"><input type="checkbox" id="charLookLock" /><span>🔒 Закрепить внешность — учётчик не изменит</span></label>
+            <button type="button" class="link-btn" id="charLookRestore" hidden title="Подставить внешность, какой она была до последнего изменения учётчиком">↶ вернуть прежнюю</button>
+          </div>
+        </div>
+        <label class="field">
+          <span class="field-label">Описание героя</span>
+          <textarea id="charPersona" rows="8" placeholder="Кто это, характер, предыстория, манеры…"></textarea>
+          <span class="field-hint">Рассказчик учитывает это описание, когда ведёт историю про героя.</span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost danger" id="charDelete">Удалить</button>
+        <span class="foot-spacer"></span>
+        <button class="btn ghost" id="charCancel">Отмена</button>
+        <button class="btn primary" id="charSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Редактор записи о мире -->
+  <div class="modal-overlay" id="loreModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="loreModalTitle">
+      <div class="modal-head">
+        <h2 id="loreModalTitle">Запись о мире</h2>
+        <button class="btn ghost close" id="loreModalClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span class="field-label">Название</span>
+          <input type="text" id="loreTitle" placeholder="Например: Гильдия воров" />
+        </label>
+        <label class="field">
+          <span class="field-label">Ключевые слова</span>
+          <input type="text" id="loreKeys" placeholder="гильдия, воры, метка" />
+          <span class="field-hint">Через запятую. Запись попадёт в контекст, когда одно из слов встретится в недавних ходах. Падежи учитываются автоматически.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Содержание</span>
+          <textarea id="loreContent" rows="8" placeholder="Что рассказчику нужно знать об этом…"></textarea>
+        </label>
+        <label class="field toggle-field">
+          <input type="checkbox" id="loreAlways" />
+          <span class="toggle-text">
+            <span class="field-label">Всегда в контексте</span>
+            <span class="field-hint">Для базовых законов мира. Такие записи не требуют ключевых слов, но занимают контекст постоянно.</span>
+          </span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost danger" id="loreDelete">Удалить</button>
+        <span class="foot-spacer"></span>
+        <button class="btn ghost" id="loreCancel">Отмена</button>
+        <button class="btn primary" id="loreSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Досье героя -->
+  <div class="modal-overlay" id="dossierModal" hidden>
+    <div class="modal dossier" role="dialog" aria-modal="true" aria-labelledby="dossierTitle">
+      <div class="modal-head">
+        <h2 id="dossierTitle">Досье</h2>
+        <button class="btn ghost close" id="dossierClose">Закрыть</button>
+      </div>
+      <div class="modal-body" id="dossierBody"></div>
+      <div class="modal-foot">
+        <button class="btn ghost" id="dossierEdit">Изменить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Редактор персонажа -->
+  <div class="modal-overlay" id="npcModal" hidden>
+    <div class="modal dossier npc-dossier" role="dialog" aria-modal="true" aria-labelledby="npcModalTitle">
+      <div class="modal-head">
+        <h2 id="npcModalTitle">Персонаж</h2>
+        <button class="btn ghost close" id="npcModalClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <div class="dossier-grid">
+          <aside class="dossier-side">
+            <div class="avatar-editor">
+              <div class="avatar-preview portrait-plate" id="npcAvatarPreview"><span class="avatar-placeholder">✦</span></div>
+              <div class="avatar-controls">
+                <button class="btn ghost" id="npcAvatarDraw" type="button" title="Нарисовать по тегам (если их нет — по описанию внешности)">🎨 Нарисовать</button>
+                <button class="btn ghost" id="npcAvatarRedraw" type="button" title="Заново перевести текущую внешность в теги и нарисовать — после смены облика">↻ По внешности</button>
+                <button class="btn ghost" id="npcAvatarPick" type="button">Загрузить</button>
+                <button class="btn ghost danger" id="npcAvatarClear" type="button">Убрать</button>
+                <details class="portrait-tags">
+                  <summary>Теги портрета</summary>
+                  <textarea id="npcPortraitTags" rows="4" placeholder="Заполнятся после первой генерации — можно править и рисовать заново"></textarea>
+                  <span class="field-hint">«Нарисовать» берёт эти теги, за описанием они не следят. Изменили внешность — «↻ По внешности». Загрузить можно PNG, JPEG или WebP.</span>
+                </details>
+              </div>
+              <input type="file" id="npcAvatarFile" accept="image/png,image/jpeg,image/webp" hidden />
+            </div>
+            <label class="bound-toggle">
+              <input type="checkbox" id="npcBound" />
+              <span><b>Всегда с героем</b>Спутник, голос в голове, дух — участвует в каждой сцене</span>
+            </label>
+            <p class="lock-hint">🔓 у поля — закрепить: учётчик его не тронет. ✨ — заполнить по истории.</p>
+          </aside>
+
+          <div class="dossier-main">
+            <div class="field npc-name-field">
+              <div class="lock-label"><span class="field-label">Имя</span><button type="button" class="lock" data-field="name" title="Закрепить">🔓</button></div>
+              <input type="text" id="npcName" placeholder="Имя или описание: «Девушка в красном плаще»" />
+            </div>
+            <div class="field-row">
+              <div class="field-col">
+                <div class="lock-label"><span class="field-label">Отношение к герою</span><button type="button" class="lock" data-field="attitude" title="Закрепить">🔓</button></div>
+                <input type="text" id="npcAttitude" placeholder="дружелюбен, насторожен…" />
+              </div>
+              <div class="field-col">
+                <div class="lock-label"><span class="field-label">Где и в каком состоянии</span><button type="button" class="lock" data-field="status" title="Закрепить">🔓</button></div>
+                <input type="text" id="npcStatus" placeholder="в таверне, ранен, в бегах…" />
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-col">
+                <div class="lock-label"><span class="field-label">Настроение</span><button type="button" class="lock" data-field="mood" title="Закрепить">🔓</button></div>
+                <input type="text" id="npcMood" placeholder="раздражена / игрива" />
+              </div>
+              <div class="field-col" style="flex:2">
+                <div class="lock-label"><span class="field-label">Почему</span></div>
+                <input type="text" id="npcMoodReason" placeholder="герой полез в драку, не спросив её" />
+              </div>
+            </div>
+
+            <section class="npc-section">
+              <h3>Кто это</h3>
+              <div class="field">
+                <div class="lock-label"><span class="field-label">Роль и прошлое — постоянное</span><button type="button" class="lock" data-field="description" title="Закрепить">🔓</button></div>
+                <textarea id="npcDescription" rows="3" placeholder="Роль, происхождение, родня, возраст…"></textarea>
+              </div>
+              <div class="field">
+                <div class="lock-label"><span class="field-label">Внешность</span><button type="button" class="lock" data-field="appearance" title="Закрепить">🔓</button></div>
+                <textarea id="npcAppearance" rows="3" placeholder="Сложение, лицо, одежда, приметы…"></textarea>
+              </div>
+              <div class="field">
+                <div class="lock-label"><span class="field-label">Черты</span><button type="button" class="lock" data-field="traits" title="Закрепить">🔓</button></div>
+                <div id="npcTraits" class="trait-picker"></div>
+              </div>
+            </section>
+
+            <section class="npc-section">
+              <h3>Нрав и цели</h3>
+              <div class="field">
+                <div class="lock-label"><span class="field-label">Характер</span><button type="button" class="lock" data-field="personality" title="Закрепить">🔓</button></div>
+                <textarea id="npcPersonality" rows="3" placeholder="Нрав, ценности, как держится с людьми…"></textarea>
+              </div>
+              <div class="field">
+                <div class="lock-label"><span class="field-label">Чего хочет</span><button type="button" class="lock" data-field="wants" title="Закрепить">🔓</button></div>
+                <input type="text" id="npcWants" placeholder="Конкретная цель прямо сейчас…" />
+              </div>
+              <div class="field">
+                <div class="lock-label"><span class="field-label">Изюминка</span><button type="button" class="lock" data-field="quirk" title="Закрепить">🔓</button></div>
+                <input type="text" id="npcQuirk" placeholder="Странность или противоречие…" />
+              </div>
+              <div class="field">
+                <div class="lock-label"><span class="field-label">Что скрывает</span><button type="button" class="lock" data-field="secret" title="Закрепить">🔓</button></div>
+                <input type="text" id="npcSecret" placeholder="Тайна, о которой герой не знает…" />
+              </div>
+              <div class="field">
+                <div class="lock-label"><span class="field-label">Связи с другими</span><button type="button" class="lock" data-field="links" title="Закрепить">🔓</button></div>
+                <input type="text" id="npcLinks" placeholder="сестра Риты; должна Барону…" />
+              </div>
+            </section>
+
+            <section class="npc-section">
+              <h3>Голос</h3>
+              <p class="section-hint">Учётчик копит сюда дословные реплики, чтобы манера не выцветала после сжатия памяти.</p>
+              <div class="field-row">
+                <div class="field-col">
+                  <div class="lock-label"><span class="field-label">Манера речи</span><button type="button" class="lock" data-field="voice" title="Закрепить весь голос">🔓</button></div>
+                  <input type="text" id="npcVoiceStyle" placeholder="насмешливая, тянет гласные" />
+                </div>
+                <div class="field-col">
+                  <div class="lock-label"><span class="field-label">Юмор</span></div>
+                  <input type="text" id="npcVoiceHumor" placeholder="сальные намёки / не шутит никогда" />
+                </div>
+              </div>
+              <div class="field">
+                <div class="lock-label"><span class="field-label">Речевые привычки</span></div>
+                <input type="text" id="npcVoiceHabits" placeholder="зовёт героя «сокровище»; заканчивает фразы «ясно?»" />
+              </div>
+              <div class="field">
+                <div class="lock-label"><span class="field-label">Как звучит — по реплике на строку, до 8</span></div>
+                <textarea id="npcVoiceSamples" class="voice-samples" rows="3" placeholder="Дорогой, ты так смотришь, что мне не нужно читать твои мысли."></textarea>
+              </div>
+              <div class="field-row">
+                <div class="field-col">
+                  <div class="lock-label"><span class="field-label">Как прячет чувства</span></div>
+                  <input type="text" id="npcVoiceMasks" placeholder="страх выдаёт за раздражение" />
+                </div>
+                <div class="field-col">
+                  <div class="lock-label"><span class="field-label">В речи никогда</span></div>
+                  <input type="text" id="npcVoiceTaboos" placeholder="не читает мораль, не извиняется" />
+                </div>
+              </div>
+            </section>
+
+            <section class="npc-section">
+              <h3>С героем</h3>
+              <div class="field">
+                <div class="lock-label"><span class="field-label">Что было между вами</span><button type="button" class="lock" data-field="history" title="Закрепить">🔓</button></div>
+                <textarea id="npcHistory" rows="3" placeholder="Ключевые события между вами…"></textarea>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost danger" id="npcDelete">Удалить</button>
+        <span class="foot-spacer"></span>
+        <button class="btn ghost" id="npcCancel">Отмена</button>
+        <button class="btn primary" id="npcSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Истории -->
+  <div class="modal-overlay" id="slotsModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="slotsTitle">
+      <div class="modal-head">
+        <h2 id="slotsTitle">Истории</h2>
+        <button class="btn ghost close" id="slotsClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <p class="field-note lore-hint">У каждой истории свои герои, мир, персонажи и предыстория. Модель и промт рассказчика общие для всех.</p>
+        <div id="slotList"></div>
+      </div>
+      <div class="modal-foot">
+        <input type="text" id="newSlotName" class="slot-input" placeholder="Название новой истории" />
+        <button class="btn primary" id="slotCreate">Создать</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Каталог статусов -->
+  <div class="modal-overlay" id="statusModal" hidden>
+    <div class="modal dossier" role="dialog" aria-modal="true" aria-labelledby="statusTitle">
+      <div class="modal-head">
+        <h2 id="statusTitle">Эффекты состояний</h2>
+        <button class="btn ghost close" id="statusClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <p class="field-note lore-hint">Броски: плюс помогает, минус мешает. Тик: показатель и сколько за ход. Ходов: пусто — пока не снимут.</p>
+        <div id="statusList"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" id="statusAdd">Добавить статус</button>
+        <span class="foot-spacer"></span>
+        <button class="btn ghost" id="statusCancel">Отмена</button>
+        <button class="btn primary" id="statusSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Нить -->
+  <div class="modal-overlay" id="threadModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="threadModalTitle">
+      <div class="modal-head">
+        <h2 id="threadModalTitle">Нить</h2>
+        <button class="btn ghost close" id="threadModalClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span class="field-label">Название</span>
+          <input type="text" id="threadTitle" placeholder="Найти сестру, Долг гильдии…" />
+        </label>
+        <label class="field">
+          <span class="field-label">Где сейчас</span>
+          <input type="text" id="threadProgress" placeholder="узнал, что она в северном блоке" />
+        </label>
+        <label class="field">
+          <span class="field-label">Что известно</span>
+          <textarea id="threadNotes" rows="3" placeholder="Зацепки, имена, места…"></textarea>
+        </label>
+        <label class="field">
+          <span class="field-label">Состояние</span>
+          <select id="threadStatus" class="trait-cat" style="width:100%">
+            <option value="open">Открыта</option>
+            <option value="done">Решена</option>
+            <option value="failed">Упущена</option>
+          </select>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost danger" id="threadDelete">Удалить</button>
+        <span class="foot-spacer"></span>
+        <button class="btn ghost" id="threadCancel">Отмена</button>
+        <button class="btn primary" id="threadSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Блок листа вручную -->
+  <div class="modal-overlay" id="blockModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="blockModalTitle">
+      <div class="modal-head">
+        <h2 id="blockModalTitle">Новый блок</h2>
+        <button class="btn ghost close" id="blockModalClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <div class="field-row">
+          <label class="field" style="flex:1">
+            <span class="field-label">Тип</span>
+            <select id="blockType" class="trait-cat" style="width:100%">
+              <option value="status">Состояние</option>
+              <option value="stat">Характеристика</option>
+              <option value="item">Предмет</option>
+              <option value="ability">Умение</option>
+              <option value="relationship">Отношение</option>
+            </select>
+          </label>
+          <label class="field" style="flex:2">
+            <span class="field-label">Название</span>
+            <input type="text" id="blockName" list="statusNames" placeholder="Отравлен, Здоровье, Ржавый меч…" />
+            <datalist id="statusNames"></datalist>
+          </label>
+        </div>
+        <div class="field-row" id="blockStatRow">
+          <label class="field" style="flex:1">
+            <span class="field-label">Значение</span>
+            <input type="text" id="blockValue" placeholder="10" />
+          </label>
+          <label class="field" style="flex:1">
+            <span class="field-label">Максимум</span>
+            <input type="text" id="blockMax" placeholder="10 (пусто — без шкалы)" />
+          </label>
+        </div>
+        <label class="field" id="blockTextRow">
+          <span class="field-label">Значение</span>
+          <input type="text" id="blockText" placeholder="кратко: «ученик», «должен 50 монет»…" />
+        </label>
+        <div id="blockStatusRows">
+          <div class="field-row">
+            <label class="field" style="flex:1">
+              <span class="field-label">К броскам</span>
+              <input type="text" id="blockRollMod" placeholder="−2" />
+            </label>
+            <label class="field" style="flex:1">
+              <span class="field-label">Ходов</span>
+              <input type="text" id="blockDuration" placeholder="пусто — пока не снимут" />
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field" style="flex:2">
+              <span class="field-label">Меняет показатель</span>
+              <input type="text" id="blockTickStat" placeholder="Здоровье" />
+            </label>
+            <label class="field" style="flex:1">
+              <span class="field-label">На сколько в ход</span>
+              <input type="text" id="blockTickDelta" placeholder="−1" />
+            </label>
+          </div>
+          <span class="field-hint">Если название совпадает с каталогом состояний, его эффекты применятся и без этих полей.</span>
+        </div>
+        <label class="field">
+          <span class="field-label">Описание</span>
+          <textarea id="blockDesc" rows="2" placeholder="Что это и откуда"></textarea>
+        </label>
+        <label class="field">
+          <span class="field-label">Закрепление</span>
+          <select id="blockLockMode" class="trait-cat" style="width:100%">
+            <option value="none">Не закреплено — учётчик меняет всё</option>
+            <option value="desc">📌 Описание — значение и числа меняются, описание и название нет</option>
+            <option value="all">🔒 Целиком — нельзя ни изменить, ни снять</option>
+          </select>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost danger" id="blockDelete">Удалить</button>
+        <span class="foot-spacer"></span>
+        <button class="btn ghost" id="blockCancel">Отмена</button>
+        <button class="btn primary" id="blockSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Просмотр картинки во весь размер -->
+  <div class="lightbox" id="lightbox" hidden><img id="lightboxImg" alt="" /><div class="lightbox-caption" id="lightboxCaption"></div></div>
+
+  <!-- Иллюстрация сцены -->
+  <div class="modal-overlay" id="illusModal" hidden>
+    <div class="modal scene-modal" role="dialog" aria-modal="true" aria-labelledby="illusTitle">
+      <div class="modal-head">
+        <h2 id="illusTitle">Иллюстрация сцены</h2>
+        <button class="btn ghost close" id="illusClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <p class="scene-fragment" id="illusFragment"></p>
+        <p class="scene-moment" id="illusMoment"></p>
+        <label class="field">
+          <span class="field-label">Кадр — теги для Stable Diffusion</span>
+          <textarea id="illusTags" rows="5" placeholder="Модель учёта составит описание кадра…"></textarea>
+          <span class="field-hint" id="illusCands"></span>
+        </label>
+        <label class="field scene-seed-field">
+          <span class="field-label">Зерно</span>
+          <input type="text" id="illusSeed" placeholder="пусто — случайное" />
+          <span class="field-hint">То же зерно и те же теги — тот же кадр. Поменяли пару тегов при том же зерне — композиция сохранится.</span>
+        </label>
+        <div class="scene-preview" id="illusPreview" hidden></div>
+        <div class="scene-status" id="illusStatus"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" id="illusReframe" title="Попросить модель выбрать другой момент и составить теги заново">Новый кадр</button>
+        <span class="foot-spacer"></span>
+        <button class="btn ghost" id="illusReseed" title="Те же теги, случайное зерно">Другое зерно</button>
+        <button class="btn primary" id="illusDraw">Нарисовать</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Диагностика -->
+  <div class="modal-overlay" id="diagModal" hidden>
+    <div class="modal diag" role="dialog" aria-modal="true" aria-labelledby="diagTitle">
+      <div class="modal-head">
+        <h2 id="diagTitle">Диагностика запросов</h2>
+        <button class="btn ghost close" id="diagClose">Закрыть</button>
+      </div>
+      <div class="diag-body">
+        <div class="diag-side">
+          <div class="diag-filter">
+            <select id="diagFilter" class="trait-cat">
+              <option value="">Все запросы</option>
+              <option value="problem">Только ошибки и предупреждения</option>
+              <option value="рассказчик">Рассказчик</option>
+              <option value="учётчик">Учётчик</option>
+              <option value="other">Прочее</option>
+            </select>
+          </div>
+          <div class="diag-list" id="diagList"></div>
+        </div>
+        <div class="diag-detail" id="diagDetail"><p class="sheet-empty">Выберите запрос слева.</p></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost danger" id="diagClear">Очистить журнал</button>
+        <span class="foot-spacer"></span>
+        <span class="diag-foot-note">Хранятся последние 100 запросов, полные тела — у 20 последних.</span>
+        <button class="btn ghost" id="diagRefresh">Обновить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Запись хроники -->
+  <div class="modal-overlay" id="eventModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="eventModalTitle">
+      <div class="modal-head">
+        <h2 id="eventModalTitle">Запись в хронике</h2>
+        <button class="btn ghost close" id="eventModalClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <div class="field-row">
+          <label class="field" style="flex:1">
+            <span class="field-label">Тип</span>
+            <select id="eventType" class="trait-cat" style="width:100%">
+              <option value="promise">Обещание</option>
+              <option value="debt">Долг</option>
+              <option value="plan">Назначено (встреча, срок)</option>
+              <option value="lie">Ложь</option>
+              <option value="reveal">Раскрыто</option>
+              <option value="decision">Решение</option>
+              <option value="death">Смерть</option>
+              <option value="fact">Факт</option>
+              <option value="relation">Отношения</option>
+              <option value="other">Событие</option>
+            </select>
+          </label>
+          <label class="field" style="flex:1">
+            <span class="field-label">Ход</span>
+            <input type="text" id="eventTurn" placeholder="0" />
+          </label>
+          <label class="field" style="flex:1">
+            <span class="field-label">Состояние</span>
+            <select id="eventStatus" class="trait-cat" style="width:100%">
+              <option value="open">В силе</option>
+              <option value="done">Закрыто: исполнено</option>
+              <option value="broken">Закрыто: нарушено</option>
+              <option value="past">Закрыто: прошло / отменено</option>
+            </select>
+          </label>
+        </div>
+        <label class="field">
+          <span class="field-label">Факт</span>
+          <textarea id="eventText" rows="2" placeholder="Альберт обещал Роланду вернуть меч до зимы"></textarea>
+        </label>
+        <label class="field">
+          <span class="field-label">Когда</span>
+          <input type="text" id="eventWhen" placeholder="в полдень · завтра вечером · через 2 часа · 18:00 — для встреч и сроков" />
+          <span class="field-hint">Отсчёт от текущего времени сцены. Когда срок пройдёт, учётчик увидит пометку и закроет запись.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Участники</span>
+          <input type="text" id="eventParticipants" placeholder="Альберт, Роланд — через запятую" />
+        </label>
+        <label class="field">
+          <span class="field-label">Кто знает</span>
+          <input type="text" id="eventKnownBy" placeholder="пусто — все участники. Для лжи: только тот, кто соврал" />
+          <span class="field-hint">Рассказчику в сцене показывается, кто из присутствующих об этом НЕ знает — чтобы персонаж не ссылался на то, чего не слышал.</span>
+        </label>
+        <label class="field check">
+          <input type="checkbox" id="eventLocked" />
+          <span>🔒 Закрепить — учётчик не закроет и не изменит</span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost danger" id="eventDelete">Удалить</button>
+        <span class="foot-spacer"></span>
+        <button class="btn ghost" id="eventCancel">Отмена</button>
+        <button class="btn primary" id="eventSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Сцена -->
+  <div class="modal-overlay" id="sceneModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sceneModalTitle">
+      <div class="modal-head">
+        <h2 id="sceneModalTitle">Сцена</h2>
+        <button class="btn ghost close" id="sceneModalClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span class="field-label">Место <button type="button" class="lock-btn" data-lock="location" title="Закрепить: учётчик не меняет">🔓</button></span>
+          <input type="text" id="sceneLocationInput" placeholder="Таверна «Кривой якорь», зал" />
+        </label>
+        <div class="field-row">
+          <label class="field" style="flex:1">
+            <span class="field-label">День</span>
+            <input type="text" id="sceneDayInput" placeholder="1" />
+          </label>
+          <label class="field" style="flex:1">
+            <span class="field-label">Часы <button type="button" class="lock-btn" data-lock="clock" title="Закрепить: время не идёт">🔓</button></span>
+            <input type="text" id="sceneClockInput" placeholder="21:30" />
+          </label>
+          <label class="field" style="flex:2">
+            <span class="field-label">Словами (необязательно)</span>
+            <input type="text" id="sceneTimeInput" placeholder="поздний вечер, перед грозой" />
+          </label>
+        </div>
+        <label class="field">
+          <span class="field-label">Кто рядом <button type="button" class="lock-btn" data-lock="present" title="Закрепить">🔓</button></span>
+          <input type="text" id="scenePresentInput" placeholder="Рита, стражник Ольт — через запятую" />
+        </label>
+        <label class="field">
+          <span class="field-label">Обстановка <button type="button" class="lock-btn" data-lock="note" title="Закрепить">🔓</button></span>
+          <input type="text" id="sceneNoteInput" placeholder="дождь, гости расходятся, у дверей шум" />
+        </label>
+        <span class="field-hint">Учётчик обновляет сцену сам по ходу истории и двигает часы. Закреплённые поля он не трогает.</span>
+      </div>
+      <div class="modal-foot">
+        <span class="foot-spacer"></span>
+        <button class="btn ghost" id="sceneCancel">Отмена</button>
+        <button class="btn primary" id="sceneSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Направление истории -->
+  <div class="modal-overlay" id="directorModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="directorTitle">
+      <div class="modal-head">
+        <h2 id="directorTitle">Направление истории</h2>
+        <button class="btn ghost close" id="directorClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span class="field-label">Куда вести</span>
+          <textarea id="directorNote" rows="5" placeholder="Например: хочу, чтобы клиентка оказалась двойным агентом и это вскрылось в ближайшие 3–4 хода; побольше противостояния с девицей с медальоном; никакой романтики."></textarea>
+          <span class="field-hint">Постоянное указание рассказчику: стоит выше сценария, действует каждый ход, пока не сотрёшь. Он ведёт к этому через события и персонажей, не объявляя вслух. Пусто — рассказчик сам решает.</span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <span class="foot-spacer"></span>
+        <button class="btn ghost" id="directorCancel">Отмена</button>
+        <button class="btn primary" id="directorSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Заготовки: изюминки и тайны -->
+  <div class="modal-overlay" id="seedModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="seedTitle">
+      <div class="modal-head">
+        <h2 id="seedTitle">Изюминки и тайны</h2>
+        <button class="btn ghost close" id="seedClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <p class="field-note lore-hint">По одной на строку. Рассказчик берёт отсюда или придумывает в том же духе — и не повторяет одну и ту же у двух персонажей.</p>
+        <label class="field">
+          <span class="field-label">Изюминки</span>
+          <textarea id="seedQuirks" rows="10" placeholder="Кормит бродячих кошек, хотя славится жестокостью&#10;Говорит о себе в третьем лице…"></textarea>
+          <span class="field-hint">Конкретная странность или противоречие черте — то, из-за чего хочется спросить «почему».</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Тайны</span>
+          <textarea id="seedSecrets" rows="10" placeholder="Живёт под чужим именем&#10;Должен людям, которые не прощают долгов…"></textarea>
+          <span class="field-hint">Второй слой. Рассказчик знает, герой — нет; играется через оговорки и странные реакции.</span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" id="seedCancel">Отмена</button>
+        <button class="btn primary" id="seedSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Палитра черт -->
+  <div class="modal-overlay" id="traitModal" hidden>
+    <div class="modal dossier" role="dialog" aria-modal="true" aria-labelledby="traitTitle">
+      <div class="modal-head">
+        <h2 id="traitTitle">Палитра черт</h2>
+        <button class="btn ghost close" id="traitClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <p class="field-note lore-hint">Черты общие для всех историй. Влияние на броски: например «Трусливый» даёт +3 к запугиванию, «Упрямый» — −3 к убеждению.</p>
+        <div id="traitList"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" id="traitAdd">Добавить черту</button>
+        <button class="btn ghost" id="traitMerge" title="Дописать стандартные черты, которых нет в списке">Дополнить стандартными</button>
+        <span class="foot-spacer"></span>
+        <button class="btn ghost" id="traitCancel">Отмена</button>
+        <button class="btn primary" id="traitSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="app.js?v=31"></script>
+</body>
+</html>
