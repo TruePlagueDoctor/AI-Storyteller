@@ -173,6 +173,7 @@ function technicalSyncHead(state) {
     '- ранен → block stat + block status, если в КАТАЛОГЕ есть подходящее',
     '- НПС ушёл → scene.present без него + npc status',
     '- тайна раскрыта → event type:reveal (known_by) + npc',
+    '- персонаж солгал или скрыл правду (даже если герой это заметил) → event type:lie, known_by — кто знает правду; не только npc и thread',
     '- прошло время → scene elapsed_minutes; в ХРОНИКЕ проверь записи с ⚠',
     '- дал обещание → event add promise; выполнил → event close',
     '',
@@ -306,15 +307,25 @@ export function completenessHints(state, narration, calls) {
   const moneyTouched = () => blockCalls.some((c) => !c.args || !c.args.type || c.args.type === 'item' || (c.args.type === 'stat' && MONEY.test(c.args.name || '')));
   const has = (n) => used.has(n) || (n === 'npc' && ['create_npc', 'update_npc', 'remove_npc'].some((x) => used.has(x)));
   const hints = [];
+  // Лист — это герой: «с ожогом на шее» у незнакомца или «купец платит стражнику» — не повод.
+  // Признак засчитываем, если в той же или предыдущей фразе речь о герое.
+  const heroName = (state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0] || {}).name || '';
+  const sentences = text.split(/(?<=[.!?…»])\s+/);
+  const heroFirst = heroName.trim().split(/\s+/)[0].toLowerCase();
+  const heroStem = heroFirst.length > 4 ? heroFirst.slice(0, -1) : heroFirst; // «Кейна» = «Кейн», «Яна» = «Ян»
+  const HERO_REF = /(?<!\p{L})(ты|тебя|тебе|тобой|тво(й|я|ё|е|и|его|ей|их|ём|ем|им|ю|ими)|вы|вас|вам|вами|ваш(а|е|и|его|ей|их|ем|им|у|ими)?)(?!\p{L})|(?<!\p{L})(ешь|ёшь|ишь)(?!\p{L})/iu;
+  const VERB_2ND = /\p{L}(ешь|ёшь|ишь|ешься|ишься|ете|ёте|ите)(?!\p{L})/u;
+  const refersHero = (s) => HERO_REF.test(s) || VERB_2ND.test(s) || (heroStem.length >= 2 && new RegExp(`(?<!\\p{L})${heroStem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'iu').test(s));
+  const aboutHero = (re) => sentences.some((s, i) => re.test(s) && (refersHero(s) || (i > 0 && refersHero(sentences[i - 1]))));
   const stemOf = (name) => { const w = String(name).toLowerCase().split(/\s+/).find((x) => x.length >= 3) || ''; return w.length > 5 ? w.slice(0, w.length - 2) : w.slice(0, 4); };
   const hero = state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0];
   const sheet = hero ? (hero.blocks || []).filter((b) => b.type === 'stat' || b.type === 'item')
     .map((b) => b.type === 'stat' ? `${b.name} ${b.value ?? '?'}${b.max != null ? '/' + b.max : ''}` : `${b.name}${b.value ? ': ' + b.value : ''}`).slice(0, 14).join(', ') : '';
   const sheetNote = sheet ? ` Сейчас в листе: ${sheet}.` : ' Лист пуст.';
-  if (!moneyTouched() && RE_PAY.test(text)) hints.push('Во фрагменте платят, отдают, получают или тратят — лист героя (деньги, предметы) не менялся.' + sheetNote);
-  if (!blockTouched('stat', 'status') && RE_HURT.test(text)) hints.push('Во фрагменте ранение или лечение — показатели и состояния героя не менялись (переведи по ШКАЛЕ).' + sheetNote);
-  if (!blockTouched('stat', 'status') && !RE_HURT.test(text) && RE_REST.test(text)) hints.push('Во фрагменте отдых, сон, еда или трата сил — показатели героя не менялись (по ШКАЛЕ).' + sheetNote);
-  if (!blockTouched('item') && !RE_PAY.test(text) && RE_USE.test(text)) hints.push('Во фрагменте израсходован или использован предмет — инвентарь не менялся.' + sheetNote);
+  if (!moneyTouched() && aboutHero(RE_PAY)) hints.push('Во фрагменте платят, отдают, получают или тратят — лист героя (деньги, предметы) не менялся.' + sheetNote);
+  if (!blockTouched('stat', 'status') && aboutHero(RE_HURT)) hints.push('Во фрагменте ранение или лечение — показатели и состояния героя не менялись (переведи по ШКАЛЕ).' + sheetNote);
+  if (!blockTouched('stat', 'status') && !aboutHero(RE_HURT) && aboutHero(RE_REST)) hints.push('Во фрагменте отдых, сон, еда или трата сил — показатели героя не менялись (по ШКАЛЕ).' + sheetNote);
+  if (!blockTouched('item') && !aboutHero(RE_PAY) && aboutHero(RE_USE)) hints.push('Во фрагменте израсходован или использован предмет — инвентарь не менялся.' + sheetNote);
   if (!has('scene') && RE_TIME.test(text)) hints.push('Во фрагменте прошло заметное время — scene не вызван (elapsed_minutes).');
   const present = (state.scene && state.scene.present) || [];
   if (!has('scene') && RE_LEAVE.test(text)) {

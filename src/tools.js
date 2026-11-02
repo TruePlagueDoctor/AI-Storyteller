@@ -395,8 +395,14 @@ function executeEventTool(args, state) {
     } else if (text) target = findSimilar(state.events, text);
     if (!target) return text ? 'Похожей записи нет — закрывать нечего. Укажи id (#номер из хроники).' : 'Ошибка: укажи id записи (#номер из хроники).';
     if (target.locked) return `Запись «${target.text}» закреплена игроком — не меняю.`;
-    if (action === 'close') {
-      if (target.status === 'done') return `Уже закрыто: «${target.text}».`;
+    // update с исходом — модели так закрывают запись («встреча сорвалась»): закрываем,
+    // заодно принимая новый текст. Раньше исход молча терялся и запись висела открытой.
+    if (action === 'update' && OUTCOMES.includes(a.outcome)) {
+      if (text) target.text = text;
+      if (when) target.when = when;
+    }
+    if (action === 'close' || (action === 'update' && OUTCOMES.includes(a.outcome))) {
+      if (target.status === 'done' && action === 'close') return `Уже закрыто: «${target.text}».`;
       target.status = 'done';
       target.outcome = OUTCOMES.includes(a.outcome) ? a.outcome : 'done';
       return `Закрыто (${outcomeLabel(target.outcome)}): «${target.text}».`;
@@ -446,13 +452,16 @@ function moveClockTo(s, hint) {
   s.minute = hint.minute;
 }
 
+// Модель иногда переписывает в место нашу же заглушку «(место не записано)».
+const PLACEHOLDER_PLACE = /^[(\[]?\s*(место\s+)?(не\s+(записано|указано|известно|названо)|неизвестно|неясно|нет|—|-|\?|unknown|n\/a)\s*[)\]]?\.?$/i;
+
 function executeSceneTool(args, state) {
   const s = state.scene = normalizeScene(state.scene);
   const locked = s.locked || [];
   const changed = [];
   const skipped = [];
   const a = args || {};
-  if (typeof a.location === 'string' && a.location.trim()) {
+  if (typeof a.location === 'string' && a.location.trim() && !PLACEHOLDER_PLACE.test(a.location.trim())) {
     if (locked.includes('location')) skipped.push('место'); else { s.location = a.location.trim(); changed.push('место'); }
   }
   const el = Number(a.elapsed_minutes);

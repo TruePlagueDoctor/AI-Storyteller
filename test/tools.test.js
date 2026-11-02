@@ -221,3 +221,23 @@ test('record_lore только с разрешения игрока', () => {
   st.loreAutoWrite = false;
   assert.ok(!toolsFor(st).some((t) => t.function.name === 'record_lore'));
 });
+
+test('event update с исходом закрывает запись (модели так делают)', () => {
+  const st = makeState();
+  run(st, 'event', { type: 'plan', text: 'Капитан Рейн ждёт Яна у маяка', when: 'в полдень' });
+  assert.match(run(st, 'event', { action: 'update', id: '#1', text: 'Ян не пришёл на встречу у маяка', outcome: 'broken' }), /Закрыто \(нарушено\)/);
+  assert.equal(st.events[0].status, 'done');
+  assert.equal(st.events[0].outcome, 'broken');
+  assert.equal(st.events[0].text, 'Ян не пришёл на встречу у маяка');
+});
+
+test('scene: заглушка вместо места не записывается', () => {
+  const st = makeState();
+  st.scene.location = 'Таверна';
+  for (const junk of ['не записано', '(место не записано)', 'Неизвестно', '—', 'unknown', 'не указано']) {
+    run(st, 'scene', { location: junk });
+    assert.equal(st.scene.location, 'Таверна', junk);
+  }
+  run(st, 'scene', { location: 'Неизвестный лес' });
+  assert.equal(st.scene.location, 'Неизвестный лес');
+});

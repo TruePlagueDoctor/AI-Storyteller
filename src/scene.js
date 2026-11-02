@@ -78,7 +78,7 @@ export function sceneBlock(scene, state) {
 // Текст для учётчика.
 export function sceneForSync(scene) {
   if (!scene) return '';
-  return `СЦЕНА: ${scene.location || '(место не записано)'}; ${clockLabel(scene)}; рядом: ${scene.present.length ? scene.present.join(', ') : 'никого'}` +
+  return `СЦЕНА: ${scene.location || 'место ещё не задано (задай, только если оно названо)'}; ${clockLabel(scene)}; рядом: ${scene.present.length ? scene.present.join(', ') : 'никого'}` +
     (scene.note ? `; обстановка: ${scene.note}` : '') +
     ((scene.locked || []).length ? ` [закреплено игроком: ${scene.locked.join(', ')}]` : '');
 }
