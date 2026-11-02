@@ -284,29 +284,37 @@ export function syncWorthwhile(state, narration) {
 // Ищем во фрагменте явные признаки событий, на которые не последовало ни одного
 // подходящего вызова. Только тогда — второй раунд с конкретными вопросами.
 // Признаки консервативные: ложная тревога стоит лишнего запроса, пропуск — дыры в учёте.
-const RE_PAY = /(заплат|расплат|выплат|отсчит|отда(л|ёшь|ешь|ю|ла)\b|верну(л|ла|ть|ёшь)|возвраща|отдаёт|купи(л|ла|шь)|прода(л|ла|ёшь)|подобра(л|ла)|потеря(л|ла)|выпи(л|ла|ваешь)|съе(л|ла|даешь)|израсход|сломал|разби(л|лась)|получи(л|ла|шь)|вручи)/i;
-const RE_HURT = /(ранен|ранил|кровь|кровоточ|порез|ожог|удар(ил|ом)|сломал.{0,10}(рук|ног|рёбр)|теряешь сознани|отрав|яд\b|исцел|залечи|перевяза|рана\b|раны\b)/i;
+// Конец слова — (?!\p{L}) с флагом u: обычный \b в JS кириллицу не видит («рана\b» не находилось никогда).
+const RE_PAY = /(заплат|(?<!\p{L})плат(ишь|ит|ил|ила|ят|и)(?!\p{L})|расплат|выплат|отсчит|отда(л|ёшь|ешь|ю|ла)(?!\p{L})|верну(л|ла|ть|ёшь)|возвраща|отдаёт|купи(л|ла|шь)|прода(л|ла|ёшь)|подобра(л|ла)|потеря(л|ла)|выпи(л|ла|ваешь)|съе(л|ла|даешь)|израсход|сломал|разби(л|лась)|получи(л|ла|шь)|вручи)/iu;
+const RE_HURT = /(ранен|ранил|кровь|кровоточ|порез|ожог|удар(ил|ом)|сломал.{0,10}(рук|ног|рёбр)|теряешь сознани|отрав|яд(?!\p{L})|исцел|залечи|перевяз|(?<!\p{L})ран(а|у|ы|е|ой|ами|ах)(?!\p{L})|вылечи|лечени|зашива|зашил)/iu;
 const RE_TIME = /(через (час|полчаса|несколько|пару|минут|день)|прошл[оа] |проходит (час|полчаса|время|несколько|четверть)|спустя|к (утру|вечеру|ночи|полудню|рассвету)|наступ(ил|ает) (вечер|ночь|утро|рассвет)|до (утра|рассвета|вечера)|всю ночь|выспал|засыпаешь)/i;
-const RE_LEAVE = /(уход(ит|ят)|уш(ёл|ла|ли)|выход(ит|ят)|вышл?(а|и)?\b|покида(ет|ют)|покинул|скрыл(ся|ась|ись)|исчез|удалил(ся|ась)|прощается)/i;
+const RE_LEAVE = /(уход(ит|ят)|уш(ёл|ла|ли)|выход(ит|ят)|вышл?(а|и)?(?!\p{L})|покида(ет|ют)|покинул|скрыл(ся|ась|ись)|исчез|удалил(ся|ась)|прощается)/iu;
 const RE_REST = /(отдыха|отдохну|передохну|спишь|уснул|засыпа|выспал|ночлег|поел|поешь|ужина|завтрака|обеда|согрел|измотан|выбил(ся|ась) из сил|задыха|устал|изнем|пот гр|еле стоишь)/i;
 const RE_USE = /(выстрел|стреля|пускаешь стрел|зажига|факел (гаснет|догорел)|выпиваешь зелье|пьёшь зелье|глотаешь зелье|бинт|перевязыва|последн(юю|ий|ее) (стрел|патрон|зарядк|монет)|кончил(ись|ся)|израсход|сломал(ся|ась|ось)|разбил(ся|ась|ось))/i;
 const RE_DONE = /(отда|верну|заплат|выплат|расплат|отсчит|долг|сдержал|выполн|исполн|обещанн|состоял|пришёл на встречу|явил|принял(а)? тебя|аудиенц|при[её]м)/i;
+// calls — [{ name, args }]. По блокам смотрим и на тип: записали деньги, но не рану —
+// про рану всё равно напомним. Вызов без аргументов (старое имя) считаем покрывающим всё.
 export function completenessHints(state, narration, calls) {
   const text = String(narration || '');
   const low = text.toLowerCase();
-  const used = new Set(calls.map((c) => c.name === 'nothing' ? 'nothing' : c.name));
-  const has = (n) => used.has(n) || (n === 'block' && ['create_block', 'update_block', 'remove_block'].some((x) => used.has(x))) ||
-    (n === 'npc' && ['create_npc', 'update_npc', 'remove_npc'].some((x) => used.has(x)));
+  const used = new Set(calls.map((c) => c.name));
+  const BLOCK_NAMES = ['block', 'create_block', 'update_block', 'remove_block'];
+  const blockCalls = calls.filter((c) => BLOCK_NAMES.includes(c.name));
+  const blockTouched = (...types) => blockCalls.some((c) => !c.args || !c.args.type || types.includes(c.args.type));
+  // Деньги бывают и предметом («Кошель»), и показателем («Золото 35/100»).
+  const MONEY = /(золот|серебр|медь|медяк|монет|деньг|кошел|кошёл|кредит|гульден|талер|крон|рубл|доллар)/i;
+  const moneyTouched = () => blockCalls.some((c) => !c.args || !c.args.type || c.args.type === 'item' || (c.args.type === 'stat' && MONEY.test(c.args.name || '')));
+  const has = (n) => used.has(n) || (n === 'npc' && ['create_npc', 'update_npc', 'remove_npc'].some((x) => used.has(x)));
   const hints = [];
   const stemOf = (name) => { const w = String(name).toLowerCase().split(/\s+/).find((x) => x.length >= 3) || ''; return w.length > 5 ? w.slice(0, w.length - 2) : w.slice(0, 4); };
   const hero = state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0];
   const sheet = hero ? (hero.blocks || []).filter((b) => b.type === 'stat' || b.type === 'item')
     .map((b) => b.type === 'stat' ? `${b.name} ${b.value ?? '?'}${b.max != null ? '/' + b.max : ''}` : `${b.name}${b.value ? ': ' + b.value : ''}`).slice(0, 14).join(', ') : '';
   const sheetNote = sheet ? ` Сейчас в листе: ${sheet}.` : ' Лист пуст.';
-  if (!has('block') && RE_PAY.test(text)) hints.push('Во фрагменте платят, отдают, получают или тратят — лист героя (деньги, предметы) не менялся.' + sheetNote);
-  if (!has('block') && RE_HURT.test(text)) hints.push('Во фрагменте ранение или лечение — показатели и состояния героя не менялись (переведи по ШКАЛЕ).' + sheetNote);
-  if (!has('block') && !RE_HURT.test(text) && RE_REST.test(text)) hints.push('Во фрагменте отдых, сон, еда или трата сил — показатели героя не менялись (по ШКАЛЕ).' + sheetNote);
-  if (!has('block') && !RE_PAY.test(text) && RE_USE.test(text)) hints.push('Во фрагменте израсходован или использован предмет — инвентарь не менялся.' + sheetNote);
+  if (!moneyTouched() && RE_PAY.test(text)) hints.push('Во фрагменте платят, отдают, получают или тратят — лист героя (деньги, предметы) не менялся.' + sheetNote);
+  if (!blockTouched('stat', 'status') && RE_HURT.test(text)) hints.push('Во фрагменте ранение или лечение — показатели и состояния героя не менялись (переведи по ШКАЛЕ).' + sheetNote);
+  if (!blockTouched('stat', 'status') && !RE_HURT.test(text) && RE_REST.test(text)) hints.push('Во фрагменте отдых, сон, еда или трата сил — показатели героя не менялись (по ШКАЛЕ).' + sheetNote);
+  if (!blockTouched('item') && !RE_PAY.test(text) && RE_USE.test(text)) hints.push('Во фрагменте израсходован или использован предмет — инвентарь не менялся.' + sheetNote);
   if (!has('scene') && RE_TIME.test(text)) hints.push('Во фрагменте прошло заметное время — scene не вызван (elapsed_minutes).');
   const present = (state.scene && state.scene.present) || [];
   if (!has('scene') && RE_LEAVE.test(text)) {
@@ -326,6 +334,19 @@ export function completenessHints(state, narration, calls) {
   return hints;
 }
 
+const RE_LOSS = /(сгорел|разруш|отобрал|отнял|конфиск|обокрал|украл|обчистил|ограбил|пропал[аио]? (вс|тво|ваш)|лишил(ся|ась|ись))/i;
+const RE_HERO_LEFT = /(покидаешь|покидаете|покидаем|уезжаешь|уезжаете|съезжаешь|переезжаешь|перебираешься|сбегаешь|бежишь из|навсегда|больше не вернёшь|больше не вернётесь|ты ушёл|ты ушла|вы ушли)/i;
+const RE_LEFT_3RD = '(покида|покинул|уезжа|уехал|съеха|переезж|перебрал|сбежал)';
+export function heroLostPlace(narration, hero) {
+  const text = String(narration || '');
+  if (RE_LOSS.test(text) || RE_HERO_LEFT.test(text)) return true;
+  // Повествование от третьего лица: имя героя рядом с глаголом ухода.
+  const first = String(hero?.name || '').trim().split(/\s+/)[0];
+  if (first.length < 3) return false;
+  const esc = first.slice(0, Math.max(3, first.length - 1)).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`${esc}[\\p{L}]*[^.!?…]{0,40}${RE_LEFT_3RD}`, 'iu').test(text);
+}
+
 export async function syncState(state, apiKey, narration, journal = [], { model = null, timer = null } = {}) {
   const active = state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0];
   const sheets = state.characters.filter((c) => c.present !== false || c.id === state.activeCharacterId).map(sheetForSync).join('\n');
@@ -335,11 +356,12 @@ export async function syncState(state, apiKey, narration, journal = [], { model 
     .map((c) => ({ name: c.name, n: c.blocks.filter((b) => b.type === 'status').length }))
     .filter((x) => x.n > 6)
     .map((x) => `У героя «${x.name}» накопилось ${x.n} состояний — убери устаревшие, объедини похожие.`);
-  const moved = /(уход|ушёл|ушла|покида|покинул|съеха|перебра|бежал|сбежал|переезж|навсегда|больше не вернёшь|сгорел|разруш|отобрал|конфиск)/i.test(narration || '');
-  const items = (state.characters || []).flatMap((c) => c.blocks.filter((b) => b.type === 'item'));
-  if (moved && items.length > 3) {
-    hints.push('Герой сменил место или лишился прежнего — проверь инвентарь: ' + items.map((b) => b.name).join(', ') +
-      '. Что осталось там и недоступно — block action remove.');
+  // Инвентарь — только когда ГЕРОЙ уехал насовсем или лишился вещей. «Ольт уходит» — не повод:
+  // раньше это слово запускало подсказку, и учётчик мог стереть вещи героя.
+  const items = (active?.blocks || []).filter((b) => b.type === 'item');
+  if (items.length > 3 && heroLostPlace(narration, active)) {
+    hints.push('Похоже, герой покинул место надолго или лишился вещей — проверь инвентарь: ' + items.map((b) => b.name).join(', ') +
+      '. Убери (block action remove) только то, что по тексту пропало или осталось там; при обычном переходе вещи остаются при герое.');
   }
   const liveNpcs = (state.npcs || []).filter((n) => !n.archived);
   if (liveNpcs.length > 12) hints.push(`Знакомых НПС уже ${liveNpcs.length} — тех, кто ушёл из истории, убери в архив (npc action archive).`);
@@ -446,8 +468,15 @@ export async function syncState(state, apiKey, narration, journal = [], { model 
     if (!msg) break;
     const calls = msg.tool_calls || [];
     if (!calls.length) {
-      for (const c of parseLeakedToolCalls(msg.content)) {
+      const leaked = parseLeakedToolCalls(msg.content);
+      for (const c of leaked) {
         journal.push(journalEntry(c.name, c.args, executeTool(c.name, c.args, state), round + 1, { leaked: true }));
+      }
+      // Обязательный вызов, а модель ответила прозой — в журнале это должно быть видно,
+      // иначе выглядит как «записывать нечего».
+      if (round === 0 && !leaked.length) {
+        const said = String(msg.content || '').trim();
+        journal.push({ name: 'ответ без вызовов', args: {}, result: 'Учётчик ответил текстом вместо вызовов — ничего не записано.' + (said ? ` Ответ: «${said.slice(0, 200)}»` : ''), round: 1, warn: true, check: true });
       }
       break;
     }
@@ -463,29 +492,21 @@ export async function syncState(state, apiKey, narration, journal = [], { model 
       messages.push({ role: 'tool', tool_call_id: call.id, content: result });
     }
     const cut = data?.choices?.[0]?.finish_reason === 'length';
-    // Ошибок нет — проверим полноту по явным признакам во фрагменте.
-    if (round === 0 && !needsFix && !cut) {
-      const gaps = completenessHints(state, narration, calls.map((c) => ({ name: c.function?.name })));
+    if (round > 0) break;
+    // Второй раунд — один на всё: исправить ошибки, дописать оборванное, добрать пропущенное.
+    const parts = [];
+    if (needsFix) parts.push('Часть вызовов вернула ошибку или предупреждение — смотри ответы выше. Исправь это; остальное уже применено.');
+    if (cut) parts.push('Ответ оборвался. Допиши недостающие вызовы; сделанные не повторяй.');
+    if (!cut) {
+      const parsed = calls.map((c) => { try { return { name: c.function?.name, args: JSON.parse(c.function?.arguments || '{}') }; } catch { return { name: c.function?.name }; } });
+      const gaps = completenessHints(state, narration, parsed);
       if (gaps.length) {
         journal.push({ name: 'проверка полноты', args: {}, result: gaps.join(' '), round: 1, warn: true, check: true });
-        messages.push({
-          role: 'user',
-          content: 'ПРОВЕРКА ПОЛНОТЫ. Возможно, пропущено:\n- ' + gaps.join('\n- ') +
-            '\nДобавь только недостающие вызовы; сделанное не повторяй. Если всё уже учтено или изменения не было — вызови nothing.',
-        });
-        continue;
+        parts.push('ПРОВЕРКА ПОЛНОТЫ. Возможно, пропущено:\n- ' + gaps.join('\n- ') + '\nДобавь только недостающие вызовы; сделанное не повторяй.');
       }
     }
-    if (round === 0 && (needsFix || cut)) {
-      messages.push({
-        role: 'user',
-        content: needsFix
-          ? 'Часть вызовов вернула ошибку или предупреждение — смотри ответы выше. Исправь только это, остальное уже применено. Исправлять нечего — ничего не вызывай.'
-          : 'Ответ оборвался. Допиши недостающие вызовы; сделанные не повторяй.',
-      });
-      continue;
-    }
-    break;
+    if (!parts.length) break;
+    messages.push({ role: 'user', content: parts.join('\n\n') + '\nЕсли исправлять и добавлять нечего — вызови nothing.' });
   }
   return journal;
 }

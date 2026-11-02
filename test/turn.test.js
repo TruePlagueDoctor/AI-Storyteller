@@ -111,3 +111,57 @@ test('понятная ошибка вместо сырой', async () => {
   fake = installFakeFetch([{ status: 402, text: 'Insufficient credits' }]);
   await assert.rejects(callOpenRouter({ purpose: 'тест', model: 'm/x', messages: [], apiKey: 'k' }), /закончились деньги.*Insufficient credits/);
 });
+
+const lastUserPrompt = (body) => body.messages.find((m) => m.role === 'user').content;
+
+test('учётчик: ушёл НПС — это не повод чистить инвентарь героя', async () => {
+  const st = makeState();
+  hero(st).blocks = ['Меч', 'Фляга', 'Верёвка', 'Факел'].map((name) => ({ type: 'item', name }));
+  fake = installFakeFetch([(body) => { assert.ok(!/проверь инвентарь/.test(lastUserPrompt(body))); return reply('', [call('nothing', {})]); }]);
+  const r = await syncNarration({ state: st, apiKey: 'k', narration: 'Ольт кивает тебе на прощание и уходит в сторону казарм, не оглядываясь.' });
+  assert.equal(r.status, 'done', r.error);
+});
+
+test('учётчик: герой уехал насовсем или его обокрали — напоминание про инвентарь', async () => {
+  for (const narration of [
+    'Ты покидаешь деревню навсегда, оставив дом и всё, что в нём было, за спиной.',
+    'Ночью тебя обокрали: проснувшись, ты не находишь своего мешка у костра.',
+  ]) {
+    const st = makeState();
+    hero(st).blocks = ['Меч', 'Фляга', 'Верёвка', 'Факел'].map((name) => ({ type: 'item', name }));
+    st.characters.push({ id: 'h2', name: 'Рита', present: true, blocks: [{ type: 'item', name: 'Лютня' }] });
+    fake = installFakeFetch([(body) => {
+      const p = lastUserPrompt(body);
+      assert.match(p, /проверь инвентарь: Меч, Фляга, Верёвка, Факел/, narration);
+      assert.ok(!p.match(/проверь инвентарь[^\n]*Лютня/), 'вещи других героев не при чём');
+      return reply('', [call('nothing', {})]);
+    }]);
+    const r = await syncNarration({ state: st, apiKey: 'k', narration });
+    assert.equal(r.status, 'done', r.error);
+    fake.restore();
+  }
+});
+
+test('учётчик ответил текстом вместо вызовов — это видно в журнале', async () => {
+  const st = makeState();
+  fake = installFakeFetch([reply('Изменений нет, всё по-прежнему.')]);
+  const r = await syncNarration({ state: st, apiKey: 'k', narration: 'Ты сидишь у окна и долго смотришь на дождь, что идёт над крышами.' });
+  assert.equal(r.calls.length, 1);
+  assert.equal(r.calls[0].warn, true);
+  assert.match(r.calls[0].result, /ответил текстом/);
+});
+
+test('учётчик: ошибка и пропуск в одном ходу — второй раунд просит и то, и другое', async () => {
+  const st = makeState();
+  fake = installFakeFetch([
+    reply('', [call('block', { action: 'remove', type: 'item', name: 'Ключ' })]),
+    (body) => {
+      const last = body.messages.at(-1).content;
+      assert.match(last, /вернула ошибку/);
+      assert.match(last, /прошло заметное время/);
+      return reply('', [call('nothing', {})]);
+    },
+  ]);
+  const r = await syncNarration({ state: st, apiKey: 'k', narration: 'Ты отдаёшь ключ и ждёшь. Через час стражник возвращается с ответом от капитана.' });
+  assert.equal(r.status, 'done', r.error);
+});

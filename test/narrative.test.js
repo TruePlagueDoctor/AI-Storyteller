@@ -177,3 +177,31 @@ test('пересказ для сжатия: без реплик вне исто�
   assert.match(t, /Игрок \(за Рита\): пою/);
   assert.ok(!t.includes('служебное'));
 });
+
+test('проверка полноты смотрит, что именно записано в лист', () => {
+  const st = makeState();
+  hero(st).blocks = [{ type: 'item', name: 'Кошель', value: '35 золотых' }, { type: 'stat', name: 'Здоровье', value: '10', max: 10 }];
+  const text = 'Ты платишь лекарю десять золотых, и он перевязывает тебе рану.';
+  // Записали только деньги — про лечение надо напомнить.
+  const onlyMoney = completenessHints(st, text, [{ name: 'block', args: { type: 'item', name: 'Кошель', value: '25 золотых' } }]);
+  assert.ok(onlyMoney.some((h) => /ранение или лечение/.test(h)), onlyMoney.join(' | '));
+  assert.ok(!onlyMoney.some((h) => /платят/.test(h)));
+  // Записали только здоровье — про деньги надо напомнить.
+  const onlyHp = completenessHints(st, text, [{ name: 'block', args: { type: 'stat', name: 'Здоровье', value: '10' } }]);
+  assert.ok(onlyHp.some((h) => /платят/.test(h)), onlyHp.join(' | '));
+  // Старые имена инструментов и вызовы без аргументов тоже считаются.
+  assert.deepEqual(completenessHints(st, text, [{ name: 'update_block' }]), []);
+  // Деньги показателем: «Золото» закрывает оплату, «Здоровье» — нет.
+  assert.ok(!completenessHints(st, text, [{ name: 'block', args: { type: 'stat', name: 'Золото', value: '5' } }]).some((h) => /платят/.test(h)));
+});
+
+test('признаки событий видят русские окончания (без \\b)', () => {
+  const st = makeState();
+  const hint = (t) => completenessHints(st, t, []).join(' | ');
+  assert.match(hint('Клинок оставляет на плече глубокую рану.'), /ранение/);
+  assert.match(hint('В вине был яд.'), /ранение/);
+  assert.match(hint('Ты отдал ему последнюю монету.'), /платят/);
+  assert.match(hint('Ты платишь за ночлег.'), /платят/);
+  assert.equal(hint('На плечи ложится платок.'), '');
+  assert.equal(hint('Рано утром идёт снег.'), '');
+});
