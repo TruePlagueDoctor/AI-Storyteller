@@ -8,7 +8,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --import ./test/setup.js --test",
-    "test:ui": "node scripts/ui-smoke.mjs"
+    "test:ui": "node scripts/ui-smoke.mjs",
+    "eval:sync": "node scripts/eval-sync.mjs"
   },
   "engines": {
     "node": ">=18"

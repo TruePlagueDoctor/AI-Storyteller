@@ -80,6 +80,7 @@ export async function callOpenRouter(opts) {
       model: o.model,
       in: u && Number.isFinite(u.prompt_tokens) ? u.prompt_tokens : undefined,
       out: u && Number.isFinite(u.completion_tokens) ? u.completion_tokens : undefined,
+      cost: u && Number.isFinite(u.cost) ? u.cost : undefined,
       error: error ? true : undefined,
     });
   };
