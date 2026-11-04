@@ -34,7 +34,8 @@ export function renderTranscript(messages, state = null) {
 // становилось больше historyKeep: срезалась одна пара — и через ход снова.
 // Теперь с запасом: ждём, пока наберётся keep + step, и срезаем до keep —
 // одно сжатие на несколько ходов. И идёт оно в фоне, после ответа игроку.
-export function summaryStep(keep) { return Math.max(6, Math.round(keep / 2)); }
+// Запас сверх «сырых ходов» — четверть: на долгой игре дословная история — самая тяжёлая часть промта.
+export function summaryStep(keep) { return Math.max(4, Math.round(keep / 4)); }
 
 // План сжатия: что сворачиваем. null — пока не нужно.
 export function planSummary(state, { force = false } = {}) {

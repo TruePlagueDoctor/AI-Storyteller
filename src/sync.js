@@ -391,8 +391,19 @@ export async function syncState(state, apiKey, narration, journal = [], { model 
   // «пиши целиком с учётом прежнего» невыполнимо); остальные — одной строкой.
   const lowerNarr = String(narration || '').toLowerCase();
   const presentList = ((state.scene && state.scene.present) || []).map((x) => x.toLowerCase());
+  // Давно не появлявшиеся (и не упомянутые сейчас) — только по имени: учётчику этого хватает,
+  // чтобы не заводить дубль, а их карточки на долгой игре раздували запрос.
+  const turnNow = state.turn || 0;
+  const fadedNpc = (n) => {
+    const first = n.name.toLowerCase().split(/\s+/)[0];
+    if (n.bound || (first.length >= 3 && lowerNarr.includes(first.length > 5 ? first.slice(0, -1) : first))) return false;
+    if (presentList.some((p) => p.includes(first) || n.name.toLowerCase().includes(p))) return false;
+    const last = n.lastSeen ? n.lastSeen.turn : n.updatedTurn;
+    return Number.isFinite(last) && turnNow - last > 30;
+  };
+  const fadedNames = liveNpcs.filter(fadedNpc).map((n) => n.name);
   const npcLines = liveNpcs.length
-    ? liveNpcs.map((n) => {
+    ? liveNpcs.filter((n) => !fadedNpc(n)).map((n) => {
         const first = n.name.toLowerCase().split(/\s+/)[0];
         const inScene = n.bound || (first.length >= 3 && lowerNarr.includes(first.length > 5 ? first.slice(0, -1) : first)) ||
           presentList.some((p) => p.includes(first) || n.name.toLowerCase().includes(p));
@@ -413,7 +424,7 @@ export async function syncState(state, apiKey, narration, journal = [], { model 
           (depth.length ? `\n    ${depth.join('; ')}` : '') +
           (current.length ? `\n    записано: ${current.join(' | ')}` : '') +
           (empty.length ? `\n    пусто: ${empty.join(', ')} — заполни, только если это видно из фрагмента` : '');
-      }).join('\n')
+      }).join('\n') + (fadedNames.length ? `\nДавно не появлялись: ${fadedNames.join(', ')}.` : '')
     : '(пока никого)';
   const action = lastPlayerAction(state);
 

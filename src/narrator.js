@@ -59,7 +59,7 @@ export function whoShort(n, limit = 80) {
 // Записи подставляются в контекст только когда их ключи упомянуты в недавних
 // ходах — так мир не занимает контекст целиком.
 const SCAN_DEPTH = 6;        // сколько последних сообщений сканируем
-const MAX_ACTIVE_LORE = 8;   // предохранитель от разрастания
+const MAX_ACTIVE_LORE = 5;   // предохранитель от разрастания (на долгой игре ключи упоминаются постоянно)
 
 // Сопоставление с учётом русской морфологии: для длинных ключей ищем слово,
 // начинающееся с основы (чтобы «маяк» ловил «маяка», «маяком»);
@@ -86,21 +86,23 @@ export function activeLoreEntries(state, extraText = '') {
   const book = Array.isArray(state.lorebook) ? state.lorebook.filter((e) => e.enabled !== false) : [];
   if (!book.length) return [];
 
-  const recent = (state.messages || [])
+  // Сообщения от свежих к старым; запись получает «свежесть» по самому новому упоминанию ключа.
+  const texts = [extraText, ...(state.messages || [])
     .slice(-SCAN_DEPTH)
     .filter((m) => typeof m.content === 'string' && (m.role === 'user' || m.role === 'assistant'))
-    .map((m) => m.content)
-    .join('\n');
-  const haystack = (recent + '\n' + extraText).toLowerCase();
+    .map((m) => m.content).reverse()].map((t) => String(t || '').toLowerCase());
 
   // Записи «всегда в контексте» не расходуют лимит — иначе девятая молча выпадала.
   const always = book.filter((e) => e.always);
   const matched = [];
   for (const e of book) {
     if (e.always) continue;
-    if (e.keys.some((k) => keyMatches(k, haystack))) matched.push(e);
+    const at = texts.findIndex((t) => t && e.keys.some((k) => keyMatches(k, t)));
+    if (at !== -1) matched.push({ e, at });
   }
-  return [...always, ...matched.slice(0, MAX_ACTIVE_LORE)];
+  // На долгой игре ключей упоминается много — берём самые свежие, иначе справочник съедает промт.
+  matched.sort((x, y) => x.at - y.at);
+  return [...always, ...matched.slice(0, MAX_ACTIVE_LORE).map((x) => x.e)];
 }
 
 function loreBlock(state, extraText) {
@@ -144,7 +146,7 @@ function threadsBlock(state) {
   s += open.map((t) => {
     let line = `• ${t.title}`;
     if (t.progress) line += ` — ${t.progress}`;
-    if (t.notes) line += `\n  Известно: ${t.notes}`;
+    if (t.notes) line += `\n  Известно: ${tailItems(t.notes, 4, 400)}`;
     return line;
   }).join('\n');
   return s;
@@ -198,6 +200,18 @@ function heroesBlock(state) {
   return s;
 }
 
+// Накопительное поле («было с героем», заметки нити) растёт всю игру — в промт идут последние пункты.
+// Полностью оно хранится в карточке; давнее и так есть в предыстории и хронике.
+export function tailItems(text, n, maxChars) {
+  const items = String(text || '').split(/;\s+/).map((x) => x.trim()).filter(Boolean);
+  let out = items.length > n ? ['…', ...items.slice(-n)] : items;
+  let joined = out.join('; ');
+  while (joined.length > maxChars && out.length > 2) { out = ['…', ...out.slice(2)]; joined = out.join('; '); }
+  return joined.length > maxChars ? '…' + joined.slice(-maxChars) : joined;
+}
+
+const RECENT_NPC_TURNS = 30; // сколько ходов НПС остаётся «на виду» после последней встречи
+
 function npcBlock(state) {
   const npcs = (state.npcs || []).filter((n) => !n.archived);
   if (!npcs.length) return '';
@@ -229,7 +243,23 @@ function npcBlock(state) {
     'Тайна — это то, что персонаж прячет ради СЕБЯ; она не повод утаивать имена, адреса и сведения, ' +
     'которые герою нужны для дела и которые персонаж сам заинтересован сообщить.\n';
 
-  s += npcs.map((n) => {
+  // На долгой игре знакомых десятки. Строку получает тот, кто рядом, недавно встречался,
+  // упомянут в последних ходах или связан с открытым обязательством; остальные — только по имени.
+  const turn = state.turn || 0;
+  const owes = new Set((state.events || []).filter((e) => e.status === 'open' && ['promise', 'debt', 'plan'].includes(e.type))
+    .flatMap((e) => e.participants || []).map((x) => String(x).toLowerCase().split(/\s+/)[0]));
+  const relevant = (n) => {
+    const first = n.name.toLowerCase().split(/\s+/)[0];
+    if (inScene(n)) return true;
+    const last = n.lastSeen ? n.lastSeen.turn : n.updatedTurn;
+    if (Number.isFinite(last) && turn - last <= RECENT_NPC_TURNS) return true;
+    if (first.length >= 3 && recent.includes(first)) return true;
+    return owes.has(first);
+  };
+  const shown = npcs.filter(relevant);
+  const faded = npcs.filter((n) => !relevant(n));
+
+  s += shown.map((n) => {
     let line = `• ${n.name}`;
     const meta = [];
     if (n.bound) meta.push('ВСЕГДА С ГЕРОЕМ — не в списке присутствующих, но в каждой сцене: слышит, видит, вставляет реплики');
@@ -256,17 +286,20 @@ function npcBlock(state) {
     if (n.wants) line += `\n  ХОЧЕТ: ${n.wants}`;
     if (n.secret) line += `\n  СКРЫВАЕТ (герой не знает): ${n.secret}`;
     if (n.links) line += `\n  Связи: ${n.links}`;
-    if (n.history) line += `\n  Было с героем: ${n.history}`;
+    if (n.history) line += `\n  Было с героем: ${tailItems(n.history, 4, 500)}`;
     const voice = [n.voiceStyle ? `манера: ${n.voiceStyle}` : '', n.voiceHumor ? `юмор: ${n.voiceHumor}` : '', n.voiceHabits ? `привычки: ${n.voiceHabits}` : ''].filter(Boolean);
     if (voice.length) line += `\n  ГОЛОС — ${voice.join('; ')}`;
     if (n.voiceMasks) line += `\n  Как прячет чувства: ${n.voiceMasks}`;
     if (n.voiceTaboos) line += `\n  В речи никогда: ${n.voiceTaboos}`;
     if (Array.isArray(n.voiceSamples) && n.voiceSamples.length) {
-      line += `\n  Как звучит (образцы интонации, НЕ повторяй дословно): ` + n.voiceSamples.slice(-5).map((s) => `«${s}»`).join(' ');
+      line += `\n  Как звучит (образцы интонации, НЕ повторяй дословно): ` + n.voiceSamples.slice(-3).map((s) => `«${s}»`).join(' ');
     }
     if (n.mood) line += `\n  НАСТРОЕНИЕ СЕЙЧАС: ${n.mood}${n.moodReason ? ` — потому что ${n.moodReason}` : ''}. Оно держится, пока нет причины измениться; характер при этом не исчезает.`;
     return line;
   }).join('\n');
+  if (faded.length) {
+    s += `\nДавно не появлялись (подробности вернутся, когда снова встретятся; о недавних событиях с героем они не знают): ${faded.map((n) => n.name).join(', ')}.`;
+  }
   return s;
 }
 
