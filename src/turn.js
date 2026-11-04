@@ -4,6 +4,22 @@ import { findContradictions, findSceneIssues, autoFix, correctionNote } from './
 import { toolModelOf } from './llm.js';
 import { narrate, lastPlayerAction } from './narrator.js';
 import { syncState, syncWorthwhile } from './sync.js';
+import { sameName } from './tools.js';
+
+// После хода: кто был рядом с героем — тот его видел. Последняя встреча нужна рассказчику,
+// чтобы давно не видевшие героя НПС не знали того, что с ним случилось потом.
+export function markSeen(state) {
+  const sc = state.scene || {};
+  const near = (sc.present || []).map((p) => String(p).trim()).filter(Boolean);
+  const first = (s) => s.toLowerCase().split(/\s+/)[0];
+  const isNear = (name) => near.some((p) => p.toLowerCase() === name.toLowerCase() || sameName(p, name) || first(p) === first(name));
+  const seen = (state.npcs || []).filter((n) => !n.archived && (n.bound || isNear(n.name)));
+  for (const n of seen) n.lastSeen = { turn: state.turn || 0, day: sc.day || 1 };
+  const hero = state.characters.find((c) => c.id === state.activeCharacterId);
+  for (const e of (hero && hero.appearanceLog) || []) {
+    for (const n of seen) if (!e.seenBy.some((x) => x.toLowerCase() === n.name.toLowerCase() || sameName(x, n.name))) e.seenBy.push(n.name);
+  }
+}
 
 // Сверка текста с состоянием после учёта: числовые огрехи чиним сразу,
 // смысловые передаём рассказчику замечанием на следующий ход.
@@ -12,6 +28,7 @@ export function afterSync(state, narration, rolls = []) {
   const fixed = autoFix(issues);
   const scene = findSceneIssues(state, narration, lastPlayerAction(state), rolls);
   state.correctionNote = correctionNote([...issues, ...scene]) || undefined;
+  markSeen(state);
   return { issues: issues.map((i) => i.text), fixed };
 }
 

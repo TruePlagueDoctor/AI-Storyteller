@@ -7,7 +7,7 @@
 ## Запуск и проверка
 
 - `npm install`, `.env` с `OPENROUTER_API_KEY`, `node server.js` (порт 3000). После правок пользователь перезапускает сервер и обновляет страницу Ctrl+F5.
-- Версия интерфейса печатается в консоль браузера второй строкой `public/js/core.js`: `console.log('AI Storyteller UI vNN — …')`. **Повышай номер при каждом изменении фронтенда** — по нему пользователь проверяет, что подхватилась новая версия. Сейчас v45.
+- Версия интерфейса печатается в консоль браузера второй строкой `public/js/core.js`: `console.log('AI Storyteller UI vNN — …')`. **Повышай номер при каждом изменении фронтенда** — по нему пользователь проверяет, что подхватилась новая версия. Сейчас v46.
 - **Проверки — перед каждым коммитом:** `npm test` (node:test, без сети: данные во временной папке, OpenRouter подменён) и при правках интерфейса `npm run test:ui` (Playwright, сервер с поддельной моделью, экраны компьютера и телефона; `UI_SHOTS=папка` сохраняет скриншоты). Нашёл ошибку — сначала тест, который её ловит, потом исправление.
   - `test/fake-llm.js` — `reply()`, `call()`, подмена `fetch` в процессе (для `src/*`); `test/harness.js` — настоящий `server.js` в отдельном процессе + поддельный OpenRouter/A1111 (`OPENROUTER_URL`, `STORYTELLER_DATA_DIR`); `test/helpers.js` — `makeState()`.
   - Учётчик на настоящей модели: `npm run eval:sync -- --model …` (сцены в `evals/sync-scenes.js`, отчёт в `data/evals/`). Меняешь промт учётчика или `completenessHints` — попроси пользователя прогнать до и после и сравнить цифры. Новая сцена: `must`/`forbid` проверяют итоговый мир, `ideal` — вызовы идеального учётчика (по ним `npm test` проверяет саму сцену).
@@ -20,9 +20,9 @@
 |---|---|
 | `server.js` | маршруты API, `runPlayerTurn` (замок хода `turnInFlight`, `whileIdle` — запрет менять партию/ленту/героев во время хода), снимки, тайминги, фоновое сжатие истории (`scheduleCompression`), генерация портретов/иллюстраций, `publicState()` |
 | `src/llm.js` | `callOpenRouter` (цепочка откатов + запись в диагностику), `replayRequest`, `toolModelOf`, разбор утёкшей разметки (`stripToolMarkup`, `parseLeakedToolCalls`) |
-| `src/narrator.js` | `composeStorySystem` (промт рассказчика: лорбук, герои, НПС, хроника, сцена), `labelHeroes`, `narrate` (с `roll_check`) |
+| `src/narrator.js` | `composeStorySystem` / `storyPromptSections` (промт рассказчика по разделам: лорбук, герои, НПС, хроника, сцена; разбор размера — `/api/prompt/breakdown`, «Диагностика → Состав промта»), `labelHeroes`, `narrate` (с `roll_check`) |
 | `src/sync.js` | `composeSyncSystem` + `technicalSyncHead`/`legacySyncHead`, `syncState` (2 раунда, `completenessHints`), `syncNarration`/`resyncNarration` |
-| `src/turn.js`, `src/journal.js` | `runTurn`, `afterSync` (противоречия + замечание рассказчику); журнал учёта (`journalEntry`, `FIX_SIGNAL`) |
+| `src/turn.js`, `src/journal.js` | `runTurn`, `afterSync` (противоречия + замечание рассказчику + `markSeen`: `npc.lastSeen` и свидетели в `character.appearanceLog`); журнал учёта (`journalEntry`, `FIX_SIGNAL`) |
 | `src/summary.js` | сжатие: `planSummary`/`computeSummary`/`applySummary` |
 | `src/art.js`, `src/fill.js` | `portraitTags`, `sceneTags`; `fillField` (✨) |
 | `src/paths.js` | где лежат данные (`STORYTELLER_DATA_DIR`) |
@@ -54,6 +54,7 @@
 - **Ошибки инструментов — с подсказкой для второго раунда**: что есть на самом деле, как назвать точно (см. удаление блоков/архивацию НПС).
 - **Закреплённое игроком не меняется**: `block.locked` (целиком), `block.descLocked` (только описание/имя, значение меняется), `npc.locked[]` по полям, `character.locked` (`appearance`, `social`), `scene.locked`, `event.locked`.
 - **НПС не удаляются учётчиком — только в архив** (`archived`), при архивации убираются из `scene.present`. При переименовании прежнее имя сохраняется в `npc.aliases`.
+- **Знание персонажей**: НПС знает о герое только виденное сам (`lastSeen`, свидетели перемен внешности) — рассказчику это показывается в карточках. Темы сценария — направление, а не обязательная вставка в каждую сцену (так персонажи заговаривали невпопад).
 - **Нечёткие совпадения — только однозначные**: если кандидатов несколько, ничего не делать и вернуть список похожих.
 - Сохранения пишутся атомарно (временный файл + переименование); повреждённый файл не затирается молча, а копируется в `*.broken-<время>`.
 - Фронтенд: после любого действия — единый `applyState`/`applyTurnResult`, без частичных обновлений ленты; не рисовать кнопки последней реплики, пока `sending`.

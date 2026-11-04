@@ -241,3 +241,14 @@ test('тренировка: опыт и рост уровня в ленте, р�
   assert.equal(data.characters[0].skillXp['фехтование'], undefined, 'опыт откатился вместе с ходом');
   assert.deepEqual(data.characters[0].practiceDays, {});
 });
+
+test('состав промта: разделы, история и счётчики', async () => {
+  const { data } = await api('GET', '/api/prompt/breakdown');
+  assert.ok(data.total > 0);
+  const labels = data.sections.map((s) => s.label);
+  assert.ok(labels.includes('Правила хода'));
+  assert.ok(labels.includes('Герои'));
+  assert.ok(labels.some((l) => l.startsWith('История дословно')));
+  assert.equal(data.sections.reduce((a, s) => a + s.tokens, 0), data.total);
+  assert.equal(typeof data.counts.npcs, 'number');
+});

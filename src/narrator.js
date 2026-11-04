@@ -172,6 +172,11 @@ function heroesBlock(state) {
     if (c.social && c.social.trim()) card.push(`положение: ${c.social.trim()}`);
     if (card.length) s += `\n  ${card.join('; ')}`;
     if (c.appearance && c.appearance.trim()) s += `\n  Внешность: ${c.appearance.trim()}`;
+    const changes = (c.appearanceLog || []).filter((e) => e && e.text);
+    if (changes.length) {
+      s += '\n  Недавние перемены во внешности (о них знают только видевшие): ' + changes.map((e) =>
+        `«${e.text}» — ход ${e.turn}, видели: ${e.seenBy && e.seenBy.length ? e.seenBy.join(', ') : 'никто из НПС'}`).join('; ');
+    }
     s += `\n  Лист: ${sheetSnapshot(c, state.statusCatalog)}`;
   }
   if (inScene.some((c) => (c.blocks || []).some((b) => b.type === 'ability'))) {
@@ -230,6 +235,11 @@ function npcBlock(state) {
     if (n.bound) meta.push('ВСЕГДА С ГЕРОЕМ — не в списке присутствующих, но в каждой сцене: слышит, видит, вставляет реплики');
     if (n.attitude) meta.push(`отношение: ${n.attitude}`);
     if (n.status) meta.push(`статус: ${n.status}`);
+    // Давно не виделись — значит, не знает, что с героем было потом.
+    const here = (state.scene && state.scene.present || []).some((p) => p.toLowerCase().split(/\s+/)[0] === n.name.toLowerCase().split(/\s+/)[0]);
+    if (n.lastSeen && !here && !n.bound) meta.push(`последняя встреча с героем: день ${n.lastSeen.day} (ход ${n.lastSeen.turn})`);
+    // Старые партии: встреч ещё не отмечали — хотя бы когда персонаж последний раз был в деле.
+    else if (!n.lastSeen && !here && !n.bound && n.updatedTurn && (state.turn || 0) - n.updatedTurn >= 5) meta.push(`последний раз в истории: ход ${n.updatedTurn}`);
     if (meta.length) line += ` — ${meta.join('; ')}`;
     if (!inScene(n)) {
       const who = whoShort(n);
@@ -271,17 +281,22 @@ function narratorPrompt(state, withTools) {
   return i === -1 ? p : p.slice(0, i).trim();
 }
 
-export function composeStorySystem(state, { withTools = false } = {}) {
-  const parts = [narratorPrompt(state, withTools)];
-  if (state.worldPrompt && state.worldPrompt.trim()) parts.push('=== МИР ===\n' + state.worldPrompt.trim());
-  if (state.scenarioPrompt && state.scenarioPrompt.trim()) parts.push('=== СЦЕНАРИЙ ===\n' + state.scenarioPrompt.trim());
+export function composeStorySystem(state, opts = {}) {
+  return storyPromptSections(state, opts).map((s) => s.text).join('\n\n');
+}
+
+// Промт рассказчика по разделам — для сборки и для разбора размера в «Диагностике».
+export function storyPromptSections(state, { withTools = false } = {}) {
+  const parts = [];
+  const add = (label, text) => { if (text) parts.push({ label, text }); };
+  add('Промт рассказчика (настройки)', narratorPrompt(state, withTools));
+  if (state.worldPrompt && state.worldPrompt.trim()) add('Мир', '=== МИР ===\n' + state.worldPrompt.trim());
+  if (state.scenarioPrompt && state.scenarioPrompt.trim()) add('Сценарий', '=== СЦЕНАРИЙ ===\n' + state.scenarioPrompt.trim());
   if (state.summary && state.summary.trim()) {
-    parts.push('=== ПРЕДЫСТОРИЯ (что уже произошло) ===\n' + state.summary.trim());
+    add('Предыстория', '=== ПРЕДЫСТОРИЯ (что уже произошло) ===\n' + state.summary.trim());
   }
-  const lore = loreBlock(state);
-  if (lore) parts.push(lore);
-  const threads = threadsBlock(state);
-  if (threads) parts.push(threads);
+  add('Справочник мира (по ключам)', loreBlock(state));
+  add('Нити', threadsBlock(state));
   const chron = chronicleBlock(state.events || [], {
     sceneNames: [
       ...state.characters.filter((c) => c.present !== false || c.id === state.activeCharacterId).map((c) => c.name),
@@ -291,12 +306,10 @@ export function composeStorySystem(state, { withTools = false } = {}) {
     recentText: (state.messages || []).slice(-4).map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n'),
     scene: state.scene,
   });
-  if (chron) parts.push(chron);
-  const sceneText = sceneBlock(state.scene, state);
-  if (sceneText) parts.push(sceneText);
-  parts.push(heroesBlock(state));
-  const npcs = npcBlock(state);
-  if (npcs) parts.push(npcs);
+  add('Хроника (выборка)', chron);
+  add('Сцена', sceneBlock(state.scene, state));
+  add('Герои', heroesBlock(state));
+  add('НПС', npcBlock(state));
 
   // Финальный блок — самый весомый: он ближе всего к генерации.
   const directive = DIFFICULTY_DIRECTIVES[state.difficulty] || DIFFICULTY_DIRECTIVES.normal;
@@ -360,14 +373,19 @@ export function composeStorySystem(state, { withTools = false } = {}) {
     tail += '\n\nНАПРАВЛЕНИЕ ОТ ИГРОКА (приоритет выше сценария — это то, куда он хочет вести историю; ' +
       'веди к этому через события и персонажей, не объявляя вслух): ' + state.directorNote.trim();
   }
+  tail += '\n\nЗНАНИЕ ПЕРСОНАЖЕЙ: НПС знает о героях только то, что видел сам или услышал в сцене. Перемены во внешности, раны и события ' +
+    'после его последней встречи с героем ему неизвестны — он не может о них говорить, пока не увидит или ему не расскажут (и тогда это слух с источником). ' +
+    'Мотив из прошлых ходов (сон, ночь, примета) не повод для реплик сейчас: персонажи говорят о том, что происходит в этой сцене.';
   const tone = toneReminder(state);
   if (tone) {
-    tail += '\n\nЖАНР И ТЕМЫ ЭТОЙ ИСТОРИИ (держи в каждом ходу, это не фон, а то, о чём история): ' + tone +
-      ' Хотя бы одна из заявленных тем должна проявляться в каждой сцене — через события, выбор или реплики персонажей, ' +
-      'а не через описания погоды.';
+    // Раньше здесь требовалось «тема в каждой сцене, в том числе репликами» — и персонажи
+    // невпопад заговаривали о снах и ночи. Тема — направление, а не обязательная вставка.
+    tail += '\n\nЖАНР И ТЕМЫ ЭТОЙ ИСТОРИИ: ' + tone +
+      ' Это направление истории: пусть темы прорастают через события и выбор там, где сцена к этому располагает. ' +
+      'Не вставляй их нарочно и не вкладывай в уста персонажей, которым неоткуда о них знать.';
   }
-  parts.push(tail);
-  return parts.join('\n\n');
+  add('Правила хода', tail);
+  return parts;
 }
 
 // Строки сценария вида «Жанр: …», «Тон: …», «Темы: …» дублируются в самый конец

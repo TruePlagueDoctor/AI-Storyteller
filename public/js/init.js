@@ -96,6 +96,7 @@ async function init() {
   $('diagRefresh').addEventListener('click', loadDiag);
   $('diagFilter').addEventListener('change', renderDiagList);
   $('diagList').addEventListener('click', (e) => { const it = e.target.closest('.diag-item'); if (it) showDiag(it.dataset.id); });
+  $('diagPrompt').addEventListener('click', showPromptBreakdown);
   $('diagClear').addEventListener('click', async () => {
     if (!confirm('Очистить журнал запросов?')) return;
     try { await api('/api/diag', { method: 'DELETE' }); diagItems = []; diagSelected = null; renderDiagList(); $('diagDetail').innerHTML = '<p class="sheet-empty">Журнал пуст.</p>'; refreshDiagBadge(); }

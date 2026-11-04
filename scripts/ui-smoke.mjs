@@ -80,6 +80,13 @@ try {
     step('досье героя открывается');
     if (viewport.name === 'mobile') await page.click('#sheetClose').catch(() => {});
 
+    await page.click('#diagBtn');
+    await page.waitForSelector('#diagModal:not([hidden])');
+    await page.click('#diagPrompt');
+    await page.waitForSelector('.pb-row');
+    step('состав промта показывается');
+    await page.click('#diagClose');
+
     await page.click('#settingsBtn');
     await page.waitForSelector('#settingsModal:not([hidden])');
     if (await page.textContent('.settings-nav button.active') !== 'Модели') errors.push(`[${viewport.name}] при открытии настроек подсвечен не первый раздел`);

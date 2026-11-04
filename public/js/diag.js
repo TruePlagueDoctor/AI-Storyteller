@@ -158,3 +158,39 @@ function closeDiag() {
   $('diagModal').hidden = true;
   try { localStorage.setItem(DIAG_SEEN_KEY, new Date().toISOString()); } catch { /* приватный режим */ }
 }
+
+// Состав промта рассказчика: что сколько весит. На долгой игре видно, что разрослось.
+async function showPromptBreakdown() {
+  const box = $('diagDetail');
+  box.innerHTML = '<p class="sheet-empty">Считаю…</p>';
+  document.querySelectorAll('.diag-item.active').forEach((x) => x.classList.remove('active'));
+  diagSelected = null;
+  let d;
+  try { d = await api('/api/prompt/breakdown'); } catch (err) { box.innerHTML = ''; toast(err.message); return; }
+  box.innerHTML = '';
+  const el = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
+  box.appendChild(el('h3', 'diag-h', 'Состав промта рассказчика'));
+  box.appendChild(el('p', 'diag-sub', `≈ ${d.total.toLocaleString('ru-RU')} токенов на следующем ходу (оценка). Ход ${d.counts.turn}.`));
+  const max = Math.max(...d.sections.map((s) => s.tokens), 1);
+  const table = el('div', 'pb-table');
+  for (const s of [...d.sections].sort((a, b) => b.tokens - a.tokens)) {
+    const row = el('div', 'pb-row' + (s.history ? ' history' : ''));
+    row.appendChild(el('span', 'pb-label', s.label));
+    const bar = el('span', 'pb-bar'); const fill = el('i'); fill.style.width = (s.tokens / max * 100) + '%'; bar.appendChild(fill);
+    row.appendChild(bar);
+    row.appendChild(el('span', 'pb-num', `${s.tokens.toLocaleString('ru-RU')} · ${Math.round(s.tokens / d.total * 100)}%`));
+    table.appendChild(row);
+  }
+  box.appendChild(table);
+  const c = d.counts;
+  box.appendChild(el('p', 'diag-sub', `НПС: ${c.npcs} (в архиве ${c.archived}) · записей хроники: ${c.events} · справочник мира: ${c.lore} · предыстория: ${c.summaryWords} слов · дословно держится ${c.historyKeep} сообщ.`));
+  // Подсказки — только когда есть явный перекос.
+  const share = (label) => (d.sections.find((s) => s.label.startsWith(label))?.tokens || 0) / d.total;
+  const tips = [];
+  if (d.total > 24000) tips.push('Промт очень большой — на таком объёме модели начинают путаться и терять детали. Ниже — что сократить в первую очередь.');
+  if (share('История дословно') > 0.45) tips.push('Больше всего места — дословная история. Уменьши «Сырых ходов в памяти» в настройках (раздел «Память»): старые ходы уйдут в предысторию.');
+  if (share('НПС') > 0.25 || c.npcs > 15) tips.push(`Много места у НПС (${c.npcs} активных). Тех, кто ушёл из истории, отправь в архив — их карточки перестанут ехать в каждый запрос.`);
+  if (share('Предыстория') > 0.15) tips.push('Предыстория разрослась — её можно сократить вручную в настройках (раздел «Память»).');
+  if (share('Справочник мира') > 0.2) tips.push('Справочник мира занимает много: проверь записи «всегда в контексте» и слишком общие ключевые слова.');
+  for (const t of tips) box.appendChild(el('p', 'pb-tip', t));
+}

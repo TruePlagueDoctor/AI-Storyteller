@@ -16,7 +16,7 @@ import {
 } from './src/state.js';
 import { runTurn, afterSync } from './src/turn.js';
 import { planSummary, computeSummary, applySummary } from './src/summary.js';
-import { composeStorySystem } from './src/narrator.js';
+import { composeStorySystem, storyPromptSections } from './src/narrator.js';
 import { syncNarration, resyncNarration } from './src/sync.js';
 import { replayRequest } from './src/llm.js';
 import { portraitTags, sceneTags } from './src/art.js';
@@ -107,6 +107,24 @@ app.get('/api/state', (_req, res) => ok(res));
 app.get('/api/prompt', (_req, res) => {
   const state = getState();
   res.type('text/plain; charset=utf-8').send(composeStorySystem(state, { withTools: state.stateSync === false }));
+});
+
+// Из чего состоит запрос рассказчику и сколько весит каждая часть — чтобы видеть, что разрастается.
+app.get('/api/prompt/breakdown', (_req, res) => {
+  const state = getState();
+  const tok = (n) => Math.round(n / 3.2); // русский текст: ~3 символа на токен у DeepSeek/GLM
+  const sections = storyPromptSections(state, { withTools: state.stateSync === false })
+    .map((s) => ({ label: s.label, chars: s.text.length, tokens: tok(s.text.length) }));
+  const msgs = (state.messages || []).filter((m) => typeof m.content === 'string');
+  const histChars = msgs.reduce((a, m) => a + m.content.length, 0);
+  sections.push({ label: `История дословно (${msgs.length} сообщ.)`, chars: histChars, tokens: tok(histChars), history: true });
+  const total = sections.reduce((a, s) => a + s.tokens, 0);
+  const live = (state.npcs || []).filter((n) => !n.archived).length;
+  res.json({
+    total, sections,
+    counts: { npcs: live, archived: (state.npcs || []).length - live, events: (state.events || []).length, lore: (state.lorebook || []).length,
+      summaryWords: String(state.summary || '').split(/\s+/).filter(Boolean).length, historyKeep: state.historyKeep, turn: state.turn },
+  });
 });
 
 app.post('/api/settings', async (req, res) => {

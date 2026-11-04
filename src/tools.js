@@ -564,11 +564,17 @@ function executeHeroTool(args, state) {
   const changed = [];
   const notes = [];
   const prevLook = (c.appearance || '').trim();
-  const setLook = (text) => {
+  const setLook = (text, what) => {
     if (prevLook) c.appearancePrev = prevLook; // для кнопки «вернуть прежнюю»
     c.appearance = text;
     delete c.portraitTags; // старые теги портрета больше не описывают героя
     changed.push('внешность');
+    // Кто видел перемену: остальные НПС о ней не знают (иначе принц, не видевший героиню
+    // полсотни ходов, рассуждает о её новых ушах).
+    const sc = state.scene || {};
+    const seenBy = [...(sc.present || []), ...(state.npcs || []).filter((n) => n.bound && !n.archived).map((n) => n.name)];
+    c.appearanceLog = [...(Array.isArray(c.appearanceLog) ? c.appearanceLog : []),
+      { turn: state.turn || 0, day: sc.day || 1, text: what, seenBy: [...new Set(seenBy)] }].slice(-6);
   };
 
   if ((typeof appearance === 'string' && appearance.trim()) || (typeof change === 'string' && change.trim())) {
@@ -583,11 +589,11 @@ function executeHeroTool(args, state) {
           `Прежнее: «${prevLook}». Если изменилась деталь — передай её в appearance_change; ` +
           'если облик правда сменился целиком — передай appearance ПОЛНОСТЬЮ: рост, сложение, волосы, лицо, одежда, приметы.';
       }
-      setLook(next);
+      setLook(next, 'облик заметно изменился');
     } else if (typeof change === 'string' && change.trim()) {
       const add = change.trim().replace(/\s+/g, ' ');
       if (prevLook.toLowerCase().includes(add.toLowerCase())) notes.push('эта деталь уже есть во внешности');
-      else setLook(prevLook ? prevLook.replace(/[\s.;,]*$/, '') + '. ' + add.replace(/^./, (x) => x.toUpperCase()).replace(/[.]*$/, '.') : add);
+      else setLook(prevLook ? prevLook.replace(/[\s.;,]*$/, '') + '. ' + add.replace(/^./, (x) => x.toUpperCase()).replace(/[.]*$/, '.') : add, add);
     }
   }
   if (typeof social === 'string' && social.trim() && social.trim() !== (c.social || '')) {

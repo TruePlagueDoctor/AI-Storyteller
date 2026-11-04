@@ -1888,3 +1888,16 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 .npc-competence.master { color: var(--brass); }
 .npc-competence.master::before { content: '◆ '; }
 #npcCompetence { height: 40px; font-size: 13px; }
+
+/* Состав промта (диагностика) */
+.pb-table { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.pb-row { display: grid; grid-template-columns: minmax(0, 220px) 1fr 110px; gap: 10px; align-items: center; font-size: 13px; }
+.pb-label { color: var(--text-warm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-bar { height: 6px; background: var(--edge-soft); border-radius: 3px; overflow: hidden; }
+.pb-bar > i { display: block; height: 100%; background: var(--stat); }
+.pb-row.history .pb-bar > i { background: var(--brass); }
+.pb-num { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); text-align: right; }
+.pb-tip { border-left: 2px solid var(--brass-dim); padding-left: 10px; color: var(--text-warm); font-size: 13px; line-height: 1.5; }
+@media (max-width: 560px) { .pb-row { grid-template-columns: 1fr 90px; } .pb-bar { grid-column: 1 / -1; order: 3; } }
+.diag-h { font-family: "Cormorant Garamond", serif; font-size: 22px; font-weight: 600; color: var(--text-warm); margin: 0 0 4px; }
+.diag-sub { font-size: 12.5px; color: var(--text-dim); margin: 4px 0; }

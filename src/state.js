@@ -111,6 +111,7 @@ function migrate(s) {
     if (typeof c.present !== 'boolean') c.present = true;
     if (!c.skillXp || typeof c.skillXp !== 'object') c.skillXp = {};
     if (!c.practiceDays || typeof c.practiceDays !== 'object') c.practiceDays = {}; // умение → игровой день последней тренировки
+    if (!Array.isArray(c.appearanceLog)) c.appearanceLog = []; // перемены внешности и кто их видел
     if (!Array.isArray(c.blocks)) c.blocks = [];
     for (const b of c.blocks) if (!b.id) b.id = randomUUID();
   }
@@ -374,7 +375,7 @@ export async function duplicateSlot(id) {
 function captureFullSnapshot() {
   return {
     blocksByChar: Object.fromEntries(state.characters.map((c) => [c.id, deepCopy(c.blocks)])),
-    charsByid: Object.fromEntries(state.characters.map((c) => [c.id, { skillXp: deepCopy(c.skillXp || {}), practiceDays: deepCopy(c.practiceDays || {}), appearance: c.appearance, social: c.social }])),
+    charsByid: Object.fromEntries(state.characters.map((c) => [c.id, { skillXp: deepCopy(c.skillXp || {}), practiceDays: deepCopy(c.practiceDays || {}), appearanceLog: deepCopy(c.appearanceLog || []), appearance: c.appearance, social: c.social }])),
     npcs: deepCopy(state.npcs),
     threads: deepCopy(state.threads),
     scene: deepCopy(state.scene),
@@ -678,7 +679,7 @@ export async function resetGame() {
   state.summary = '';
   state.lastSnapshot = null;
   try { await rm(turnsDir(activeSlotId), { recursive: true, force: true }); } catch { /* пусто */ }
-  for (const c of state.characters) { c.blocks = []; c.skillXp = {}; c.practiceDays = {}; }
+  for (const c of state.characters) { c.blocks = []; c.skillXp = {}; c.practiceDays = {}; c.appearanceLog = []; }
   await saveState();
   return state;
 }
@@ -701,6 +702,7 @@ function applySnapshot(snap) {
     if (extra) {
       c.skillXp = deepCopy(extra.skillXp || {});
       c.practiceDays = deepCopy(extra.practiceDays || {});
+      c.appearanceLog = deepCopy(extra.appearanceLog || []);
       if (extra.appearance !== undefined) c.appearance = extra.appearance;
       if (extra.social !== undefined) c.social = extra.social;
     }
