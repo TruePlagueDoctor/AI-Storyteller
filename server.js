@@ -3,6 +3,7 @@ import express from 'express';
 import { join } from 'node:path';
 import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 
 import {
   loadState, saveState, getState, resetGame, updateSettings,
@@ -697,8 +698,16 @@ app.post('/api/regenerate', async (_req, res) => {
   }
 });
 
+function openBrowser(url) {
+  const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '""', url]]
+    : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
+  try { spawn(cmd[0], cmd[1], { stdio: 'ignore', detached: true }).unref(); } catch { /* откроют руками */ }
+}
+
 await loadState();
 app.listen(PORT, () => {
   console.log(`\n  ИИ-рассказчик запущен: http://localhost:${PORT}`);
+  // Запуск двойным щелчком (Запуск.bat) — сразу открыть игру в браузере.
+  if (process.env.OPEN_BROWSER === '1') openBrowser(`http://localhost:${PORT}`);
   console.log(apiKey() ? '' : '  ⚠  OPENROUTER_API_KEY не задан — создай .env из .env.example.\n');
 });
