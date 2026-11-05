@@ -323,3 +323,15 @@ test('иллюстрация статьи кодекса: теги от моде
   r = await api('DELETE', `/api/lore/${id}/image`);
   assert.equal(r.data.lorebook.find((x) => x.id === id).image, undefined);
 });
+
+test('настройки качества картинок сохраняются', async () => {
+  let r = await api('GET', '/api/state');
+  assert.equal(r.data.handFix, true);
+  assert.equal(r.data.portraitHires, true);
+  assert.equal(r.data.imageScheduler, 'Karras');
+  r = await api('POST', '/api/settings', { handFix: false, portraitHires: false, imageScheduler: '' });
+  assert.equal(r.data.handFix, false);
+  assert.equal(r.data.portraitHires, false);
+  assert.equal(r.data.imageScheduler, '');
+  await api('POST', '/api/settings', { handFix: true, portraitHires: true, imageScheduler: 'Karras' });
+});

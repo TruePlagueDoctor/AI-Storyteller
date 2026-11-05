@@ -164,6 +164,9 @@ async function openSettings() {
     $('sceneSizeInput').value = s.sceneSize || '1216x832';
     $('imageClipSkipInput').value = s.imageClipSkip ?? 2;
     $('faceFixInput').checked = s.faceFix !== false;
+    $('handFixInput').checked = s.handFix !== false;
+    $('portraitHiresInput').checked = s.portraitHires !== false;
+    $('imageSchedulerInput').value = s.imageScheduler ?? 'Karras';
     $('sceneHiresInput').checked = s.sceneHires !== false;
     $('hiresScaleInput').value = s.hiresScale ?? 1.5;
     $('hiresDenoiseInput').value = s.hiresDenoise ?? 0.4;
@@ -210,6 +213,9 @@ async function saveSettings() {
         sceneSize: $('sceneSizeInput').value,
         imageClipSkip: $('imageClipSkipInput').value,
         faceFix: $('faceFixInput').checked,
+        handFix: $('handFixInput').checked,
+        portraitHires: $('portraitHiresInput').checked,
+        imageScheduler: $('imageSchedulerInput').value,
         sceneHires: $('sceneHiresInput').checked,
         hiresScale: $('hiresScaleInput').value,
         hiresDenoise: $('hiresDenoiseInput').value,

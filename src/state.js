@@ -20,8 +20,8 @@ const GLOBAL_PATH = join(DATA_DIR, 'settings.json');    // общие настр
 const INDEX_PATH = join(DATA_DIR, 'slots.json');        // список партий и активная
 
 // Что живёт в общих настройках, а не в партии.
-const GLOBAL_FIELDS = ['syncPromptStyle', 'model', 'toolModel', 'systemPrompt', 'temperature', 'repetitionPenalty', 'frequencyPenalty', 'traitPool', 'seedPool', 'statusCatalog', 'sdUrl', 'imageStyle', 'imageNegative', 'imageSize', 'imageSteps', 'imageCfg', 'imageSampler', 'sceneStyle', 'sceneNegative', 'sceneSize', 'imageClipSkip', 'faceFix', 'sceneHires', 'hiresScale', 'hiresDenoise', 'hiresUpscaler'];
-const IMAGE_FIELDS = ['sdUrl', 'imageStyle', 'imageNegative', 'imageSize', 'imageSteps', 'imageCfg', 'imageSampler', 'sceneStyle', 'sceneNegative', 'sceneSize', 'imageClipSkip', 'faceFix', 'sceneHires', 'hiresScale', 'hiresDenoise', 'hiresUpscaler'];
+const GLOBAL_FIELDS = ['syncPromptStyle', 'model', 'toolModel', 'systemPrompt', 'temperature', 'repetitionPenalty', 'frequencyPenalty', 'traitPool', 'seedPool', 'statusCatalog', 'sdUrl', 'imageStyle', 'imageNegative', 'imageSize', 'imageSteps', 'imageCfg', 'imageSampler', 'sceneStyle', 'sceneNegative', 'sceneSize', 'imageClipSkip', 'faceFix', 'sceneHires', 'hiresScale', 'hiresDenoise', 'hiresUpscaler', 'handFix', 'portraitHires', 'imageScheduler'];
+const IMAGE_FIELDS = ['sdUrl', 'imageStyle', 'imageNegative', 'imageSize', 'imageSteps', 'imageCfg', 'imageSampler', 'sceneStyle', 'sceneNegative', 'sceneSize', 'imageClipSkip', 'faceFix', 'sceneHires', 'hiresScale', 'hiresDenoise', 'hiresUpscaler', 'handFix', 'portraitHires', 'imageScheduler'];
 
 export const DEFAULT_MODEL = 'openai/gpt-4o-mini';
 

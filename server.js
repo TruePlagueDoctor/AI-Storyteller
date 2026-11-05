@@ -80,7 +80,7 @@ function publicState() {
     sdUrl: s.sdUrl, imageStyle: s.imageStyle, imageNegative: s.imageNegative, imageSize: s.imageSize,
     imageSteps: s.imageSteps, imageCfg: s.imageCfg, imageSampler: s.imageSampler,
     sceneStyle: s.sceneStyle, sceneNegative: s.sceneNegative, sceneSize: s.sceneSize,
-    imageClipSkip: s.imageClipSkip, faceFix: s.faceFix, sceneHires: s.sceneHires, hiresScale: s.hiresScale, hiresDenoise: s.hiresDenoise, hiresUpscaler: s.hiresUpscaler,
+    imageClipSkip: s.imageClipSkip, faceFix: s.faceFix, sceneHires: s.sceneHires, handFix: s.handFix, portraitHires: s.portraitHires, imageScheduler: s.imageScheduler, hiresScale: s.hiresScale, hiresDenoise: s.hiresDenoise, hiresUpscaler: s.hiresUpscaler,
     difficulty: s.difficulty,
     narration: s.narration,
     stateSync: s.stateSync,

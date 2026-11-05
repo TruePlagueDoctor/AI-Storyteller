@@ -365,6 +365,7 @@
           <label class="field" style="flex:1"><span class="field-label">CFG</span><input type="text" id="imageCfgInput" placeholder="6" /></label>
           <label class="field" style="flex:1"><span class="field-label">Сэмплер</span><input type="text" id="imageSamplerInput" placeholder="DPM++ 2M" /></label>
           <label class="field" style="flex:1"><span class="field-label">Clip skip</span><input type="text" id="imageClipSkipInput" placeholder="2" /></label>
+          <label class="field" style="flex:1"><span class="field-label">Планировщик</span><input type="text" id="imageSchedulerInput" placeholder="Karras" /></label>
         </div>
         <label class="field toggle-field">
           <input type="checkbox" id="faceFixInput" />
@@ -373,6 +374,21 @@
             <span class="field-hint">Находит лица и перерисовывает их в высоком разрешении — без этого на сценах глаза и рты рвутся. Нужно расширение adetailer в A1111 (Extensions → Available → adetailer); «Проверить» выше скажет, установлено ли.</span>
           </span>
         </label>
+        <label class="field toggle-field">
+          <input type="checkbox" id="handFixInput" />
+          <span class="toggle-text">
+            <span class="field-label">Дорисовывать руки (ADetailer)</span>
+            <span class="field-hint">Второй проход ADetailer по кистям рук — лишние и сросшиеся пальцы. Мягкий: поза не меняется. Добавляет 5–10 секунд.</span>
+          </span>
+        </label>
+        <label class="field toggle-field">
+          <input type="checkbox" id="portraitHiresInput" />
+          <span class="toggle-text">
+            <span class="field-label">Второй проход для портретов и артов кодекса (Hires fix)</span>
+            <span class="field-hint">Картинка дорисовывается в большем разрешении — на кадре во весь рост лицо и руки мелкие, без этого они «рвутся». Примерно вдвое дольше. Увеличение, denoise и апскейлер — общие со сценами (ниже).</span>
+          </span>
+        </label>
+        <p class="field-hint">Защита от кривой анатомии (лишние пальцы, руки, ноги, длинная шея) добавляется к негативу сама.</p>
         <details class="field scene-settings">
           <summary class="field-label">Иллюстрации сцен — свой стиль, негатив и размер</summary>
           <label class="field">

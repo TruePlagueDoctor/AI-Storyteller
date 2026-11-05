@@ -19,7 +19,10 @@ export const DEFAULT_IMAGE_SETTINGS = {
   // (ADetailer), вторым проходом в большем разрешении (Hires fix) и clip skip 2 — Pony на нём обучен.
   imageClipSkip: 2,
   faceFix: true,
+  handFix: true,          // ADetailer дорисовывает и руки — главный источник артефактов Pony
   sceneHires: true,
+  portraitHires: true,    // второй проход и для портретов и артов кодекса (во весь рост лица и руки мелкие)
+  imageScheduler: 'Karras', // планировщик шума (A1111 1.9+); без него DPM++ 2M заметно грязнее
   hiresScale: 1.5,
   hiresDenoise: 0.4,
   hiresUpscaler: 'R-ESRGAN 4x+',
@@ -46,7 +49,17 @@ export async function sdCaps(sdUrl, fresh = false) {
   return out;
 }
 
-const GEN_TIMEOUT_MS = 300000; // второй проход и дорисовка лиц на 12 ГБ — до пары минут
+const GEN_TIMEOUT_MS = 300000;
+
+// Защита от типичных дефектов анатомии — добавляется к любому негативу, если её там нет:
+// у игроков негатив сохранён в настройках, и новые значения по умолчанию до них бы не дошли.
+const ANATOMY_NEGATIVE = ['bad anatomy', 'bad hands', 'mutated hands', 'extra digits', 'fewer digits', 'fused fingers',
+  'extra fingers', 'bad feet', 'extra legs', 'extra arms', 'long neck', 'deformed', 'disfigured'];
+export function withAnatomyNegative(neg) {
+  const have = String(neg || '').split(',').map((t) => t.trim()).filter(Boolean);
+  const low = new Set(have.map((t) => t.toLowerCase()));
+  return [...have, ...ANATOMY_NEGATIVE.filter((t) => !low.has(t))].join(', ');
+} // второй проход и дорисовка лиц на 12 ГБ — до пары минут
 
 function parseSize(s) {
   const m = String(s || '').match(/(\d{3,4})\s*[x×]\s*(\d{3,4})/i);
@@ -78,7 +91,7 @@ export async function txt2img(settings, tags, opts = {}) {
   const seed = Number.isInteger(Number(opts.seed)) && String(opts.seed).trim() !== '' && Number(opts.seed) >= 0 ? Number(opts.seed) : -1;
   const body = {
     prompt,
-    negative_prompt: scene ? (settings.sceneNegative ?? DEFAULT_IMAGE_SETTINGS.sceneNegative) : (settings.imageNegative ?? DEFAULT_IMAGE_SETTINGS.imageNegative),
+    negative_prompt: withAnatomyNegative(scene ? (settings.sceneNegative ?? DEFAULT_IMAGE_SETTINGS.sceneNegative) : (settings.imageNegative ?? DEFAULT_IMAGE_SETTINGS.imageNegative)),
     width, height,
     steps: Number(settings.imageSteps) || DEFAULT_IMAGE_SETTINGS.imageSteps,
     cfg_scale: Number(settings.imageCfg) || DEFAULT_IMAGE_SETTINGS.imageCfg,
@@ -87,6 +100,8 @@ export async function txt2img(settings, tags, opts = {}) {
     batch_size: 1,
   };
   const warnings = [];
+  const sched = String(settings.imageScheduler ?? DEFAULT_IMAGE_SETTINGS.imageScheduler).trim();
+  if (sched && !/karras|exponential|uniform|sgm|simple|beta|align/i.test(body.sampler_name)) body.scheduler = sched;
   const num = (v, d) => (Number.isFinite(Number(v)) && String(v).trim() !== '' ? Number(v) : d);
   const clipSkip = num(settings.imageClipSkip, DEFAULT_IMAGE_SETTINGS.imageClipSkip);
   if (clipSkip >= 1) {
@@ -94,8 +109,9 @@ export async function txt2img(settings, tags, opts = {}) {
     body.override_settings_restore_afterwards = true;
   }
   const c = await sdCaps(base);
-  // Второй проход в большем разрешении — только для сцен: там лица мелкие.
-  if (scene && (settings.sceneHires ?? DEFAULT_IMAGE_SETTINGS.sceneHires)) {
+  // Второй проход в большем разрешении: у сцен лица мелкие, у портретов во весь рост и артов кодекса — тоже.
+  const hires = scene ? (settings.sceneHires ?? DEFAULT_IMAGE_SETTINGS.sceneHires) : (settings.portraitHires ?? DEFAULT_IMAGE_SETTINGS.portraitHires);
+  if (hires) {
     let up = String(settings.hiresUpscaler || DEFAULT_IMAGE_SETTINGS.hiresUpscaler);
     if (c.upscalers.length && !c.upscalers.includes(up)) {
       const alt = c.upscalers.find((u) => /R-ESRGAN 4x\+$|ESRGAN_4x|4x/i.test(u)) || 'Latent';
@@ -113,11 +129,19 @@ export async function txt2img(settings, tags, opts = {}) {
   // Дорисовка лиц ADetailer'ом — если расширение установлено.
   if (settings.faceFix ?? DEFAULT_IMAGE_SETTINGS.faceFix) {
     if (c.adetailer) {
-      body.alwayson_scripts = { ADetailer: { args: [true, false, {
+      const passes = [{
         ad_model: 'face_yolov8n.pt', ad_confidence: 0.3, ad_denoising_strength: 0.4,
         ad_inpaint_only_masked: true, ad_inpaint_only_masked_padding: 32,
         ad_negative_prompt: 'bad eyes, deformed eyes, asymmetrical eyes, cross-eyed, extra mouth, deformed mouth, distorted face',
-      }] } };
+      }];
+      // Руки — отдельный проход: мягче по силе, чтобы не менять позу, только пальцы.
+      if (settings.handFix ?? DEFAULT_IMAGE_SETTINGS.handFix) passes.push({
+        ad_model: 'hand_yolov8n.pt', ad_confidence: 0.35, ad_denoising_strength: 0.35,
+        ad_inpaint_only_masked: true, ad_inpaint_only_masked_padding: 32,
+        ad_prompt: 'detailed hands, five fingers, perfect hands',
+        ad_negative_prompt: 'bad hands, extra digits, fewer digits, fused fingers, mutated hands, extra fingers',
+      });
+      body.alwayson_scripts = { ADetailer: { args: [true, false, ...passes] } };
     } else warnings.push('ADetailer не установлен — лица не дорисовывались');
   }
   const ac = new AbortController();
