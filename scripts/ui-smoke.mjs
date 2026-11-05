@@ -118,7 +118,7 @@ try {
     await page.waitForSelector('#codexViewModal:not([hidden])');
     if (!/огонь/.test(await page.textContent('#codexViewBody'))) errors.push(`[${viewport.name}] в статье кодекса нет полей`);
     stack.handlers.other = () => reply('ghoul, undead, graveyard, night, full body');
-    await page.click('#codexViewBody .codex-art-acts .btn >> nth=0');
+    await page.click('#codexViewBody .codex-art-tools .codex-tool >> nth=0');
     await page.waitForSelector('#codexViewBody .codex-frame.has-image');
     step('иллюстрация статьи рисуется');
     await page.click('#codexViewEdit');

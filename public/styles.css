@@ -1984,8 +1984,8 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 @media (max-width: 560px) { .codex-head .codex-emblem { width: 80px; } }
 
 /* ---------- Статья кодекса: слева арт, справа текст ---------- */
-.modal.codex-modal { max-width: 980px; }
-.codex-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; }
+.modal.codex-modal { max-width: 1040px; }
+.codex-layout { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 30px; align-items: start; }
 .codex-art { position: sticky; top: 0; display: flex; flex-direction: column; gap: 10px; }
 .codex-frame { aspect-ratio: 2 / 3; border-radius: 8px; border: 1px solid var(--brass-dim);
   box-shadow: inset 0 0 0 6px var(--ink), inset 0 0 0 7px color-mix(in srgb, var(--brass) 40%, transparent), 0 14px 40px rgba(0,0,0,.45);
@@ -1996,11 +1996,21 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 .codex-frame.kind-people .codex-frame-glyph { color: color-mix(in srgb, var(--relation) 45%, var(--edge)); }
 .codex-frame-hint { font-family: 'Spectral', serif; font-style: italic; font-size: 13px; color: var(--text-faint); text-align: center; padding: 0 20px; }
 .codex-frame.busy { animation: pulse 1.4s ease-in-out infinite; }
-.codex-art-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.codex-art-acts .btn { width: 100%; justify-content: center; padding: 7px 6px; font-size: 11px; }
-.codex-tags > summary { cursor: pointer; font-family: 'Spectral', serif; font-size: 13px; color: var(--text-dim); }
-.codex-tags textarea { width: 100%; margin-top: 6px; background: var(--ink); color: var(--text); border: 1px solid var(--edge); border-radius: 6px;
-  padding: 8px 10px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.5; resize: vertical; }
+/* Инструменты иллюстрации — полоска значков поверх картинки; на компьютере проявляется при наведении. */
+.codex-frame { position: relative; overflow: hidden; }
+.codex-art-tools { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; padding: 4px;
+  background: rgba(14, 10, 18, 0.72); backdrop-filter: blur(4px); border: 1px solid rgba(200, 162, 76, 0.25); border-radius: 20px;
+  opacity: 0; transform: translateY(4px); transition: opacity 0.18s, transform 0.18s; }
+.codex-frame:hover .codex-art-tools, .codex-frame:focus-within .codex-art-tools, .codex-frame:not(.has-image) .codex-art-tools, .codex-frame.busy .codex-art-tools { opacity: 1; transform: none; }
+.codex-tool { width: 30px; height: 30px; border-radius: 50%; border: none; background: none; cursor: pointer; color: var(--text-warm); font-size: 14px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; }
+.codex-tool:hover:not(:disabled), .codex-tool.on { background: rgba(200, 162, 76, 0.22); color: var(--brass); }
+.codex-tool:disabled { opacity: 0.35; cursor: default; }
+.codex-busy { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; font-family: 'Spectral', serif; font-style: italic;
+  color: var(--text-warm); text-shadow: 0 1px 6px #000; pointer-events: none; }
+.codex-busy:empty { display: none; }
+.codex-tags { display: flex; flex-direction: column; gap: 6px; }
+@media (hover: none) { .codex-art-tools { opacity: 0.85; transform: none; } }
 .codex-text .codex-head { margin-bottom: 4px; }
 .codex-text .dossier-name { font-size: 34px; }
 .lore.has-thumb { display: grid; grid-template-columns: 46px minmax(0, 1fr); column-gap: 11px; }
@@ -2008,5 +2018,9 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 .lore-thumb { grid-row: 1 / span 3; width: 46px; aspect-ratio: 2 / 3; border-radius: 4px; background: var(--ink) center/cover no-repeat; border: 1px solid var(--edge); }
 @media (max-width: 760px) {
   .codex-layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .codex-art { position: static; max-width: 260px; margin: 0 auto; width: 100%; }
+  .codex-art { position: static; width: 100%; }
 }
+.codex-tags textarea { width: 100%; background: var(--ink); color: var(--text); border: 1px solid var(--edge); border-radius: 6px;
+  padding: 8px 10px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.5; resize: vertical; }
+.codex-tags textarea:focus { outline: none; border-color: var(--brass-dim); }
+.codex-tags .btn { width: 100%; justify-content: center; font-size: 11px; }

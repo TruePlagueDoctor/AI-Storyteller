@@ -187,33 +187,37 @@ function renderCodexArt(e) {
     frame.appendChild(dEl('span', 'codex-frame-hint', kind === 'place' ? 'Как выглядит это место?' : 'Нарисовать типичного представителя'));
   }
   col.appendChild(frame);
-  const acts = dEl('div', 'codex-art-acts');
-  const draw = dEl('button', 'btn ghost', e.image ? '🎨 Перерисовать' : '🎨 Нарисовать');
-  draw.type = 'button';
-  draw.title = 'Нарисовать в Automatic1111 по тегам ниже (пусто — модель составит их по статье)';
-  const fresh = dEl('button', 'btn ghost', '↻ По статье');
-  fresh.type = 'button';
-  fresh.title = 'Составить теги заново по тексту статьи и нарисовать';
-  const up = dEl('button', 'btn ghost', 'Загрузить');
-  up.type = 'button';
-  const clear = dEl('button', 'btn ghost', 'Убрать');
-  clear.type = 'button';
+  // Инструменты — маленькой полоской значков поверх картинки, чтобы место доставалось арту.
+  // Теги спрятаны за «#» и открываются по нажатию.
+  const acts = dEl('div', 'codex-art-tools');
+  const tool = (glyph, title) => { const b = dEl('button', 'codex-tool', glyph); b.type = 'button'; b.title = title; b.setAttribute('aria-label', title); return b; };
+  const draw = tool('🎨', e.image ? 'Перерисовать по тегам (пусто — модель составит их по статье)' : 'Нарисовать по статье');
+  const fresh = tool('↻', 'Составить теги заново по статье и нарисовать');
+  const tagsBtn = tool('#', 'Теги иллюстрации — поправить и перерисовать');
+  const up = tool('⤒', 'Загрузить свою картинку');
+  const clear = tool('✕', 'Убрать иллюстрацию');
   clear.disabled = !e.image;
-  acts.append(draw, fresh, up, clear);
-  col.appendChild(acts);
-  const det = dEl('details', 'codex-tags');
-  det.appendChild(dEl('summary', null, 'Теги иллюстрации'));
+  acts.append(draw, fresh, tagsBtn, up, clear);
+  acts.addEventListener('click', (ev) => ev.stopPropagation()); // щелчок по значку не открывает картинку крупно
+  frame.appendChild(acts);
+  const det = dEl('div', 'codex-tags');
+  det.hidden = true;
   const ta = dEl('textarea');
   ta.rows = 4;
   ta.placeholder = 'Пусто — модель составит теги по статье при рисовании';
   ta.value = e.imageTags || '';
   det.appendChild(ta);
+  const go = dEl('button', 'btn ghost', '🎨 Нарисовать по этим тегам');
+  go.type = 'button';
+  det.appendChild(go);
   col.appendChild(det);
+  tagsBtn.addEventListener('click', () => { det.hidden = !det.hidden; tagsBtn.classList.toggle('on', !det.hidden); if (!det.hidden) ta.focus(); });
 
-  const busy = (on, label) => { for (const b of [draw, fresh, up, clear]) b.disabled = on || (b === clear && !e.image); if (on) draw.textContent = label; };
+  const status = dEl('div', 'codex-busy');
+  frame.appendChild(status);
+  const busy = (on, label) => { for (const b of [draw, fresh, up, clear, go]) b.disabled = on || (b === clear && !e.image); status.textContent = on ? label : ''; frame.classList.toggle('busy', on); };
   const run = async (tags) => {
-    busy(true, tags ? '🎨 Рисую…' : '🎨 Теги и рисунок…');
-    frame.classList.add('busy');
+    busy(true, tags ? 'Рисую…' : 'Составляю теги и рисую…');
     try {
       const data = await api(`/api/lore/${e.id}/illustrate`, { method: 'POST', body: JSON.stringify({ tags }) });
       applyState(data);
@@ -221,11 +225,11 @@ function renderCodexArt(e) {
       if (viewingLoreId === e.id && !$('codexViewModal').hidden) renderCodexView(app.lorebook.find((x) => x.id === e.id));
     } catch (err) {
       toast(err.message);
-      frame.classList.remove('busy');
-      busy(false); draw.textContent = e.image ? '🎨 Перерисовать' : '🎨 Нарисовать';
+      busy(false);
     }
   };
   draw.addEventListener('click', () => run(ta.value.trim()));
+  go.addEventListener('click', () => run(ta.value.trim()));
   fresh.addEventListener('click', () => run(''));
   up.addEventListener('click', () => {
     const inp = document.createElement('input');
