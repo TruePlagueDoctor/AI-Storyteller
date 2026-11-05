@@ -252,3 +252,19 @@ test('состав промта: разделы, история и счётчи�
   assert.equal(data.sections.reduce((a, s) => a + s.tokens, 0), data.total);
   assert.equal(typeof data.counts.npcs, 'number');
 });
+
+test('резервные копии: при запуске, по кнопке и восстановление новой историей', async () => {
+  let r = await api('GET', '/api/backups');
+  assert.ok(r.data.items.some((b) => b.reason === 'при запуске'), 'копия при запуске сервера');
+  r = await api('POST', '/api/backups');
+  const b = r.data.backup;
+  const before = (await api('GET', '/api/state')).data;
+  const slot = b.slots.find((x) => x.id === before.activeSlotId);
+  r = await api('POST', `/api/backups/${b.id}/restore`, { slotId: slot.id });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.slots.length, before.slots.length + 1);
+  assert.match(r.data.slots.find((x) => x.active).name, /\(копия от /);
+  assert.equal(r.data.log.length, before.log.length);
+  assert.ok(r.data.log.every((e) => e.variants === undefined));
+  assert.equal((await api('POST', `/api/backups/${b.id}/restore`, { slotId: 'нет' })).status, 400);
+});

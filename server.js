@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 
 import {
-  loadState, saveState, getState, resetGame, updateSettings,
+  loadState, saveState, getState, resetGame, updateSettings, importSlot,
   addCharacter, updateCharacter, deleteCharacter, setActiveCharacter, deleteNpc, deleteBlock, upsertBlock, updateSceneManual, toggleCharacterPresence,
   recordTurnOutcome, refreshTurnOutcome, truncateLog, entryContext, setEntryImages,
   clearPreSync, capturePreSync, bindPreSync, canResync, restorePreSync, switchVariant, branchAt, oocWrap, upsertEvent, deleteEvent,
@@ -26,6 +26,7 @@ import { listRequests, getRequest, clearRequests, diagCounts } from './src/diag.
 import { txt2img, pingSd } from './src/images.js';
 import { advanceStatuses } from './src/statuses.js';
 import { PUBLIC_DIR, AVATAR_DIR, SCENE_DIR } from './src/paths.js';
+import { makeBackup, listBackups, maybeDailyBackup, readBackupSlot } from './src/backup.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -275,6 +276,26 @@ app.post('/api/slots/:id/duplicate', async (req, res) => {
 });
 app.delete('/api/slots/:id', whileIdle, async (req, res) => {
   try { await deleteSlot(req.params.id); ok(res); } catch (e) { fail(res, e, 400); }
+});
+
+// ---- Резервные копии ----
+app.get('/api/backups', async (_req, res) => {
+  try { res.json({ items: await listBackups() }); } catch (e) { fail(res, e); }
+});
+app.post('/api/backups', whileIdle, async (_req, res) => {
+  try { await saveState(); const b = await makeBackup('вручную'); res.json({ backup: b, items: await listBackups() }); } catch (e) { fail(res, e); }
+});
+// Восстановить партию из копии — новой историей рядом с текущими.
+app.post('/api/backups/:id/restore', whileIdle, async (req, res) => {
+  try {
+    const slotId = String(req.body?.slotId || '');
+    const b = (await listBackups()).find((x) => x.id === req.params.id);
+    const meta = b && b.slots.find((x) => x.id === slotId);
+    if (!meta) throw new Error('Копия не найдена.');
+    const raw = await readBackupSlot(b.id, slotId);
+    await importSlot(raw, `${meta.name} (копия от ${b.label})`);
+    ok(res);
+  } catch (e) { fail(res, e, 400); }
 });
 
 // ---- Лорбук ----
@@ -705,6 +726,9 @@ function openBrowser(url) {
 }
 
 await loadState();
+// Раз в сутки при запуске — копия всех партий (data/backups, последние 10).
+try { const b = await maybeDailyBackup(); if (b) console.log(`  Резервная копия партий: data/backups/${b.id}`); }
+catch (e) { console.warn('  Не удалось сделать резервную копию:', e.message); }
 app.listen(PORT, () => {
   console.log(`\n  ИИ-рассказчик запущен: http://localhost:${PORT}`);
   // Запуск двойным щелчком (Запуск.bat) — сразу открыть игру в браузере.

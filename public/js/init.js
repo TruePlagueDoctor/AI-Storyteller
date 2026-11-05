@@ -65,6 +65,11 @@ async function init() {
   $('traitAdd').addEventListener('click', () => { traitDraft.unshift({ cat: 'temper', label: '', hint: '' }); renderTraitEditor(); $('traitList').querySelector('.trait-input.label')?.focus(); });
   $('traitModal').addEventListener('click', (e) => { if (e.target.id === 'traitModal') closeTraitPool(); });
   $('slotsBtn').addEventListener('click', openSlots);
+  $('backupsBox').addEventListener('toggle', () => { if ($('backupsBox').open) loadBackups(); });
+  $('backupNow').addEventListener('click', async () => {
+    try { renderBackups((await api('/api/backups', { method: 'POST' })).items || []); toast('Копия сделана.'); }
+    catch (err) { toast(err.message); }
+  });
   $('slotsClose').addEventListener('click', closeSlots);
   $('slotsModal').addEventListener('click', (e) => { if (e.target.id === 'slotsModal') closeSlots(); });
   $('slotList').addEventListener('click', (e) => {

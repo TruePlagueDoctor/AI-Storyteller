@@ -676,6 +676,12 @@
       <div class="modal-body">
         <p class="field-note lore-hint">У каждой истории свои герои, мир, персонажи и предыстория. Модель и промт рассказчика общие для всех.</p>
         <div id="slotList"></div>
+        <details class="backups" id="backupsBox">
+          <summary>Резервные копии</summary>
+          <p class="field-note">Копия всех историй делается сама раз в сутки при запуске сервера (хранятся последние 10). Восстановленная история появится <b>рядом</b> с текущими — ничего не затирается. Варианты ответов (свайпы) в копию не входят.</p>
+          <div id="backupList"></div>
+          <button class="btn ghost" id="backupNow">Сделать копию сейчас</button>
+        </details>
       </div>
       <div class="modal-foot">
         <input type="text" id="newSlotName" class="slot-input" placeholder="Название новой истории" />

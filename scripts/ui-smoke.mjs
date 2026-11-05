@@ -96,6 +96,9 @@ try {
     await page.click('#settingsCancel');
     await page.click('#slotsBtn');
     await page.waitForSelector('#slotsModal:not([hidden])');
+    await page.click('#backupsBox > summary');
+    await page.waitForSelector('#backupList .backup');
+    step('резервные копии видны');
     await page.click('#slotsClose');
     step('настройки и список историй открываются');
 

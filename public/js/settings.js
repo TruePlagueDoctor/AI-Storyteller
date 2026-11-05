@@ -46,6 +46,49 @@ function renderSlots(data) {
 async function openSlots() {
   try { renderSlots(await api('/api/slots')); $('slotsModal').hidden = false; }
   catch (err) { toast(err.message); }
+  if ($('backupsBox').open) loadBackups();
+}
+
+// ---- Резервные копии ----
+async function loadBackups() {
+  const list = $('backupList');
+  list.innerHTML = '<p class="sheet-empty">Загружаю…</p>';
+  let items = [];
+  try { items = (await api('/api/backups')).items || []; } catch (err) { list.innerHTML = ''; toast(err.message); return; }
+  renderBackups(items);
+}
+function renderBackups(items) {
+  const list = $('backupList');
+  list.innerHTML = '';
+  if (!items.length) { list.innerHTML = '<p class="sheet-empty">Копий пока нет.</p>'; return; }
+  for (const b of items) {
+    const box = document.createElement('div');
+    box.className = 'backup';
+    const head = document.createElement('div');
+    head.className = 'backup-head';
+    head.textContent = `${b.label}${b.reason ? ' · ' + b.reason : ''}`;
+    box.appendChild(head);
+    for (const sl of b.slots) {
+      const row = document.createElement('div');
+      row.className = 'backup-slot';
+      const nm = document.createElement('span');
+      nm.textContent = `${sl.name} — ${sl.turns} ${plural(sl.turns, 'ход', 'хода', 'ходов')}`;
+      const btn = document.createElement('button');
+      btn.className = 'link-btn';
+      btn.textContent = 'восстановить';
+      btn.title = 'Создать новую историю из этой копии. Текущие истории не изменятся.';
+      btn.addEventListener('click', async () => {
+        try {
+          applyFullState(await api(`/api/backups/${b.id}/restore`, { method: 'POST', body: JSON.stringify({ slotId: sl.id }) }));
+          toast(`Восстановлено: «${sl.name}» — новой историей.`);
+          closeSlots();
+        } catch (err) { toast(err.message); }
+      });
+      row.append(nm, btn);
+      box.appendChild(row);
+    }
+    list.appendChild(box);
+  }
 }
 function closeSlots() { $('slotsModal').hidden = true; }
 

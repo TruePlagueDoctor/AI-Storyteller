@@ -1901,3 +1901,12 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 @media (max-width: 560px) { .pb-row { grid-template-columns: 1fr 90px; } .pb-bar { grid-column: 1 / -1; order: 3; } }
 .diag-h { font-family: "Cormorant Garamond", serif; font-size: 22px; font-weight: 600; color: var(--text-warm); margin: 0 0 4px; }
 .diag-sub { font-size: 12.5px; color: var(--text-dim); margin: 4px 0; }
+
+/* Резервные копии (окно историй) */
+.backups { margin-top: 18px; border-top: 1px solid var(--edge-soft); padding-top: 12px; }
+.backups > summary { cursor: pointer; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-dim); }
+.backups[open] > summary { color: var(--brass); margin-bottom: 8px; }
+.backup { border: 1px solid var(--edge-soft); border-radius: 8px; padding: 8px 12px; margin: 8px 0; background: var(--ink-3); }
+.backup-head { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-faint); margin-bottom: 4px; }
+.backup-slot { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 3px 0; color: var(--text-warm); font-size: 14px; }
+#backupNow { margin-top: 6px; }

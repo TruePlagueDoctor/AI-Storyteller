@@ -355,6 +355,24 @@ export async function deleteSlot(id) {
   return state;
 }
 
+// Партия из резервной копии — новой историей рядом с текущими (ничего не затирая).
+// Снимков ходов у неё нет: свайпы и обрезка начинаются с этого момента.
+export async function importSlot(raw, name) {
+  if (!raw || typeof raw !== 'object') throw new Error('Пустая копия.');
+  await saveState();
+  const id = randomUUID();
+  slots.push({ id, name: String(name || 'Восстановленная история').trim(), updatedAt: Date.now() });
+  activeSlotId = id;
+  const payload = { ...raw };
+  delete payload.preSync; delete payload.lastSnapshot;
+  // Вариантов (свайпов) в копии нет — счётчики «1/3» иначе обещали бы то, чего нет.
+  payload.log = (Array.isArray(payload.log) ? payload.log : []).map((e) => { const x = { ...e }; delete x.variants; delete x.variant; return x; });
+  state = migrate({ ...payload, ...globals });
+  await writeJson(slotPath(id), slotPayload(state));
+  await writeJson(INDEX_PATH, { slots, activeSlotId });
+  return state;
+}
+
 // Копия партии — удобно перед рискованным поворотом сюжета.
 export async function duplicateSlot(id) {
   const entry = slots.find((x) => x.id === id);
