@@ -27,6 +27,8 @@
 }
 
 * { box-sizing: border-box; }
+/* Атрибут hidden сильнее любых display у классов (.field и т. п.). */
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0;
@@ -1927,3 +1929,23 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 .search-text mark { background: color-mix(in srgb, var(--brass) 30%, transparent); color: var(--text-warm); border-radius: 2px; padding: 0 1px; }
 @keyframes foundFlash { 0% { background: color-mix(in srgb, var(--brass) 22%, transparent); } 100% { background: transparent; } }
 .entry.found { animation: foundFlash 2.2s ease-out; border-radius: 6px; }
+
+/* ---------- Кодекс мира ---------- */
+.codex-filter { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 18px 10px; }
+.codex-chip { background: none; border: 1px solid var(--edge-soft); border-radius: 20px; padding: 3px 10px; cursor: pointer;
+  font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-dim); }
+.codex-chip:hover { color: var(--text-warm); border-color: var(--edge); }
+.codex-chip.active { color: var(--brass); border-color: var(--brass-dim); }
+.lore-glyph { color: var(--brass-dim); margin-right: 6px; font-size: 12px; }
+.lore.kind-creature .lore-glyph { color: var(--status); }
+.lore.kind-people .lore-glyph { color: var(--relation); }
+.lore.kind-faction .lore-glyph { color: var(--stat); }
+.lore.kind-place .lore-glyph { color: var(--item); }
+.lore-danger { color: var(--status); font-size: 11px; letter-spacing: 1px; margin-left: 6px; }
+.lore-preview.brief { color: var(--text-warm); font-style: italic; }
+#loreBriefsBtn.busy, #loreBriefFill.busy { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.4; } }
+.npc-race { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--relation); margin-top: 2px; }
+.lore-row .lore-title { flex: 1; min-width: 0; text-align: left; }
+.lore-row { justify-content: flex-start; gap: 0; }
+.lore-row .lore-always { margin-left: 6px; }

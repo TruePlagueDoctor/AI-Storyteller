@@ -7,7 +7,7 @@
 ## Запуск и проверка
 
 - `npm install`, `.env` с `OPENROUTER_API_KEY`, `node server.js` (порт 3000). После правок пользователь перезапускает сервер и обновляет страницу Ctrl+F5.
-- Версия интерфейса печатается в консоль браузера второй строкой `public/js/core.js`: `console.log('AI Storyteller UI vNN — …')`. **Повышай номер при каждом изменении фронтенда** — по нему пользователь проверяет, что подхватилась новая версия. Сейчас v47.
+- Версия интерфейса печатается в консоль браузера второй строкой `public/js/core.js`: `console.log('AI Storyteller UI vNN — …')`. **Повышай номер при каждом изменении фронтенда** — по нему пользователь проверяет, что подхватилась новая версия. Сейчас v48.
 - **Проверки — перед каждым коммитом:** `npm test` (node:test, без сети: данные во временной папке, OpenRouter подменён) и при правках интерфейса `npm run test:ui` (Playwright, сервер с поддельной моделью, экраны компьютера и телефона; `UI_SHOTS=папка` сохраняет скриншоты). Нашёл ошибку — сначала тест, который её ловит, потом исправление.
   - `test/fake-llm.js` — `reply()`, `call()`, подмена `fetch` в процессе (для `src/*`); `test/harness.js` — настоящий `server.js` в отдельном процессе + поддельный OpenRouter/A1111 (`OPENROUTER_URL`, `STORYTELLER_DATA_DIR`); `test/helpers.js` — `makeState()`.
   - Учётчик на настоящей модели: `npm run eval:sync -- --model …` (сцены в `evals/sync-scenes.js`, отчёт в `data/evals/`). Меняешь промт учётчика или `completenessHints` — попроси пользователя прогнать до и после и сравнить цифры. Новая сцена: `must`/`forbid` проверяют итоговый мир, `ideal` — вызовы идеального учётчика (по ним `npm test` проверяет саму сцену).
@@ -24,12 +24,13 @@
 | `src/sync.js` | `composeSyncSystem` + `technicalSyncHead`/`legacySyncHead`, `syncState` (2 раунда, `completenessHints`), `syncNarration`/`resyncNarration` |
 | `src/turn.js`, `src/journal.js` | `runTurn`, `afterSync` (противоречия + замечание рассказчику + `markSeen`: `npc.lastSeen` и свидетели в `character.appearanceLog`); журнал учёта (`journalEntry`, `FIX_SIGNAL`) |
 | `src/summary.js` | сжатие: `planSummary`/`computeSummary`/`applySummary` |
-| `src/art.js`, `src/fill.js` | `portraitTags`, `sceneTags`; `fillField` (✨) |
+| `src/art.js`, `src/fill.js` | `portraitTags`, `sceneTags`; `fillField` (✨), `writeBrief` (✨ выжимка статьи кодекса) |
 | `src/paths.js` | где лежат данные (`STORYTELLER_DATA_DIR`) |
 | `src/backup.js` | резервные копии `data/backups/<время>/` (раз в сутки при старте, по кнопке, последние 10; снимки ходов не копируются); восстановление — `importSlot` новой историей |
 | `Запуск.bat`, `Обновить.bat` | Windows: запуск двойным щелчком (`OPEN_BROWSER=1` — сервер сам открывает браузер) и обновление через git или архив main (копирует себя во %TEMP%, не трогает `data`, `.env`); в git с CRLF (`.gitattributes`) |
 | `src/tools.js` | схемы инструментов, `toolsFor`, и `executeTool`: `block`, `npc`, `scene`, `event`, `thread`, `practice` (опыт за тренировку/урок, раз в игровой день на умение — `character.practiceDays`), `update_hero`, `record_lore`, `nothing`, `roll_check`; нечёткое сопоставление имён (`sameName`, `caseStem`, `findNpc`, `findIndex`, `catalogStatusName`) |
 | `src/state.js` | загрузка/сохранение, миграции, слоты, снимки (`captureFullSnapshot`/`applyFullSnapshot`), варианты ходов (свайпы), ветки, ручные правки (`upsertBlock`, `updateNpcManual`, `upsertEvent`…), `entryContext`/`setEntryImages` |
+| `src/codex.js`, `src/narrator-keys.js` | кодекс мира (бывший лорбук, `state.lorebook`): разделы people/creature/faction/place/other, `brief`, поля раздела (`KIND_FIELDS`), `relations` народов; `selectCodex`/`codexBlock` — что идёт рассказчику (полностью: существо в `scene.creatures`, спрошенное в последнем ходе, «всегда»; выжимкой: народ НПС рядом и героя по полю `race` — `findPeople`, место сцены, недавние упоминания; предубеждения — только пары народов в сцене) в бюджете `CODEX_BUDGET_TOKENS` (1200); `codexIndex` — оглавление для учётчика; `keyMatches` |
 | `src/chronicle.js` | хроника фактов: типы, `#номера` для учётчика, сроки (`dueOf`/`isOverdue` по часам сцены), выборка для рассказчика |
 | `src/scene.js` | сцена: место, часы (`day`/`minute`), присутствующие, блок для промтов |
 | `src/dice.js`, `src/skills.js`, `src/progress.js` | бросок d20 + уровень умения; умение ищется по смыслу (`matchAbility`, `skillMatches` — и для черт цели); опыт только у существующих умений, с учётом стартового уровня (`addXp` — общий для бросков и тренировок); `competenceMod` — умелость НПС-цели (`npc.competence` обычный/профессионал/мастер + `npc.skills`, таблица противостояний `OPPOSE`) |
@@ -56,7 +57,7 @@
 - **Ошибки инструментов — с подсказкой для второго раунда**: что есть на самом деле, как назвать точно (см. удаление блоков/архивацию НПС).
 - **Закреплённое игроком не меняется**: `block.locked` (целиком), `block.descLocked` (только описание/имя, значение меняется), `npc.locked[]` по полям, `character.locked` (`appearance`, `social`), `scene.locked`, `event.locked`.
 - **НПС не удаляются учётчиком — только в архив** (`archived`), при архивации убираются из `scene.present`. При переименовании прежнее имя сохраняется в `npc.aliases`.
-- **Промт не растёт без предела**: давно не появлявшиеся НПС — только по имени, накопительные поля — последние пункты (`tailItems`), справочник по ключам — до 5 свежих. Проверяй размер через «Диагностика → Состав промта».
+- **Промт не растёт без предела**: давно не появлявшиеся НПС — только по имени, накопительные поля — последние пункты (`tailItems`), кодекс — в бюджете 1200 токенов (полное → выжимка → «не поместилось»). Проверяй размер через «Диагностика → Состав промта».
 - **Знание персонажей**: НПС знает о герое только виденное сам (`lastSeen`, свидетели перемен внешности) — рассказчику это показывается в карточках. Темы сценария — направление, а не обязательная вставка в каждую сцену (так персонажи заговаривали невпопад).
 - **Нечёткие совпадения — только однозначные**: если кандидатов несколько, ничего не делать и вернуть список похожих.
 - Сохранения пишутся атомарно (временный файл + переименование); повреждённый файл не затирается молча, а копируется в `*.broken-<время>`.

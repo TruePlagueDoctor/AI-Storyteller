@@ -1,74 +1,149 @@
 // Панели мира: лорбук, НПС, ручные блоки листа, нити, хроника.
 // Обычный (не модульный) скрипт: общие const/let и функции видны всем файлам из public/js.
 
-// ---- Лорбук ----
+// ---- Кодекс мира (бывший лорбук) ----
 let editingLoreId = null;
+let codexFilter = 'all';
+const CODEX_GLYPH = { people: '☗', creature: '☠', faction: '⚜', place: '⌂', other: '✎' };
+const CODEX_TITLE = { all: 'Все', people: 'Народы', creature: 'Бестиарий', faction: 'Фракции', place: 'Места', other: 'Прочее' };
+const codexKinds = () => (app.codexKinds && app.codexKinds.kinds) || ['people', 'creature', 'faction', 'place', 'other'];
+const codexFields = (kind) => ((app.codexKinds && app.codexKinds.fields) || {})[kind] || [];
+
+function renderCodexFilter() {
+  const box = $('codexFilter');
+  box.innerHTML = '';
+  if (!app.lorebook.length) return;
+  for (const k of ['all', ...codexKinds()]) {
+    const n = k === 'all' ? app.lorebook.length : app.lorebook.filter((e) => (e.kind || 'other') === k).length;
+    if (k !== 'all' && !n) continue;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'codex-chip' + (codexFilter === k ? ' active' : '');
+    b.textContent = `${k === 'all' ? '' : CODEX_GLYPH[k] + ' '}${CODEX_TITLE[k]} ${n}`;
+    b.addEventListener('click', () => { codexFilter = k; renderLore(); });
+    box.appendChild(b);
+  }
+}
 
 function renderLore() {
   const count = $('loreCount');
   count.textContent = app.lorebook.length ? String(app.lorebook.length) : '';
+  const missing = app.lorebook.filter((e) => !String(e.brief || '').trim() && (String(e.content || '').trim() || Object.keys(e.fields || {}).length)).length;
+  $('loreBriefsBtn').hidden = !missing;
+  $('loreBriefsBtn').title = `✨ Написать выжимки статьям без неё: ${missing}`;
+  if (codexFilter !== 'all' && !app.lorebook.some((e) => (e.kind || 'other') === codexFilter)) codexFilter = 'all';
+  renderCodexFilter();
   const list = $('loreList');
   list.innerHTML = '';
   if (!app.lorebook.length) {
     const empty = document.createElement('p');
     empty.className = 'sheet-empty';
-    empty.textContent = 'Записи о мире подставляются в контекст только когда упомянуты их ключевые слова — так подробный лор не съедает контекст. Нажми ＋, чтобы добавить первую.';
+    empty.textContent = 'Народы, существа, фракции и места этого мира. Рассказчику уходит выжимка статьи, а целиком — когда это нужно в сцене, так кодекс не съедает контекст. Нажми ＋, чтобы добавить первую статью.';
     list.appendChild(empty);
     return;
   }
-  for (const e of app.lorebook) {
-    const el = document.createElement('div');
-    el.className = 'lore' + (e.enabled === false ? ' disabled' : '');
-    el.dataset.id = e.id;
-
-    const row = document.createElement('div');
-    row.className = 'lore-row';
-    const t = document.createElement('span');
-    t.className = 'lore-title';
-    t.textContent = e.title;
-    row.appendChild(t);
-    if (e.always) {
-      const a = document.createElement('span');
-      a.className = 'lore-always';
-      a.textContent = 'всегда';
-      row.appendChild(a);
+  const kinds = codexFilter === 'all' ? codexKinds() : [codexFilter];
+  for (const kind of kinds) {
+    const items = app.lorebook.filter((e) => (e.kind || 'other') === kind);
+    if (!items.length) continue;
+    if (codexFilter === 'all') {
+      const h = document.createElement('p');
+      h.className = 'group-title';
+      h.textContent = CODEX_TITLE[kind];
+      list.appendChild(h);
     }
-    if (e.author === 'narrator') {
-      const a = document.createElement('span');
-      a.className = 'lore-always lore-auto';
-      a.textContent = 'рассказчик';
-      row.appendChild(a);
-    }
-    el.appendChild(row);
-
-    if (e.keys && e.keys.length) {
-      const keys = document.createElement('div');
-      keys.className = 'lore-keys';
-      for (const k of e.keys) {
-        const kk = document.createElement('span');
-        kk.className = 'lore-key';
-        kk.textContent = k;
-        keys.appendChild(kk);
-      }
-      el.appendChild(keys);
-    }
-    if (e.content) {
-      const p = document.createElement('div');
-      p.className = 'lore-preview';
-      p.textContent = e.content.length > 110 ? e.content.slice(0, 110) + '…' : e.content;
-      el.appendChild(p);
-    }
-    list.appendChild(el);
+    for (const e of items) list.appendChild(renderLoreCard(e));
   }
+}
+
+function renderLoreCard(e) {
+  const mk = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
+  const kind = e.kind || 'other';
+  const el = mk('div', `lore kind-${kind}` + (e.enabled === false ? ' disabled' : ''));
+  el.dataset.id = e.id;
+  const row = mk('div', 'lore-row');
+  row.appendChild(mk('span', 'lore-glyph', CODEX_GLYPH[kind]));
+  row.appendChild(mk('span', 'lore-title', e.title));
+  if (kind === 'creature' && e.fields && e.fields.danger) {
+    const d = mk('span', 'lore-danger', '☠'.repeat(e.fields.danger));
+    d.title = `Опасность ${e.fields.danger} из 5`;
+    row.appendChild(d);
+  }
+  if (e.always) row.appendChild(mk('span', 'lore-always', 'всегда'));
+  if (e.author === 'narrator') row.appendChild(mk('span', 'lore-always lore-auto', 'рассказчик'));
+  el.appendChild(row);
+  const text = String(e.brief || '').trim() || String(e.content || '').trim();
+  if (text) {
+    const p = mk('div', 'lore-preview' + (e.brief ? ' brief' : ''), text.length > 160 ? text.slice(0, 160) + '…' : text);
+    if (e.brief && e.briefAuto) p.title = 'Выжимку написал ✨ — можно поправить в статье';
+    el.appendChild(p);
+  }
+  return el;
+}
+
+// Подсказки для поля «народ» у героя и НПС — народы из кодекса.
+function refreshPeopleList() {
+  const dl = $('codexPeople');
+  dl.innerHTML = '';
+  for (const e of app.lorebook.filter((x) => x.kind === 'people')) { const o = document.createElement('option'); o.value = e.title; dl.appendChild(o); }
+}
+
+function renderLoreKindFields(kind, values = {}) {
+  const box = $('loreKindFields');
+  box.innerHTML = '';
+  for (const [key, label] of codexFields(kind)) {
+    const f = document.createElement('label');
+    f.className = 'field';
+    const l = document.createElement('span');
+    l.className = 'field-label';
+    l.textContent = label;
+    f.appendChild(l);
+    let input;
+    if (key === 'danger' && kind === 'creature') {
+      input = document.createElement('select');
+      input.className = 'trait-cat';
+      input.style.width = '100%';
+      for (const [v, t] of [['', 'не указана'], ['1', '☠ безобидно'], ['2', '☠☠ опасно поодиночке'], ['3', '☠☠☠ опасно'], ['4', '☠☠☠☠ смертельно'], ['5', '☠☠☠☠☠ беги']]) {
+        const o = document.createElement('option'); o.value = v; o.textContent = t; input.appendChild(o);
+      }
+    } else {
+      input = document.createElement(['customs', 'habits', 'rumors', 'what'].includes(key) ? 'textarea' : 'input');
+      if (input.tagName === 'TEXTAREA') input.rows = 2; else input.type = 'text';
+    }
+    input.dataset.field = key;
+    input.value = values[key] != null ? String(values[key]) : '';
+    f.appendChild(input);
+    box.appendChild(f);
+  }
+  $('loreRelationsField').hidden = kind !== 'people';
+}
+
+function readLoreForm() {
+  const kind = $('loreKind').value;
+  const fields = {};
+  for (const el of $('loreKindFields').querySelectorAll('[data-field]')) if (el.value.trim()) fields[el.dataset.field] = el.value.trim();
+  const relations = $('loreRelations').value.split('\n').map((line) => {
+    const m = line.match(/^\s*([^:—-]+?)\s*[:—-]\s*(.+)$/);
+    return m ? { to: m[1].trim(), text: m[2].trim() } : null;
+  }).filter(Boolean);
+  return { title: $('loreTitle').value.trim(), kind, brief: $('loreBrief').value.trim(), fields, relations,
+    keys: $('loreKeys').value, content: $('loreContent').value, always: $('loreAlways').checked };
 }
 
 function openLoreModal(entry) {
   editingLoreId = entry ? entry.id : null;
-  $('loreModalTitle').textContent = entry ? 'Изменить запись' : 'Новая запись';
+  $('loreModalTitle').textContent = entry ? 'Статья кодекса' : 'Новая статья';
+  const kindSel = $('loreKind');
+  kindSel.innerHTML = '';
+  for (const k of codexKinds()) { const o = document.createElement('option'); o.value = k; o.textContent = `${CODEX_GLYPH[k]} ${CODEX_TITLE[k]}`; kindSel.appendChild(o); }
+  kindSel.value = entry ? (entry.kind || 'other') : (codexFilter !== 'all' ? codexFilter : 'other');
   $('loreTitle').value = entry ? entry.title : '';
+  $('loreBrief').value = entry ? (entry.brief || '') : '';
   $('loreKeys').value = entry ? (entry.keys || []).join(', ') : '';
   $('loreContent').value = entry ? entry.content : '';
+  $('loreRelations').value = entry ? (entry.relations || []).map((r) => `${r.to}: ${r.text}`).join('\n') : '';
   $('loreAlways').checked = entry ? !!entry.always : false;
+  renderLoreKindFields(kindSel.value, entry ? entry.fields || {} : {});
   $('loreDelete').style.display = entry ? '' : 'none';
   $('loreModal').hidden = false;
   $('loreTitle').focus();
@@ -76,14 +151,8 @@ function openLoreModal(entry) {
 function closeLoreModal() { $('loreModal').hidden = true; }
 
 async function saveLore() {
-  const title = $('loreTitle').value.trim();
-  if (!title) { toast('У записи должно быть название.'); return; }
-  const body = {
-    title,
-    keys: $('loreKeys').value,
-    content: $('loreContent').value,
-    always: $('loreAlways').checked,
-  };
+  const body = readLoreForm();
+  if (!body.title) { toast('У статьи должно быть название.'); return; }
   try {
     const data = editingLoreId
       ? await api(`/api/lore/${editingLoreId}`, { method: 'PUT', body: JSON.stringify(body) })
@@ -93,10 +162,37 @@ async function saveLore() {
   } catch (err) { toast(err.message); }
 }
 
+// ✨ выжимка по тому, что сейчас в форме (не сохраняется само).
+async function fillLoreBrief() {
+  const btn = $('loreBriefFill');
+  btn.disabled = true; btn.classList.add('busy');
+  try {
+    const { brief } = await api('/api/lore/brief', { method: 'POST', body: JSON.stringify({ entry: readLoreForm() }) });
+    $('loreBrief').value = brief;
+    $('loreBrief').classList.add('ai-filled');
+  } catch (err) { toast(err.message); }
+  finally { btn.disabled = false; btn.classList.remove('busy'); }
+}
+
+// ✨ всем статьям без выжимки — с сохранением.
+async function fillAllBriefs() {
+  const btn = $('loreBriefsBtn');
+  if (btn.disabled) return;
+  btn.disabled = true; btn.classList.add('busy');
+  toast('✨ Пишу выжимки… это займёт по паре секунд на статью.');
+  try {
+    const data = await api('/api/lore/briefs', { method: 'POST' });
+    applyState(data);
+    const r = data.briefs || { done: 0, failed: [] };
+    toast(`✨ Выжимок написано: ${r.done}` + (r.failed.length ? `. Не вышло: ${r.failed.length} — ${r.failed[0]}` : '.'));
+  } catch (err) { toast(err.message); }
+  finally { btn.disabled = false; btn.classList.remove('busy'); }
+}
+
 async function deleteLore() {
   if (!editingLoreId) return;
   const e = app.lorebook.find((x) => x.id === editingLoreId);
-  if (!confirm(`Удалить запись «${e ? e.title : ''}»?`)) return;
+  if (!confirm(`Удалить статью «${e ? e.title : ''}»?`)) return;
   try {
     const data = await api(`/api/lore/${editingLoreId}`, { method: 'DELETE' });
     closeLoreModal();
@@ -105,7 +201,7 @@ async function deleteLore() {
 }
 
 // ---- НПС ----
-function npcSig(n) { return JSON.stringify([n.name, n.attitude ?? '', n.status ?? '', n.description ?? '', n.appearance ?? '', n.personality ?? '', n.history ?? '', n.avatar ?? '', (n.traits||[]).join(','), n.wants ?? '', n.secret ?? '', n.quirk ?? '', n.links ?? '', n.voiceStyle ?? '', (n.voiceSamples||[]).join('|'), n.mood ?? '']); }
+function npcSig(n) { return JSON.stringify([n.name, n.attitude ?? '', n.status ?? '', n.description ?? '', n.appearance ?? '', n.personality ?? '', n.history ?? '', n.avatar ?? '', (n.traits||[]).join(','), n.wants ?? '', n.secret ?? '', n.quirk ?? '', n.links ?? '', n.voiceStyle ?? '', (n.voiceSamples||[]).join('|'), n.mood ?? '', n.race ?? '', n.competence ?? '']); }
 function npcsCollectionSig() { return JSON.stringify(app.npcs.map(npcSig)); }
 
 function attitudeColor(attitude) {
@@ -203,6 +299,7 @@ function renderNpcCard(n, animate, here = false) {
   main.appendChild(row);
   main.appendChild(mk('div', 'npc-attitude', n.attitude || 'отношение не ясно'));
   if (n.status) main.appendChild(mk('div', 'npc-where', n.status));
+  if (n.race) main.appendChild(mk('div', 'npc-race', n.race));
   // Умелость: профессионала и мастера видно сразу — против них проверки труднее.
   if ((n.competence && n.competence !== 'обычный') || (n.skills || []).length) {
     const lv = n.competence && n.competence !== 'обычный' ? n.competence : '';

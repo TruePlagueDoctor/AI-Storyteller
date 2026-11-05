@@ -233,6 +233,7 @@ async function saveSettings() {
 
 // ---- Редактор героя ----
 function openCharModal(char) {
+  refreshPeopleList();
   editingCharId = char ? char.id : null;
   resetFill('hero');
   $('charModalTitle').textContent = char ? 'Изменить героя' : 'Новый герой';

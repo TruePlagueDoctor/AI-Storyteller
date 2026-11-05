@@ -21,7 +21,8 @@ import { composeStorySystem, storyPromptSections } from './src/narrator.js';
 import { syncNarration, resyncNarration } from './src/sync.js';
 import { replayRequest } from './src/llm.js';
 import { portraitTags, sceneTags } from './src/art.js';
-import { fillField } from './src/fill.js';
+import { fillField, writeBrief } from './src/fill.js';
+import { CODEX_KINDS, KIND_LABEL, KIND_FIELDS } from './src/codex.js';
 import { listRequests, getRequest, clearRequests, diagCounts } from './src/diag.js';
 import { txt2img, pingSd } from './src/images.js';
 import { advanceStatuses } from './src/statuses.js';
@@ -55,6 +56,7 @@ function publicState() {
     activeCharacterId: s.activeCharacterId,
     npcs: s.npcs,
     lorebook: s.lorebook,
+    codexKinds: { kinds: CODEX_KINDS, labels: KIND_LABEL, fields: KIND_FIELDS },
     traitPool: s.traitPool,
     seedPool: s.seedPool,
     statusCatalog: s.statusCatalog,
@@ -296,6 +298,26 @@ app.post('/api/backups/:id/restore', whileIdle, async (req, res) => {
     await importSlot(raw, `${meta.name} (копия от ${b.label})`);
     ok(res);
   } catch (e) { fail(res, e, 400); }
+});
+
+// ---- ✨ Выжимки кодекса ----
+// Одна статья (из формы редактора, не сохраняется — игрок посмотрит и сохранит сам).
+app.post('/api/lore/brief', async (req, res) => {
+  if (!apiKey()) return res.status(400).json({ error: 'Не задан OPENROUTER_API_KEY.' });
+  try { res.json({ brief: await writeBrief({ state: getState(), apiKey: apiKey(), entry: req.body?.entry }) }); }
+  catch (e) { fail(res, e, 502); }
+});
+// Всем статьям без выжимки — по очереди, сразу с сохранением (помечаются как написанные ✨).
+app.post('/api/lore/briefs', whileIdle, async (_req, res) => {
+  if (!apiKey()) return res.status(400).json({ error: 'Не задан OPENROUTER_API_KEY.' });
+  const state = getState();
+  const todo = (state.lorebook || []).filter((e) => !String(e.brief || '').trim() && (String(e.content || '').trim() || Object.keys(e.fields || {}).length));
+  let done = 0; const failed = [];
+  for (const e of todo) {
+    try { await updateLoreEntry(e.id, { brief: await writeBrief({ state, apiKey: apiKey(), entry: e }), briefAuto: true }); done++; }
+    catch (err) { failed.push(`${e.title}: ${String(err.message || err).slice(0, 120)}`); }
+  }
+  res.json({ ...publicState(), briefs: { done, failed } });
 });
 
 // ---- Лорбук ----

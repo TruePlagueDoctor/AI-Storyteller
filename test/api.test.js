@@ -268,3 +268,25 @@ test('резервные копии: при запуске, по кнопке и
   assert.ok(r.data.log.every((e) => e.variants === undefined));
   assert.equal((await api('POST', `/api/backups/${b.id}/restore`, { slotId: 'нет' })).status, 400);
 });
+
+test('кодекс: статья с разделом и полями, ✨ выжимка одной и всем', async () => {
+  let r = await api('POST', '/api/lore', { title: 'Упыри', kind: 'creature', content: 'Ночные трупоеды. Боятся огня.', fields: { danger: 3, weaknesses: 'огонь' } });
+  const upyr = r.data.lorebook.find((e) => e.title === 'Упыри');
+  assert.equal(upyr.kind, 'creature');
+  assert.equal(upyr.fields.danger, 3);
+  assert.ok(r.data.codexKinds.fields.creature.length > 3);
+  handlers.other = (body) => { assert.match(body.messages[1].content, /Ночные трупоеды/); return reply('Ночные трупоеды, боятся огня.'); };
+  r = await api('POST', '/api/lore/brief', { entry: upyr });
+  assert.equal(r.data.brief, 'Ночные трупоеды, боятся огня.');
+  r = await api('POST', '/api/lore', { title: 'Гномы', kind: 'people', content: 'Подгорный народ.', relations: [{ to: 'Эльфы', text: 'презирают' }] });
+  handlers.other = () => reply('Коротко о статье.');
+  r = await api('POST', '/api/lore/briefs');
+  assert.ok(r.data.briefs.done >= 2, JSON.stringify(r.data.briefs));
+  const g = r.data.lorebook.find((e) => e.title === 'Гномы');
+  assert.equal(g.brief, 'Коротко о статье.');
+  assert.equal(g.briefAuto, true);
+  assert.deepEqual(g.relations, [{ to: 'Эльфы', text: 'презирают' }]);
+  // Правка вручную снимает пометку ✨.
+  r = await api('PUT', `/api/lore/${g.id}`, { brief: 'Своими словами.' });
+  assert.equal(r.data.lorebook.find((e) => e.id === g.id).briefAuto, undefined);
+});

@@ -168,6 +168,14 @@ async function init() {
   $('loreModalClose').addEventListener('click', closeLoreModal);
   $('loreCancel').addEventListener('click', closeLoreModal);
   $('loreSave').addEventListener('click', saveLore);
+  $('loreKind').addEventListener('change', () => {
+    const keep = {};
+    for (const el of $('loreKindFields').querySelectorAll('[data-field]')) if (el.value.trim()) keep[el.dataset.field] = el.value.trim();
+    renderLoreKindFields($('loreKind').value, keep);
+  });
+  $('loreBriefFill').addEventListener('click', fillLoreBrief);
+  $('loreBriefsBtn').addEventListener('click', fillAllBriefs);
+  $('loreBrief').addEventListener('input', () => $('loreBrief').classList.remove('ai-filled'));
   $('loreDelete').addEventListener('click', deleteLore);
   $('loreModal').addEventListener('click', (e) => { if (e.target.id === 'loreModal') closeLoreModal(); });
   $('npcList').addEventListener('click', (e) => {

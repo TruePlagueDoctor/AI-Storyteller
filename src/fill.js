@@ -1,6 +1,7 @@
 // Кнопка ✨: заполнить одно поле карточки НПС или героя по материалам истории.
 
 import { callOpenRouter, stripToolMarkup, toolModelOf } from './llm.js';
+import { KIND_FIELDS, KIND_LABEL } from './codex.js';
 
 // ---- Заполнить поле карточки по истории (кнопка ✨) ----
 // Учётчик пишет только перемены последнего хода; эта функция собирает всё, что
@@ -133,4 +134,30 @@ export async function fillField({ state, apiKey, kind, field, mode, card }) {
   const head = value.match(/^([^:\n]{2,40}):\s*/);
   if (head && head[1].toLowerCase().startsWith(label.slice(0, 5))) value = value.slice(head[0].length).trim();
   return { value, mentions: mentions.length };
+}
+
+// ---- ✨ Выжимка статьи кодекса ----
+// Одна-две фразы, суть для рассказчика: она идёт в промт вместо полной статьи.
+
+export async function writeBrief({ state, apiKey, entry }) {
+  const e = entry || {};
+  const kind = KIND_FIELDS[e.kind] ? e.kind : 'other';
+  const fields = KIND_FIELDS[kind].map(([k, label]) => (e.fields && e.fields[k] ? `${label}: ${e.fields[k]}` : '')).filter(Boolean);
+  const rel = (e.relations || []).map((r) => `${r.to}: ${r.text}`);
+  const source = [fields.join('\n'), rel.length ? 'Отношения к другим народам:\n' + rel.join('\n') : '', String(e.content || '').trim()].filter(Boolean).join('\n\n');
+  if (!source.trim()) throw new Error('В статье пока нечего сжимать — заполни описание или поля.');
+  const system =
+    `Ты сжимаешь статью кодекса мира ролевой игры (раздел: ${KIND_LABEL[kind]}) в ВЫЖИМКУ для рассказчика: ` +
+    'одна-две фразы, до 200 знаков, по-русски. Только то, что важно для игры: кто или что это, главная отличительная черта, ' +
+    (kind === 'creature' ? 'чем опасно и чего боится. ' : kind === 'people' ? 'нрав и с кем не ладят. ' : kind === 'faction' ? 'чего добиваются. ' : kind === 'place' ? 'чем примечательно и опасно. ' : 'суть. ') +
+    'Ничего не выдумывай сверх статьи. Без вступлений, кавычек и названия статьи в начале — только текст выжимки.';
+  const user = (state.worldPrompt ? `МИР (кратко): ${String(state.worldPrompt).slice(0, 400)}\n\n` : '') + `СТАТЬЯ «${e.title || ''}»:\n${source.slice(0, 4000)}`;
+  const data = await callOpenRouter({
+    purpose: 'выжимка кодекса', model: toolModelOf(state), apiKey, temperature: 0.2, noReasoning: true,
+    messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+  });
+  let text = stripToolMarkup(String(data?.choices?.[0]?.message?.content || '')).trim().replace(/^[«"]|[»"]$/g, '').trim();
+  text = text.replace(new RegExp(`^${String(e.title || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[—:-]\\s*`, 'i'), '');
+  if (!text) throw new Error('Модель не вернула выжимку — попробуй ещё раз.');
+  return text.length > 260 ? text.slice(0, 259).replace(/\s+\S*$/, '') + '…' : text;
 }

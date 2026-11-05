@@ -67,7 +67,7 @@
         <div class="panel-tabs">
           <button class="panel-tab active" id="tabHeroes" data-panel="heroes">Герои</button>
           <button class="panel-tab" id="tabNpcs" data-panel="npcs">НПС<span class="tab-count" id="npcCount"></span></button>
-          <button class="panel-tab" id="tabLore" data-panel="lore">Мир<span class="tab-count" id="loreCount"></span></button>
+          <button class="panel-tab" id="tabLore" data-panel="lore">Кодекс<span class="tab-count" id="loreCount"></span></button>
           <button class="panel-tab" id="tabThreads" data-panel="threads">Нити<span class="tab-count" id="threadCount"></span></button>
           <button class="panel-tab" id="tabEvents" data-panel="events" title="Хроника: обещания, долги, ложь, факты">Факты<span class="tab-count" id="eventCount"></span></button>
         </div>
@@ -115,12 +115,14 @@
         <div class="panel" id="panelLore" hidden>
           <div class="sheet-head">
             <div class="sheet-title-row">
-              <span class="panel-caption">Записи о мире</span>
+              <span class="panel-caption">Кодекс мира</span>
               <div class="sheet-head-actions">
-                <button class="icon-btn" id="loreAddBtn" title="Добавить запись">＋</button>
+                <button class="icon-btn" id="loreBriefsBtn" title="✨ Написать выжимки всем статьям, у которых их нет" hidden>✨</button>
+                <button class="icon-btn" id="loreAddBtn" title="Добавить статью">＋</button>
               </div>
             </div>
           </div>
+          <div class="codex-filter" id="codexFilter"></div>
           <div class="npc-body" id="loreList">
             <p class="sheet-empty" id="loreEmpty">Записи о мире подставляются в контекст только когда упомянуты их ключевые слова — так подробный лор не съедает контекст. Нажми ＋, чтобы добавить первую.</p>
           </div>
@@ -442,7 +444,7 @@
         <div class="field field-row">
           <label class="field-col">
             <span class="field-label">Раса</span>
-            <input type="text" id="charRace" placeholder="человек, полуэльф…" />
+            <input type="text" id="charRace" placeholder="человек, полуэльф…" list="codexPeople" />
           </label>
           <label class="field-col">
             <span class="field-label">Положение</span>
@@ -477,22 +479,39 @@
   <div class="modal-overlay" id="loreModal" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="loreModalTitle">
       <div class="modal-head">
-        <h2 id="loreModalTitle">Запись о мире</h2>
+        <h2 id="loreModalTitle">Статья кодекса</h2>
         <button class="btn ghost close" id="loreModalClose">Закрыть</button>
       </div>
       <div class="modal-body">
+        <div class="field-row">
+          <label class="field" style="flex:2">
+            <span class="field-label">Название</span>
+            <input type="text" id="loreTitle" placeholder="Например: Гномы, Упыри, Гильдия теней" />
+          </label>
+          <label class="field" style="flex:1">
+            <span class="field-label">Раздел</span>
+            <select id="loreKind" class="trait-cat" style="width:100%"></select>
+          </label>
+        </div>
+        <div class="field">
+          <div class="lock-label"><span class="field-label">Выжимка — суть для рассказчика</span><button type="button" class="fill-btn" id="loreBriefFill" title="Написать выжимку по статье">✨</button></div>
+          <textarea id="loreBrief" rows="2" placeholder="Одна-две фразы: кто это, главная черта, чем опасно…"></textarea>
+          <span class="field-hint">Обычно рассказчику уходит только выжимка, полная статья — когда это существо в сцене или игрок о нём спросил. Так кодекс не съедает контекст.</span>
+        </div>
+        <div id="loreKindFields"></div>
+        <label class="field" id="loreRelationsField">
+          <span class="field-label">Как относятся к другим народам</span>
+          <textarea id="loreRelations" rows="3" placeholder="Эльфы: презирают за спесь&#10;Орки: кровная вражда"></textarea>
+          <span class="field-hint">По строке на народ: «Народ: отношение». Рассказчик видит строку, только когда оба народа в сцене.</span>
+        </label>
         <label class="field">
-          <span class="field-label">Название</span>
-          <input type="text" id="loreTitle" placeholder="Например: Гильдия воров" />
+          <span class="field-label">Подробно</span>
+          <textarea id="loreContent" rows="6" placeholder="Всё остальное: история, детали, что рассказчику нужно знать…"></textarea>
         </label>
         <label class="field">
           <span class="field-label">Ключевые слова</span>
-          <input type="text" id="loreKeys" placeholder="гильдия, воры, метка" />
-          <span class="field-hint">Через запятую. Запись попадёт в контекст, когда одно из слов встретится в недавних ходах. Падежи учитываются автоматически.</span>
-        </label>
-        <label class="field">
-          <span class="field-label">Содержание</span>
-          <textarea id="loreContent" rows="8" placeholder="Что рассказчику нужно знать об этом…"></textarea>
+          <input type="text" id="loreKeys" placeholder="гном, подгорный" />
+          <span class="field-hint">Через запятую. Название ищется само; ключи — для других слов, по которым статью узнать. Падежи учитываются.</span>
         </label>
         <label class="field toggle-field">
           <input type="checkbox" id="loreAlways" />
@@ -596,6 +615,11 @@
               <div class="field">
                 <div class="lock-label"><span class="field-label">Черты</span><button type="button" class="lock" data-field="traits" title="Закрепить">🔓</button></div>
                 <div id="npcTraits" class="trait-picker"></div>
+              </div>
+              <div class="field">
+                <div class="lock-label"><span class="field-label">Народ</span><button type="button" class="lock" data-field="race" title="Закрепить">🔓</button></div>
+                <input type="text" id="npcRace" placeholder="гном, эльфийка, человек…" list="codexPeople" />
+                <span class="field-hint">Если народ есть в кодексе, рассказчик подтянет его выжимку и предубеждения к тем, кто рядом.</span>
               </div>
               <div class="field-row">
                 <div class="field" style="flex:1">
@@ -1124,6 +1148,7 @@
 
   <div class="toast" id="toast" hidden></div>
 
+  <datalist id="codexPeople"></datalist>
   <!-- Порядок важен: init.js — последним. Общие переменные и функции видны всем файлам. -->
   <script src="js/core.js"></script>
   <script src="js/world.js"></script>

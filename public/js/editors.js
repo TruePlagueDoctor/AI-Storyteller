@@ -10,7 +10,7 @@ const NPC_FIELD_IDS = {
   description: 'npcDescription', appearance: 'npcAppearance', personality: 'npcPersonality', history: 'npcHistory',
   wants: 'npcWants', quirk: 'npcQuirk', secret: 'npcSecret', links: 'npcLinks',
   voiceStyle: 'npcVoiceStyle', voiceHumor: 'npcVoiceHumor', voiceHabits: 'npcVoiceHabits', voiceMasks: 'npcVoiceMasks', voiceTaboos: 'npcVoiceTaboos',
-  mood: 'npcMood', moodReason: 'npcMoodReason',
+  mood: 'npcMood', moodReason: 'npcMoodReason', race: 'npcRace',
 };
 
 function renderLocks() {
@@ -25,6 +25,7 @@ function renderLocks() {
 
 function openNpcModal(npc) {
   editingNpcId = npc ? npc.id : null;
+  refreshPeopleList();
   resetFill('npc');
   $('npcModalTitle').textContent = npc ? 'Досье персонажа' : 'Новый персонаж';
   npcTraitsOpen = false;

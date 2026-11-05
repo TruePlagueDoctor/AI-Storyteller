@@ -97,6 +97,27 @@ try {
 
     if (viewport.name === 'mobile') { await page.click('#sheetToggle'); await page.waitForTimeout(300); }
     for (const tab of ['tabNpcs', 'tabLore', 'tabThreads', 'tabEvents', 'tabHeroes']) await page.click('#' + tab);
+    // Кодекс: новая статья-существо, поля раздела, ✨ выжимка, фильтр по разделу.
+    await page.click('#tabLore');
+    await page.click('#loreAddBtn');
+    await page.fill('#loreTitle', 'Упыри');
+    await page.selectOption('#loreKind', 'creature');
+    await page.waitForSelector('#loreKindFields [data-field="weaknesses"]');
+    if (await page.isVisible('#loreRelationsField')) errors.push(`[${viewport.name}] у существа видно поле отношений народов`);
+    await page.fill('#loreKindFields [data-field="weaknesses"]', 'огонь');
+    await page.selectOption('#loreKindFields [data-field="danger"]', '3');
+    await page.fill('#loreContent', 'Ночные трупоеды.');
+    stack.handlers.other = () => reply('Ночные трупоеды, боятся огня.');
+    await page.click('#loreBriefFill');
+    await page.waitForFunction(() => document.querySelector('#loreBrief').value.length > 0);
+    await page.click('#loreSave');
+    await page.waitForSelector('#loreList .lore.kind-creature .lore-danger');
+    await page.click('#codexFilter .codex-chip >> text=Бестиарий');
+    step('кодекс: статья, поля раздела, ✨ выжимка');
+    await page.click('#loreList .lore.kind-creature');
+    await page.waitForSelector('#loreModal:not([hidden])');
+    if (await page.inputValue('#loreKindFields [data-field="weaknesses"]') !== 'огонь') errors.push(`[${viewport.name}] поле статьи не сохранилось`);
+    await page.click('#loreCancel');
     step('вкладки панели переключаются');
     await page.click('#tabNpcs');
     await page.click('#npcList .npc >> nth=0');

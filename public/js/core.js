@@ -1,5 +1,5 @@
 // Версия сборки — видна в консоли браузера (F12), помогает проверить, что файл обновился.
-console.log('AI Storyteller UI v47 — резервные копии, горячие клавиши, поиск');
+console.log('AI Storyteller UI v48 — кодекс мира');
 
 // ---- Метаданные типов блоков ----
 const TYPE_META = {
@@ -76,6 +76,7 @@ function applyState(data, { animate = false } = {}) {
   if (data.activeSlotId) app.activeSlotId = data.activeSlotId;
   if (Array.isArray(data.npcs)) app.npcs = data.npcs;
   if (Array.isArray(data.lorebook)) app.lorebook = data.lorebook;
+  if (data.codexKinds) app.codexKinds = data.codexKinds;
   if (data.traitPool) app.traitPool = data.traitPool;
   if (data.seedPool) app.seedPool = data.seedPool;
   if (data.statusCatalog) app.statusCatalog = data.statusCatalog;
