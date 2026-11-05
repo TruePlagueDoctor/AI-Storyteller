@@ -22,7 +22,7 @@ import { syncNarration, resyncNarration } from './src/sync.js';
 import { replayRequest } from './src/llm.js';
 import { portraitTags, sceneTags } from './src/art.js';
 import { fillField, writeBrief } from './src/fill.js';
-import { CODEX_KINDS, KIND_LABEL, KIND_FIELDS } from './src/codex.js';
+import { CODEX_KINDS, KIND_LABEL, KIND_FIELDS, findPeople } from './src/codex.js';
 import { listRequests, getRequest, clearRequests, diagCounts } from './src/diag.js';
 import { txt2img, pingSd } from './src/images.js';
 import { advanceStatuses } from './src/statuses.js';
@@ -57,6 +57,9 @@ function publicState() {
     npcs: s.npcs,
     lorebook: s.lorebook,
     codexKinds: { kinds: CODEX_KINDS, labels: KIND_LABEL, fields: KIND_FIELDS },
+    // Народ героя и НПС → статья кодекса (то же правило, что и для промта): для ссылок в досье.
+    codexLinks: Object.fromEntries([...(s.npcs || []), ...s.characters]
+      .map((x) => [x.id, x.race ? findPeople(s.lorebook, x.race) : null]).filter(([, e]) => e).map(([id, e]) => [id, e.id])),
     traitPool: s.traitPool,
     seedPool: s.seedPool,
     statusCatalog: s.statusCatalog,

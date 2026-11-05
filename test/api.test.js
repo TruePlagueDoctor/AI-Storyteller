@@ -290,3 +290,14 @@ test('кодекс: статья с разделом и полями, ✨ выж
   r = await api('PUT', `/api/lore/${g.id}`, { brief: 'Своими словами.' });
   assert.equal(r.data.lorebook.find((e) => e.id === g.id).briefAuto, undefined);
 });
+
+test('ссылки «народ → статья кодекса» для досье', async () => {
+  let r = await api('POST', '/api/lore', { title: 'Орки', kind: 'people', brief: 'Степные кланы.' });
+  const orcs = r.data.lorebook.find((e) => e.title === 'Орки');
+  r = await api('POST', '/api/npcs', { name: 'Грок', race: 'степной орк' });
+  const grok = r.data.npcs.find((n) => n.name === 'Грок');
+  assert.equal(grok.race, 'степной орк');
+  assert.equal(r.data.codexLinks[grok.id], orcs.id);
+  r = await api('POST', '/api/npcs', { name: 'Безродный', race: 'дух' });
+  assert.equal(r.data.codexLinks[r.data.npcs.find((n) => n.name === 'Безродный').id], undefined);
+});

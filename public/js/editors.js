@@ -172,7 +172,8 @@ function renderDossier() {
   const ident = el('div', 'dossier-ident');
   ident.appendChild(el('h3', 'dossier-name', c.name));
   const tags = el('div', 'dossier-tags');
-  for (const t of [c.race, c.social].filter((x) => x && x.trim())) tags.appendChild(el('span', 'dossier-tag', t));
+  if (c.race && c.race.trim()) tags.appendChild(raceTag(c.id, c.race.trim())); // ссылка на статью народа, если она есть
+  if (c.social && c.social.trim()) tags.appendChild(el('span', 'dossier-tag', c.social));
   if (tags.children.length) ident.appendChild(tags);
   if (c.persona && c.persona.trim()) ident.appendChild(el('div', 'dossier-persona', c.persona));
   head.appendChild(ident);

@@ -1949,3 +1949,36 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 .lore-row .lore-title { flex: 1; min-width: 0; text-align: left; }
 .lore-row { justify-content: flex-start; gap: 0; }
 .lore-row .lore-always { margin-left: 6px; }
+
+/* ---------- Досье НПС и статья кодекса (чтение) ---------- */
+.dossier-attitude { font-family: 'Spectral', serif; font-style: italic; font-size: 15px; margin: -2px 0 8px; }
+.dossier-tag.link { cursor: pointer; background: none; font-family: 'JetBrains Mono', monospace; }
+.dossier-tag.link:hover { color: var(--text-warm); border-color: var(--brass); }
+.dossier-tag.race { color: var(--relation); border-color: color-mix(in srgb, var(--relation) 55%, transparent); }
+.dossier-tag.muted { color: var(--text-faint); border-color: var(--edge); }
+.dossier-tag.danger { color: var(--status); border-color: color-mix(in srgb, var(--status) 55%, transparent); letter-spacing: 1px; }
+.dossier-tag.trait { color: var(--text-dim); border-color: var(--edge); }
+.dossier-field { margin-bottom: 10px; }
+.dossier-field-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-faint); margin-bottom: 3px; }
+.dossier-field-label:empty { display: none; }
+.dossier-section .dossier-tags { margin-top: 4px; }
+.dossier-text.npc-secret { filter: blur(5px); cursor: pointer; user-select: none; transition: filter 0.2s; }
+.dossier-text.npc-secret.shown { filter: none; user-select: text; }
+.dossier-quotes { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.dossier-quote { font-style: italic; color: var(--speech); border-left: 2px solid color-mix(in srgb, var(--speech) 45%, transparent); padding-left: 10px; font-size: 14px; }
+.dossier-history { margin: 0; padding-left: 20px; color: var(--text-warm); font-size: 14px; line-height: 1.55; }
+.dossier-history li { margin-bottom: 4px; }
+.dossier-history li::marker { color: var(--brass-dim); }
+.dossier-row-name.link { cursor: pointer; color: var(--brass); }
+.dossier-row-name.link:hover { text-decoration: underline; }
+.dossier-text.para { margin: 0 0 8px; }
+.codex-emblem { width: 96px; aspect-ratio: 1; flex: 0 0 auto; border-radius: 50%; border: 1px solid var(--brass-dim);
+  box-shadow: inset 0 0 0 4px var(--ink), inset 0 0 0 5px color-mix(in srgb, var(--brass) 35%, transparent);
+  display: flex; align-items: center; justify-content: center; font-size: 38px; color: var(--brass); background: var(--ink); }
+.codex-emblem.kind-creature { color: var(--status); }
+.codex-emblem.kind-people { color: var(--relation); }
+.codex-emblem.kind-faction { color: var(--stat); }
+.codex-emblem.kind-place { color: var(--item); }
+.codex-keys { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-faint); margin-top: 22px; }
+.npc-acts .btn.primary { color: var(--brass); border-color: var(--brass-dim); }
+@media (max-width: 560px) { .codex-head .codex-emblem { width: 80px; } }

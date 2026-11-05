@@ -163,7 +163,7 @@ async function init() {
   $('loreAddBtn').addEventListener('click', () => openLoreModal(null));
   $('loreList').addEventListener('click', (e) => {
     const card = e.target.closest('.lore');
-    if (card) openLoreModal(app.lorebook.find((x) => x.id === card.dataset.id));
+    if (card) openCodexView(card.dataset.id);
   });
   $('loreModalClose').addEventListener('click', closeLoreModal);
   $('loreCancel').addEventListener('click', closeLoreModal);
@@ -190,7 +190,8 @@ async function init() {
     const act = e.target.closest('[data-act]');
     if (act) {
       if (act.dataset.act === 'reveal') { act.classList.toggle('shown'); return; }
-      if (act.dataset.act === 'edit') openNpcModal(app.npcs.find((x) => x.id === id));
+      if (act.dataset.act === 'view') openNpcView(id);
+      else if (act.dataset.act === 'edit') openNpcModal(app.npcs.find((x) => x.id === id));
       else if (act.dataset.act === 'delete') deleteNpc(id);
       return;
     }
@@ -299,6 +300,7 @@ async function init() {
     if (!s.hasKey) toast('Ключ OpenRouter не задан — открой «Настройки», чтобы узнать, как его добавить.');
     installQol();
     installSearch();
+    installDossiers();
   } catch (err) {
     toast('Не удалось загрузить состояние: ' + err.message);
   }

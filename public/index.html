@@ -545,6 +545,34 @@
   </div>
 
   <!-- Редактор персонажа -->
+  <div class="modal-overlay" id="npcViewModal" hidden>
+    <div class="modal dossier" role="dialog" aria-modal="true" aria-labelledby="npcViewTitle">
+      <div class="modal-head">
+        <h2 id="npcViewTitle">Досье</h2>
+        <button class="btn ghost close" id="npcViewClose">Закрыть</button>
+      </div>
+      <div class="modal-body" id="npcViewBody"></div>
+      <div class="modal-foot">
+        <span class="foot-spacer"></span>
+        <button class="btn ghost" id="npcViewEdit">Изменить</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="codexViewModal" hidden>
+    <div class="modal dossier" role="dialog" aria-modal="true" aria-labelledby="codexViewTitle">
+      <div class="modal-head">
+        <h2 id="codexViewTitle">Кодекс</h2>
+        <button class="btn ghost close" id="codexViewClose">Закрыть</button>
+      </div>
+      <div class="modal-body" id="codexViewBody"></div>
+      <div class="modal-foot">
+        <span class="foot-spacer"></span>
+        <button class="btn ghost" id="codexViewEdit">Изменить</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="npcModal" hidden>
     <div class="modal dossier npc-dossier" role="dialog" aria-modal="true" aria-labelledby="npcModalTitle">
       <div class="modal-head">
@@ -1163,6 +1191,7 @@
   <script src="js/settings.js"></script>
   <script src="js/qol.js"></script>
   <script src="js/search.js"></script>
+  <script src="js/dossier.js"></script>
   <script src="js/init.js"></script>
 </body>
 </html>

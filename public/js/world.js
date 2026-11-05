@@ -357,7 +357,7 @@ function renderNpcCard(n, animate, here = false) {
     body.appendChild(f);
   }
   const acts = mk('div', 'npc-acts');
-  for (const [act, text, cls] of [['delete', 'Удалить', 'danger'], ['edit', 'Открыть досье', '']]) {
+  for (const [act, text, cls] of [['delete', 'Удалить', 'danger'], ['edit', 'Изменить', ''], ['view', 'Досье', 'primary']]) {
     const b2 = mk('button', 'btn ghost ' + cls, text);
     b2.dataset.act = act;
     acts.appendChild(b2);
