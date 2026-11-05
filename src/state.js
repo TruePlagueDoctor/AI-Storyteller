@@ -387,8 +387,66 @@ export async function duplicateSlot(id) {
 // ---- История как дерево: снимки ходов, обрезка, варианты, ветки ----
 
 // Полный снимок после хода: мир + переписка с моделью + предыстория.
+// ---- Ручные правки переживают откат ----
+// Откат хода (перегенерация, свайп, обрезка, сбой) возвращает мир к снимку — и раньше затирал всё,
+// что игрок поправил руками после снимка: кодекс, НПС, лист, нити, хронику. Теперь каждая ручная
+// правка запоминается с отметкой времени, и после отката поверх снимка заново накладываются правки,
+// сделанные ПОЗЖЕ него. То, что записали рассказчик и учётчик за отменённый ход, — откатывается.
+let lastStamp = 0;
+const stamp = () => (lastStamp = Math.max(Date.now(), lastStamp + 1));
+const MANUAL_COLLECTIONS = { npc: 'npcs', lore: 'lorebook', thread: 'threads', event: 'events' };
+const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+// Запоминаем только то, что игрок реально изменил, — по полям и со своим временем у каждого:
+// иначе вместе с правкой «впечатывалось» бы и то, что учётчик записал за отменяемый ход.
+// before === null — создано игроком; after === null — удалено. charId — для блоков листа.
+export function noteManual(kind, id, before, after, charId) {
+  if (!state.manual || typeof state.manual !== 'object') state.manual = {};
+  const key = `${kind}:${charId ? charId + '/' : ''}${id}`;
+  const now = stamp();
+  const rec = state.manual[key] || { kind, id, charId, fields: {} };
+  rec.at = now;
+  if (after == null) { rec.deletedAt = now; state.manual[key] = rec; return; }
+  delete rec.deletedAt;
+  if (before == null) { rec.created = true; rec.createdAt = now; }
+  if (rec.created) rec.full = deepCopy(after); // созданное игроком после снимка — вернуть целиком
+  const keys = new Set([...Object.keys(before || {}), ...Object.keys(after)]);
+  for (const k of keys) {
+    if (k === 'id') continue;
+    if (before && same(before[k], after[k])) continue;
+    rec.fields[k] = k in after ? { at: now, v: deepCopy(after[k]) } : { at: now, del: true };
+  }
+  state.manual[key] = rec;
+  const all = Object.keys(state.manual);
+  if (all.length > 600) { // не растём бесконечно: самые старые правки уже есть во всех снимках
+    all.sort((x, y) => state.manual[x].at - state.manual[y].at).slice(0, all.length - 600).forEach((k) => delete state.manual[k]);
+  }
+}
+function applyManualOverlay(since) {
+  const recs = Object.values(state.manual || {}).filter((r) => r && r.at > since).sort((x, y) => x.at - y.at);
+  for (const r of recs) {
+    let arr = null;
+    if (MANUAL_COLLECTIONS[r.kind]) arr = Array.isArray(state[MANUAL_COLLECTIONS[r.kind]]) ? state[MANUAL_COLLECTIONS[r.kind]] : (state[MANUAL_COLLECTIONS[r.kind]] = []);
+    else if (r.kind === 'block') { const c = state.characters.find((x) => x.id === r.charId); arr = c ? c.blocks : null; }
+    let target = null;
+    if (arr) {
+      const i = arr.findIndex((x) => x.id === r.id);
+      if (r.deletedAt > since) { if (i !== -1) arr.splice(i, 1); continue; }
+      if (i === -1) { if (r.created && r.createdAt > since && r.full) arr.push(deepCopy(r.full)); continue; }
+      target = arr[i];
+    } else if (r.kind === 'char') target = state.characters.find((x) => x.id === r.id);
+    else if (r.kind === 'scene') target = state.scene;
+    if (!target) continue;
+    for (const [k, f] of Object.entries(r.fields || {})) {
+      if (!(f.at > since)) continue;
+      if (f.del) delete target[k]; else target[k] = deepCopy(f.v);
+    }
+  }
+  if (state.scene) state.scene = normalizeScene(state.scene);
+}
+
 function captureFullSnapshot() {
   return {
+    at: stamp(),
     blocksByChar: Object.fromEntries(state.characters.map((c) => [c.id, deepCopy(c.blocks)])),
     charsByid: Object.fromEntries(state.characters.map((c) => [c.id, { skillXp: deepCopy(c.skillXp || {}), practiceDays: deepCopy(c.practiceDays || {}), appearanceLog: deepCopy(c.appearanceLog || []), appearance: c.appearance, social: c.social }])),
     npcs: deepCopy(state.npcs),
@@ -623,6 +681,7 @@ export async function addCharacter({ name, persona } = {}) {
 export async function updateCharacter(id, { name, persona, race, social, appearance, present, locked } = {}) {
   const c = state.characters.find((x) => x.id === id);
   if (!c) throw new Error('Герой не найден.');
+  const before = { appearance: c.appearance, social: c.social };
   if (typeof name === 'string' && name.trim()) c.name = name.trim();
   if (typeof persona === 'string') c.persona = persona;
   if (typeof race === 'string') c.race = race;
@@ -630,6 +689,7 @@ export async function updateCharacter(id, { name, persona, race, social, appeara
   if (typeof appearance === 'string') { if (appearance.trim() !== (c.appearance || '')) delete c.portraitTags; c.appearance = appearance; }
   if (typeof present === 'boolean') c.present = present;
   if (Array.isArray(locked)) c.locked = locked.filter((f) => ['appearance', 'social'].includes(f));
+  noteManual('char', c.id, before, { appearance: c.appearance, social: c.social }); // откатываемые поля героя
   await saveState();
   return c;
 }
@@ -693,6 +753,7 @@ export async function resetGame() {
   state.turn = 0;
   state.summary = '';
   state.lastSnapshot = null;
+  state.manual = {};
   try { await rm(turnsDir(activeSlotId), { recursive: true, force: true }); } catch { /* пусто */ }
   for (const c of state.characters) { c.blocks = []; c.skillXp = {}; c.practiceDays = {}; c.appearanceLog = []; }
   await saveState();
@@ -729,6 +790,7 @@ function applySnapshot(snap) {
   if (snap.lorebook) state.lorebook = deepCopy(snap.lorebook);
   if (typeof snap.turn === 'number') state.turn = snap.turn;
   if ('correctionNote' in snap) state.correctionNote = snap.correctionNote;
+  applyManualOverlay(Number(snap.at) || 0);
 }
 
 export function canRegenerate() {
@@ -860,6 +922,7 @@ export async function addLoreEntry({ title, keys, content, always, kind, brief, 
     kind, brief, fields, relations,
   });
   state.lorebook.push(entry);
+  noteManual('lore', entry.id, null, entry);
   await saveState();
   return entry;
 }
@@ -867,6 +930,7 @@ export async function addLoreEntry({ title, keys, content, always, kind, brief, 
 export async function updateLoreEntry(id, { title, keys, content, always, enabled, kind, brief, briefAuto, fields, relations } = {}) {
   const e = state.lorebook.find((x) => x.id === id);
   if (!e) throw new Error('Запись не найдена.');
+  const before = deepCopy(e);
   if (typeof title === 'string' && title.trim()) e.title = title.trim();
   if (keys !== undefined) e.keys = normalizeKeys(keys);
   if (typeof content === 'string') e.content = content;
@@ -878,12 +942,14 @@ export async function updateLoreEntry(id, { title, keys, content, always, enable
   if (Array.isArray(relations)) e.relations = relations;
   const idx = state.lorebook.indexOf(e);
   state.lorebook[idx] = normalizeEntry(e);
+  noteManual('lore', id, before, state.lorebook[idx]);
   await saveState();
   return state.lorebook[idx];
 }
 
 export async function deleteLoreEntry(id) {
   state.lorebook = state.lorebook.filter((e) => e.id !== id);
+  noteManual('lore', id, {}, null);
   await saveState();
   return state;
 }
@@ -898,6 +964,7 @@ export async function upsertBlock(characterId, data = {}) {
   if (!name) throw new Error('У блока нужно название.');
   const type = BLOCK_TYPES_MANUAL.includes(data.type) ? data.type : 'status';
   let b = data.id ? c.blocks.find((x) => x.id === data.id) : null;
+  const before = b ? deepCopy(b) : null;
   if (!b) {
     b = { id: randomUUID(), type, name };
     if (type === 'status') b.sinceTurn = state.turn || 0;
@@ -925,6 +992,7 @@ export async function upsertBlock(characterId, data = {}) {
   if (typeof data.locked === 'boolean') { if (data.locked) b.locked = true; else delete b.locked; }
   // descLocked — закреплено только описание (и имя): учётчик меняет значение, но не описание.
   if (typeof data.descLocked === 'boolean') { if (data.descLocked && !b.locked) b.descLocked = true; else delete b.descLocked; }
+  noteManual('block', b.id, before, b, c.id);
   await saveState();
   return b;
 }
@@ -933,6 +1001,7 @@ export async function deleteBlock(characterId, blockId) {
   const c = state.characters.find((x) => x.id === characterId);
   if (!c) throw new Error('Герой не найден.');
   c.blocks = c.blocks.filter((b) => b.id !== blockId);
+  noteManual('block', blockId, {}, null, c.id);
   await saveState();
   return c;
 }
@@ -955,6 +1024,7 @@ export async function addNpc(data = {}) {
   if (typeof data.bound === 'boolean') npc.bound = data.bound;
   if (Array.isArray(data.locked)) npc.locked = data.locked.filter((x) => [...NPC_FIELDS, ...NPC_ARRAY_FIELDS].includes(x));
   state.npcs.push(npc);
+  noteManual('npc', npc.id, null, npc);
   await saveState();
   return npc;
 }
@@ -962,6 +1032,7 @@ export async function addNpc(data = {}) {
 export async function updateNpcManual(id, data = {}) {
   const n = state.npcs.find((x) => x.id === id);
   if (!n) throw new Error('Персонаж не найден.');
+  const before = deepCopy(n);
   if (typeof data.appearance === 'string' && data.appearance.trim() !== (n.appearance || '')) delete n.portraitTags;
   // Переименовали вручную — прежнее имя остаётся псевдонимом для поиска по истории.
   if (typeof data.name === 'string' && data.name.trim() && n.name && data.name.trim() !== n.name) {
@@ -973,6 +1044,7 @@ export async function updateNpcManual(id, data = {}) {
   if (typeof data.bound === 'boolean') { if (data.bound) n.bound = true; else delete n.bound; }
   if (Array.isArray(data.locked)) n.locked = data.locked.filter((x) => [...NPC_FIELDS, ...NPC_ARRAY_FIELDS, 'voice'].includes(x));
   if (!n.name) n.name = 'Без имени';
+  noteManual('npc', n.id, before, n);
   await saveState();
   return n;
 }
@@ -993,6 +1065,7 @@ export async function mergeDefaultTraits() {
 
 export async function upsertThread(data = {}) {
   let t = data.id ? state.threads.find((x) => x.id === data.id) : null;
+  const before = t ? deepCopy(t) : null;
   if (!t) {
     t = { id: randomUUID(), title: '', status: 'open', progress: '', notes: '', openedTurn: state.turn || 0 };
     state.threads.push(t);
@@ -1002,6 +1075,7 @@ export async function upsertThread(data = {}) {
   if (typeof data.progress === 'string') t.progress = data.progress.trim();
   if (typeof data.notes === 'string') t.notes = data.notes.trim();
   if (!t.title) t.title = 'Без названия';
+  noteManual('thread', t.id, before, t);
   await saveState();
   return t;
 }
@@ -1009,6 +1083,8 @@ export async function upsertThread(data = {}) {
 // Ручная правка сцены игроком. locked — список полей, которые учётчик не трогает.
 export async function updateSceneManual(data = {}) {
   const s = normalizeScene(state.scene);
+  const pick = (x) => ({ location: x.location, time: x.time, note: x.note, present: x.present, day: x.day, minute: x.minute, locked: x.locked });
+  const before = pick(s);
   if (typeof data.location === 'string') s.location = data.location.trim();
   if (typeof data.time === 'string') s.time = data.time.trim();
   if (typeof data.note === 'string') s.note = data.note.trim();
@@ -1021,6 +1097,7 @@ export async function updateSceneManual(data = {}) {
   }
   if (Array.isArray(data.locked)) s.locked = data.locked.filter((f) => ['location', 'time', 'present', 'note', 'clock'].includes(f));
   state.scene = s;
+  noteManual('scene', 'scene', before, pick(s));
   await saveState();
   return s;
 }
@@ -1029,6 +1106,7 @@ export async function updateSceneManual(data = {}) {
 export async function upsertEvent(data = {}) {
   if (!Array.isArray(state.events)) state.events = [];
   let e = data.id ? state.events.find((x) => x.id === data.id) : null;
+  const before = e ? deepCopy(e) : null;
   if (!e) {
     e = { id: randomUUID(), turn: state.turn || 0, type: 'fact', text: '', participants: [], knownBy: [], status: 'open', outcome: '', when: '', at: null, locked: false };
     state.events.push(e);
@@ -1049,17 +1127,20 @@ export async function upsertEvent(data = {}) {
   if (typeof data.locked === 'boolean') e.locked = data.locked;
   if (data.turn !== undefined && Number.isFinite(Number(data.turn))) e.turn = Number(data.turn);
   if (!e.text) throw new Error('У записи нужен текст.');
+  noteManual('event', e.id, before, e);
   await saveState();
   return e;
 }
 export async function deleteEvent(id) {
   state.events = (state.events || []).filter((e) => e.id !== id);
+  noteManual('event', id, {}, null);
   await saveState();
   return state;
 }
 
 export async function deleteThread(id) {
   state.threads = state.threads.filter((t) => t.id !== id);
+  noteManual('thread', id, {}, null);
   await saveState();
   return state;
 }
@@ -1097,6 +1178,7 @@ export async function setNpcAvatar(id, filename) {
   const n = state.npcs.find((x) => x.id === id);
   if (!n) throw new Error('Персонаж не найден.');
   const previous = n.avatar;
+  noteManual('npc', n.id, { avatar: n.avatar }, { avatar: filename });
   n.avatar = filename;
   await saveState();
   return { npc: n, previous };
@@ -1104,6 +1186,7 @@ export async function setNpcAvatar(id, filename) {
 
 export async function deleteNpc(id) {
   state.npcs = state.npcs.filter((n) => n.id !== id);
+  noteManual('npc', id, {}, null);
   await saveState();
   return state;
 }

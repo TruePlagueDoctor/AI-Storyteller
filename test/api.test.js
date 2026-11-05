@@ -335,3 +335,20 @@ test('настройки качества картинок сохраняютс�
   assert.equal(r.data.imageScheduler, '');
   await api('POST', '/api/settings', { handFix: true, portraitHires: true, imageScheduler: 'Karras' });
 });
+
+test('перегенерация через API не откатывает ручные правки кодекса и НПС', async () => {
+  handlers.narrator = () => reply('Ты стоишь посреди площади, вокруг шумит ярмарка, торговцы зазывают покупателей.');
+  handlers.sync = () => reply('', [call('npc', { name: 'Ярмарочный зазывала', attitude: 'весел' })]);
+  let { data } = await api('POST', '/api/action', { text: 'Иду на ярмарку' });
+  const lore = (await api('POST', '/api/lore', { title: 'Ярмарка', kind: 'place', content: 'было' })).data.lorebook.find((e) => e.title === 'Ярмарка');
+  await api('PUT', `/api/lore/${lore.id}`, { brief: 'Шумная ярмарка на площади.', content: 'стало' });
+  const npc = data.npcs.find((n) => n.name === 'Ярмарочный зазывала');
+  await api('PUT', `/api/npcs/${npc.id}`, { ...npc, description: 'Рыжий парень с трещоткой' });
+  handlers.sync = () => reply('', [call('nothing', {})]);
+  ({ data } = await api('POST', '/api/regenerate'));
+  const l2 = data.lorebook.find((e) => e.id === lore.id);
+  assert.ok(l2, 'статья, созданная после хода, не пропала');
+  assert.equal(l2.brief, 'Шумная ярмарка на площади.');
+  assert.equal(l2.content, 'стало');
+  assert.equal(data.npcs.find((n) => n.id === npc.id), undefined, 'НПС, которого завёл учётчик за отменённый ход, откатился');
+});

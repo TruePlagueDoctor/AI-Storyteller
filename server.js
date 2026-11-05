@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 
 import {
-  loadState, saveState, getState, resetGame, updateSettings, importSlot,
+  loadState, saveState, getState, resetGame, updateSettings, importSlot, noteManual,
   addCharacter, updateCharacter, deleteCharacter, setActiveCharacter, deleteNpc, deleteBlock, upsertBlock, updateSceneManual, toggleCharacterPresence,
   recordTurnOutcome, refreshTurnOutcome, truncateLog, entryContext, setEntryImages,
   clearPreSync, capturePreSync, bindPreSync, canResync, restorePreSync, switchVariant, branchAt, oocWrap, upsertEvent, deleteEvent,
@@ -397,6 +397,7 @@ async function generatePortrait(res, subject, assign) {
   await writeFile(join(AVATAR_DIR, filename), png);
   const { previous } = await assign(filename);
   await removeAvatarFile(previous);
+  if (subject.kind === 'npc') noteManual('npc', subject.ref.id, { portraitTags: subject.ref.portraitTags }, { portraitTags: tags });
   subject.ref.portraitTags = tags; // чтобы можно было поправить и перерисовать
   await saveState();
   res.json({ ...publicState(), portrait: { filename, tags, prompt, warnings } });
@@ -408,8 +409,11 @@ async function setLoreImage(id, filename, tags) {
   const e = getState().lorebook.find((x) => x.id === id);
   if (!e) throw new Error('Статья не найдена.');
   const previous = e.image;
+  const before = { image: e.image, imageTags: e.imageTags };
   if (filename) e.image = filename; else delete e.image;
   if (tags !== undefined) e.imageTags = tags;
+  // Иллюстрация — ручная правка: переживает откат хода.
+  noteManual('lore', e.id, before, { image: e.image, imageTags: e.imageTags });
   await saveState();
   if (previous && previous !== filename) await removeAvatarFile(previous);
 }
