@@ -289,6 +289,8 @@ async function init() {
     decorateLastNarrator();
     if (s.slots) renderSlots({ slots: s.slots, activeSlotId: s.activeSlotId });
     if (!s.hasKey) toast('Ключ OpenRouter не задан — открой «Настройки», чтобы узнать, как его добавить.');
+    installQol();
+    installSearch();
   } catch (err) {
     toast('Не удалось загрузить состояние: ' + err.message);
   }

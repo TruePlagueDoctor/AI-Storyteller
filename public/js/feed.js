@@ -228,6 +228,7 @@ async function performTurn(endpoint, body, optimistic) {
   inputEl.disabled = true;
   if (optimistic && optimistic.text) addEntry(optimistic.role, optimistic.text);
   inputEl.value = '';
+  clearDraft();
   autoGrow();
   document.querySelectorAll('.regen-btn, .regen-bar').forEach((b) => b.remove());
   showThinking();
@@ -292,6 +293,8 @@ function refreshLogKeepScroll() {
 // рисовались, пока флаг ещё стоял, — и не появлялись до перезагрузки.
 function endBusy({ focus = true } = {}) {
   refreshDiagBadge();
+  const last = app.log[app.log.length - 1];
+  notifyReady(Boolean(last && last.failed));
   sending = false;
   sendBtn.disabled = false;
   inputEl.disabled = false;

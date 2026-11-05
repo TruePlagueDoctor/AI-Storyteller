@@ -20,6 +20,7 @@
       </div>
       <div class="topbar-actions">
         <button class="btn ghost" id="slotsBtn" title="Истории"><span class="btn-ico">📖</span><span class="btn-label" id="slotName">—</span></button>
+        <button class="btn ghost" id="searchBtn" title="Поиск по истории (Ctrl+K)"><span class="btn-ico">🔍</span><span class="btn-label">Поиск</span></button>
         <button class="btn ghost diag-btn" id="diagBtn" title="Диагностика: запросы к модели и ошибки"><span class="btn-ico">🩺</span><span class="btn-label">Диагностика</span><span class="diag-dot" id="diagDot" hidden></span></button>
         <button class="btn ghost" id="settingsBtn" title="Настройки"><span class="btn-ico">⚙</span><span class="btn-label">Настройки</span></button>
         <button class="btn ghost danger" id="resetBtn" title="Начать историю заново"><span class="btn-ico">↺</span><span class="btn-label">Заново</span></button>
@@ -165,6 +166,7 @@
           <button type="button" data-target="set-story">История</button>
           <button type="button" data-target="set-rules">Механика</button>
           <button type="button" data-target="set-memory">Память</button>
+          <button type="button" data-target="set-comfort">Удобство</button>
           <button type="button" data-target="set-images">Картинки</button>
         </nav>
         <section class="settings-sec" id="set-models">
@@ -305,6 +307,29 @@
           <div id="syncStatsBody"></div>
           <span class="field-hint">Считается по журналам ходов. Переучтённые ходы попадают в строку той модели, которой их переучли, — так удобно сравнивать модели учёта на одних и тех же ходах.</span>
         </details>
+        </section>
+        <section class="settings-sec" id="set-comfort">
+          <h3 class="settings-sec-title">Удобство</h3>
+          <label class="field toggle-field">
+            <input type="checkbox" id="notifySoundInput" />
+            <span class="toggle-text">
+              <span class="field-label">Звук, когда ответ готов</span>
+              <span class="field-hint">Если вкладка в фоне, у неё в заголовке всегда появится «✦ Ответ готов». Галочка добавляет тихий звонок. Настройка этого браузера, не истории.</span>
+            </span>
+          </label>
+          <div class="field">
+            <span class="field-label">Горячие клавиши</span>
+            <dl class="hotkeys">
+              <dt>Enter</dt><dd>отправить ход (Shift+Enter — новая строка)</dd>
+              <dt>↑</dt><dd>в пустом поле — править свою последнюю реплику</dd>
+              <dt>Alt+R</dt><dd>перегенерировать последний ответ</dd>
+              <dt>← →</dt><dd>листать варианты ответа (когда не набираешь текст; с Alt — всегда)</dd>
+              <dt>Ctrl+K</dt><dd>поиск по истории</dd>
+              <dt>/</dt><dd>к полю ввода</dd>
+              <dt>Esc</dt><dd>закрыть окно</dd>
+            </dl>
+            <span class="field-hint">Набранный ход сохраняется сам: можно обновить страницу или закрыть вкладку — текст останется.</span>
+          </div>
         </section>
         <section class="settings-sec" id="set-images">
           <h3 class="settings-sec-title">Картинки</h3>
@@ -868,6 +893,20 @@
   </div>
 
   <!-- Диагностика -->
+  <div class="modal-overlay" id="searchModal" hidden>
+    <div class="modal search-modal" role="dialog" aria-modal="true" aria-labelledby="searchTitle">
+      <div class="modal-head">
+        <h2 id="searchTitle">Поиск по истории</h2>
+        <button class="btn ghost close" id="searchClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <input type="search" id="searchInput" placeholder="Имя, место, слово… например: Лира кольцо" autocomplete="off" />
+        <p class="search-count" id="searchCount"></p>
+        <div id="searchResults"></div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="diagModal" hidden>
     <div class="modal diag" role="dialog" aria-modal="true" aria-labelledby="diagTitle">
       <div class="modal-head">
@@ -1097,6 +1136,8 @@
   <script src="js/feed.js"></script>
   <script src="js/editors.js"></script>
   <script src="js/settings.js"></script>
+  <script src="js/qol.js"></script>
+  <script src="js/search.js"></script>
   <script src="js/init.js"></script>
 </body>
 </html>

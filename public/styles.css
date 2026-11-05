@@ -647,7 +647,7 @@ body {
   font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase;
   color: var(--text-dim); margin-bottom: 8px;
 }
-.field input, .field textarea, .field-col input, .field-col textarea, #charPortraitTags, #npcPortraitTags {
+.field input, .field textarea, .field-col input, .field-col textarea, #charPortraitTags, #npcPortraitTags, #searchInput {
   width: 100%;
   background: var(--ink);
   border: 1px solid var(--edge);
@@ -1910,3 +1910,20 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 .backup-head { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-faint); margin-bottom: 4px; }
 .backup-slot { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 3px 0; color: var(--text-warm); font-size: 14px; }
 #backupNow { margin-top: 6px; }
+
+/* Горячие клавиши (настройки) */
+.hotkeys { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 8px 0 10px; font-size: 13.5px; }
+.hotkeys dt { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--brass); background: var(--ink); border: 1px solid var(--edge); border-radius: 5px; padding: 1px 7px; justify-self: start; }
+.hotkeys dd { margin: 0; color: var(--text-dim); }
+
+/* Поиск по истории */
+.modal.search-modal { max-width: 720px; }
+#searchInput { width: 100%; font-size: 15px; }
+.search-count { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-faint); margin: 10px 0 6px; }
+.search-hit { display: block; width: 100%; text-align: left; background: none; border: none; border-top: 1px solid var(--edge-soft); padding: 10px 4px; cursor: pointer; color: var(--text-warm); font-family: 'Spectral', serif; }
+.search-hit:hover { background: var(--ink-3); }
+.search-meta { display: block; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-faint); margin-bottom: 3px; }
+.search-text { font-size: 14px; line-height: 1.5; }
+.search-text mark { background: color-mix(in srgb, var(--brass) 30%, transparent); color: var(--text-warm); border-radius: 2px; padding: 0 1px; }
+@keyframes foundFlash { 0% { background: color-mix(in srgb, var(--brass) 22%, transparent); } 100% { background: transparent; } }
+.entry.found { animation: foundFlash 2.2s ease-out; border-radius: 6px; }

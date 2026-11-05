@@ -73,6 +73,7 @@ function applyState(data, { animate = false } = {}) {
   // Обновляем только то, что пришло: ответ без поля не должен стирать данные.
   if (Array.isArray(data.characters)) app.characters = data.characters;
   if (data.activeCharacterId) app.activeCharacterId = data.activeCharacterId;
+  if (data.activeSlotId) app.activeSlotId = data.activeSlotId;
   if (Array.isArray(data.npcs)) app.npcs = data.npcs;
   if (Array.isArray(data.lorebook)) app.lorebook = data.lorebook;
   if (data.traitPool) app.traitPool = data.traitPool;

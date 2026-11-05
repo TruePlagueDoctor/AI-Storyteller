@@ -95,6 +95,12 @@ function closeSlots() { $('slotsModal').hidden = true; }
 // Переключение партии перерисовывает всё: история, герои, НПС, мир.
 function applyFullState(data) {
   blockSignatures = {}; npcSigs = {}; charSigs = {}; changedChars.clear();
+  // Другая история — свой черновик хода.
+  if (data.activeSlotId && data.activeSlotId !== app.activeSlotId) {
+    app.activeSlotId = data.activeSlotId;
+    inputEl.value = lsGet(draftKey());
+    autoGrow();
+  }
   renderLog(data.log);
   applyState(data, { animate: false });
   snapshotCharSigs();

@@ -62,6 +62,39 @@ try {
     await page.waitForFunction(() => /Проходи/.test(document.querySelector('.entry.narrator:last-of-type')?.textContent || document.body.textContent));
     step('свайп вернул прежний вариант');
 
+    // Alt+← — к прежнему варианту и Alt+→ обратно.
+    await page.keyboard.press('Alt+ArrowRight');
+    await page.waitForFunction(() => /Подделка/.test(document.body.textContent));
+    await page.keyboard.press('Alt+ArrowLeft');
+    await page.waitForFunction(() => /Проходи/.test(document.body.textContent));
+    step('варианты листаются клавишами');
+
+    // Черновик переживает перезагрузку.
+    await page.fill('#input', 'Черновик моего хода');
+    await page.waitForTimeout(400);
+    await page.reload();
+    await page.waitForSelector('.entry.narrator');
+    if (await page.inputValue('#input') !== 'Черновик моего хода') errors.push(`[${viewport.name}] черновик не сохранился`);
+    await page.fill('#input', '');
+    step('черновик пережил перезагрузку');
+    await page.focus('#input');
+    await page.keyboard.press('ArrowUp');
+    await page.waitForSelector('.entry.editing');
+    await page.click('.entry.editing .btn.ghost');
+    step('↑ открывает правку своей реплики');
+
+    // Поиск: Ctrl+K, находит, Enter прыгает к реплике, Esc закрывает окно.
+    await page.keyboard.press('Control+k');
+    await page.waitForSelector('#searchModal:not([hidden])');
+    await page.fill('#searchInput', 'бумаги');
+    await page.waitForSelector('.search-hit');
+    await page.press('#searchInput', 'Enter');
+    await page.waitForSelector('.entry.found');
+    await page.keyboard.press('Control+k');
+    await page.keyboard.press('Escape');
+    if (!(await page.isHidden('#searchModal'))) errors.push(`[${viewport.name}] Esc не закрыл поиск`);
+    step('поиск находит и переходит к реплике');
+
     if (viewport.name === 'mobile') { await page.click('#sheetToggle'); await page.waitForTimeout(300); }
     for (const tab of ['tabNpcs', 'tabLore', 'tabThreads', 'tabEvents', 'tabHeroes']) await page.click('#' + tab);
     step('вкладки панели переключаются');
