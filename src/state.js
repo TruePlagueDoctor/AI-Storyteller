@@ -12,6 +12,7 @@ import { DEFAULT_SYSTEM_PROMPT } from './prompt.js';
 import { DEFAULT_TRAITS } from './traits.js';
 import { DEFAULT_SEEDS, normalizeSeeds } from './seeds.js';
 import { normalizeStatusCatalog } from './statuses.js';
+import { normalizeEntry } from './codex.js';
 
 const SAVE_PATH = join(DATA_DIR, 'save.json');          // старый формат, для миграции
 const SLOTS_DIR = join(DATA_DIR, 'slots');
@@ -159,17 +160,13 @@ function migrate(s) {
     if (typeof t.notes !== 'string') t.notes = '';
     if (typeof t.openedTurn !== 'number') t.openedTurn = 0;
   }
+  // Кодекс (бывший лорбук): у старых записей появляются раздел «прочее», пустая выжимка и поля.
   if (!Array.isArray(out.lorebook)) out.lorebook = [];
-  for (const e of out.lorebook) {
-    if (!e.id) e.id = randomUUID();
-    if (typeof e.title !== 'string') e.title = 'Без названия';
-    if (!Array.isArray(e.keys)) e.keys = typeof e.keys === 'string' ? [e.keys] : [];
-    e.keys = e.keys.map((k) => String(k).trim()).filter(Boolean);
-    if (typeof e.content !== 'string') e.content = '';
-    e.always = e.always === true;
-    e.enabled = e.enabled !== false;
-    if (e.author !== 'narrator') e.author = 'player';
-  }
+  out.lorebook = out.lorebook.filter((e) => e && typeof e === 'object').map((e) => {
+    const n = normalizeEntry(e);
+    if (n.author !== 'narrator') n.author = 'player';
+    return n;
+  });
 
   if (!Array.isArray(out.npcs)) out.npcs = [];
   for (const n of out.npcs) {
@@ -852,22 +849,22 @@ function normalizeKeys(keys) {
   return [];
 }
 
-export async function addLoreEntry({ title, keys, content, always } = {}) {
-  const entry = {
-    id: randomUUID(),
+export async function addLoreEntry({ title, keys, content, always, kind, brief, fields, relations } = {}) {
+  const entry = normalizeEntry({
     title: (title || 'Без названия').trim(),
     keys: normalizeKeys(keys),
     content: String(content || ''),
     always: always === true,
     enabled: true,
     author: 'player',
-  };
+    kind, brief, fields, relations,
+  });
   state.lorebook.push(entry);
   await saveState();
   return entry;
 }
 
-export async function updateLoreEntry(id, { title, keys, content, always, enabled } = {}) {
+export async function updateLoreEntry(id, { title, keys, content, always, enabled, kind, brief, briefAuto, fields, relations } = {}) {
   const e = state.lorebook.find((x) => x.id === id);
   if (!e) throw new Error('Запись не найдена.');
   if (typeof title === 'string' && title.trim()) e.title = title.trim();
@@ -875,8 +872,14 @@ export async function updateLoreEntry(id, { title, keys, content, always, enable
   if (typeof content === 'string') e.content = content;
   if (typeof always === 'boolean') e.always = always;
   if (typeof enabled === 'boolean') e.enabled = enabled;
+  if (typeof kind === 'string') e.kind = kind;
+  if (typeof brief === 'string') { e.brief = brief; if (briefAuto !== undefined) e.briefAuto = Boolean(briefAuto); else delete e.briefAuto; }
+  if (fields && typeof fields === 'object') e.fields = fields;
+  if (Array.isArray(relations)) e.relations = relations;
+  const idx = state.lorebook.indexOf(e);
+  state.lorebook[idx] = normalizeEntry(e);
   await saveState();
-  return e;
+  return state.lorebook[idx];
 }
 
 export async function deleteLoreEntry(id) {
@@ -935,7 +938,7 @@ export async function deleteBlock(characterId, blockId) {
 }
 
 const NPC_FIELDS = ['name', 'description', 'appearance', 'personality', 'attitude', 'status', 'history', 'wants', 'secret', 'quirk', 'links',
-  'voiceStyle', 'voiceHumor', 'voiceHabits', 'voiceMasks', 'voiceTaboos', 'mood', 'moodReason', 'competence'];
+  'voiceStyle', 'voiceHumor', 'voiceHabits', 'voiceMasks', 'voiceTaboos', 'mood', 'moodReason', 'competence', 'race'];
 const NPC_ARRAY_FIELDS = ['traits', 'voiceSamples', 'skills'];
 
 // Умелость — только из списка (пусто — не задана), умения — до трёх непустых строк.

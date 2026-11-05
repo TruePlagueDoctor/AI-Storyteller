@@ -5,7 +5,7 @@
 // сколько минут прошло за ход, код двигает часы и переводит в «утро/вечер».
 
 export function emptyScene() {
-  return { location: '', time: '', present: [], note: '', day: 1, minute: 9 * 60, locked: [] };
+  return { location: '', time: '', present: [], creatures: [], note: '', day: 1, minute: 9 * 60, locked: [] };
 }
 
 export function normalizeScene(raw) {
@@ -18,6 +18,8 @@ export function normalizeScene(raw) {
   const minute = Number(s.minute);
   s.minute = Number.isFinite(minute) ? Math.min(1439, Math.max(0, Math.round(minute))) : 9 * 60;
   s.locked = Array.isArray(s.locked) ? s.locked : [];
+  // Существа из бестиария рядом (стая, тварь) — по ним кодекс подтягивает статью целиком.
+  s.creatures = Array.isArray(s.creatures) ? s.creatures.map((x) => String(x).trim()).filter(Boolean).slice(0, 6) : [];
   return s;
 }
 
@@ -67,6 +69,7 @@ export function sceneBlock(scene, state) {
   if (scene.location) bits.push(`Место: ${scene.location}`);
   bits.push(`Время: ${clockLabel(scene)}${scene.time ? ` — ${scene.time}` : ''}`);
   if (scene.present.length) bits.push(`Рядом с героем: ${scene.present.join(', ')}`);
+  if ((scene.creatures || []).length) bits.push(`Существа рядом: ${scene.creatures.join(', ')}`);
   const bound = ((state && state.npcs) || []).filter((n) => n.bound).map((n) => n.name);
   if (bound.length) bits.push(`Всегда с героем (не считаются присутствующими, но участвуют): ${bound.join(', ')}`);
   if (scene.note) bits.push(`Обстановка: ${scene.note}`);
@@ -79,6 +82,7 @@ export function sceneBlock(scene, state) {
 export function sceneForSync(scene) {
   if (!scene) return '';
   return `СЦЕНА: ${scene.location || 'место ещё не задано (задай, только если оно названо)'}; ${clockLabel(scene)}; рядом: ${scene.present.length ? scene.present.join(', ') : 'никого'}` +
+    ((scene.creatures || []).length ? `; существа: ${scene.creatures.join(', ')}` : '') +
     (scene.note ? `; обстановка: ${scene.note}` : '') +
     ((scene.locked || []).length ? ` [закреплено игроком: ${scene.locked.join(', ')}]` : '');
 }

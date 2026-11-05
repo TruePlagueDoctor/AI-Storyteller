@@ -58,59 +58,10 @@ export function whoShort(n, limit = 80) {
 // ---- Лорбук ----
 // Записи подставляются в контекст только когда их ключи упомянуты в недавних
 // ходах — так мир не занимает контекст целиком.
-const SCAN_DEPTH = 6;        // сколько последних сообщений сканируем
-const MAX_ACTIVE_LORE = 5;   // предохранитель от разрастания (на долгой игре ключи упоминаются постоянно)
 
-// Сопоставление с учётом русской морфологии: для длинных ключей ищем слово,
-// начинающееся с основы (чтобы «маяк» ловил «маяка», «маяком»);
-// фразы — по точному вхождению; короткие ключи — отдельным словом с возможным
-// падежным окончанием: «кот» ловит «кота», но не «котёл».
-const SHORT_ENDING = '(?:ь|й|а|у|е|ом|ем|ой|ою|ы|и|ю|я|ям|ам|ях|ах|ов|ев|ей)?';
-export function keyMatches(key, haystack) {
-  const k = String(key).toLowerCase().trim();
-  if (!k) return false;
-  if (k.includes(' ')) return haystack.includes(k);
-  const short = k.length < 4;
-  // «эль» → «эл» + окончание: «эля», «элем».
-  const stem = short ? k.replace(/[ьй]$/, '') : k.length > 5 ? k.slice(0, Math.max(4, k.length - 2)) : k;
-  const esc = stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  try {
-    const tail = short ? `${SHORT_ENDING}(?![\\p{L}])` : '\\p{L}*';
-    return new RegExp(`(^|[^\\p{L}])${esc}${tail}`, 'u').test(haystack);
-  } catch {
-    return haystack.includes(k);
-  }
-}
+export { keyMatches } from './narrator-keys.js';
+import { codexBlock } from './codex.js';
 
-export function activeLoreEntries(state, extraText = '') {
-  const book = Array.isArray(state.lorebook) ? state.lorebook.filter((e) => e.enabled !== false) : [];
-  if (!book.length) return [];
-
-  // Сообщения от свежих к старым; запись получает «свежесть» по самому новому упоминанию ключа.
-  const texts = [extraText, ...(state.messages || [])
-    .slice(-SCAN_DEPTH)
-    .filter((m) => typeof m.content === 'string' && (m.role === 'user' || m.role === 'assistant'))
-    .map((m) => m.content).reverse()].map((t) => String(t || '').toLowerCase());
-
-  // Записи «всегда в контексте» не расходуют лимит — иначе девятая молча выпадала.
-  const always = book.filter((e) => e.always);
-  const matched = [];
-  for (const e of book) {
-    if (e.always) continue;
-    const at = texts.findIndex((t) => t && e.keys.some((k) => keyMatches(k, t)));
-    if (at !== -1) matched.push({ e, at });
-  }
-  // На долгой игре ключей упоминается много — берём самые свежие, иначе справочник съедает промт.
-  matched.sort((x, y) => x.at - y.at);
-  return [...always, ...matched.slice(0, MAX_ACTIVE_LORE).map((x) => x.e)];
-}
-
-function loreBlock(state, extraText) {
-  const entries = activeLoreEntries(state, extraText);
-  if (!entries.length) return '';
-  return '=== СВЕДЕНИЯ О МИРЕ ===\n' +
-    entries.map((e) => `• ${e.title}\n  ${e.content.trim()}`).join('\n\n');
-}
 
 const NARRATION_DIRECTIVES = {
   third:
@@ -264,6 +215,7 @@ function npcBlock(state) {
     const meta = [];
     if (n.bound) meta.push('ВСЕГДА С ГЕРОЕМ — не в списке присутствующих, но в каждой сцене: слышит, видит, вставляет реплики');
     if (n.attitude) meta.push(`отношение: ${n.attitude}`);
+    if (n.race) meta.push(`народ: ${n.race}`);
     if (n.status) meta.push(`статус: ${n.status}`);
     // Давно не виделись — значит, не знает, что с героем было потом.
     const here = (state.scene && state.scene.present || []).some((p) => p.toLowerCase().split(/\s+/)[0] === n.name.toLowerCase().split(/\s+/)[0]);
@@ -328,7 +280,7 @@ export function storyPromptSections(state, { withTools = false } = {}) {
   if (state.summary && state.summary.trim()) {
     add('Предыстория', '=== ПРЕДЫСТОРИЯ (что уже произошло) ===\n' + state.summary.trim());
   }
-  add('Справочник мира (по ключам)', loreBlock(state));
+  add('Кодекс мира', codexBlock(state));
   add('Нити', threadsBlock(state));
   const chron = chronicleBlock(state.events || [], {
     sceneNames: [

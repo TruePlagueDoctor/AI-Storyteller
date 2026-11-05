@@ -5,6 +5,7 @@ import { toolsFor, NOTHING_TOOL, executeTool, isUnnamedName } from './tools.js';
 import { TRAIT_CATEGORIES } from './traits.js';
 import { sceneForSync } from './scene.js';
 import { chronicleForSync, isOverdue } from './chronicle.js';
+import { codexIndex } from './codex.js';
 import { callOpenRouter, parseLeakedToolCalls, toolModelOf } from './llm.js';
 import { FIX_SIGNAL, journalEntry } from './journal.js';
 import { whoShort, lastPlayerAction } from './narrator.js';
@@ -146,7 +147,7 @@ function technicalSyncHead(state) {
     '- отношение группы или фракции к герою → block type:relationship',
     '- внешность или положение героя изменились надолго → update_hero (appearance_change | social). Грязь, растрёпанность — не перемена',
     '- место сменилось, прошло время, кто-то пришёл или ушёл → scene. elapsed_minutes: реплика 1–5, разговор ≈10, схватка ≈5, путь по городу ≈60, ночь ≈480. ' +
-      'present — ПОЛНЫЙ список НПС физически рядом',
+      'present — ПОЛНЫЙ список НПС физически рядом; creatures — звери и твари рядом (названия из КОДЕКСА), ушли — []',
     '- значимый НПС действовал, говорил, изменился → npc (только изменившиеся поля, см. ПОЛЯ НПС)',
     '- обещание, долг, ложь, раскрытая тайна, решение, смерть, факт о прошлом → event action:add (type; known_by — кто знает правду)',
     '- назначена встреча или срок → event add type:plan + when («в полдень», «завтра вечером»)',
@@ -165,7 +166,7 @@ function technicalSyncHead(state) {
     'ПОЛЯ НПС: attitude — к герою, по ФАКТИЧЕСКОЙ реакции НПС, не по тону героя; status — где он и в каком состоянии сейчас; ' +
       'history — что произошло между ним и героем, одна строка (дописывается сама); mood + mood_reason — смена настроения с причиной; ' +
       'wants — новая цель; links — связи с другими НПС (заменяется целиком); secret — тайна; voice_sample — характерная реплика дословно; ' +
-      'competence (обычный|профессионал|мастер) + skills (1–3 умения) — у значимых с ремеслом: следователь, наёмник, вор, лекарь; ' +
+      'competence (обычный|профессионал|мастер) + skills (1–3 умения) — у значимых с ремеслом: следователь, наёмник, вор, лекарь; race — народ (из КОДЕКСА, если есть); ' +
       'description / appearance / personality — постоянное, заменяется целиком: пиши с учётом записанного.',
     'НПС: заноси значимых, не массовку. Безымянного значимого — по описанию («Девушка в красном плаще»); прозвучало имя — та же запись + new_name. ' +
       'Просто вышел из сцены — scene.present и status; action:archive — только если ушёл из истории насовсем.',
@@ -466,6 +467,7 @@ export async function syncState(state, apiKey, narration, journal = [], { model 
   }
 
   const chronNote = chronicleForSync(state.events || [], state.scene);
+  const codexNote = codexIndex(state);
   const archived = (state.npcs || []).filter((n) => n.archived).map((n) => n.name);
   const archiveNote = archived.length ? `\n\nВ АРХИВЕ (вернётся сам, если снова появится — просто npc по имени): ${archived.join(', ')}` : '';
   const userContent =
@@ -477,6 +479,7 @@ export async function syncState(state, apiKey, narration, journal = [], { model 
     '\n\nНПС:\n' + npcLines + archiveNote + unnamedNote +
     threadsNote +
     (chronNote ? '\n\n' + chronNote : '') +
+    (codexNote ? '\n\n' + codexNote : '') +
     hygiene;
 
   const messages = [

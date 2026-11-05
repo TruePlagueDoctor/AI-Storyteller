@@ -1,7 +1,7 @@
 // Долгая игра: промт рассказчика не должен расти без предела.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { composeStorySystem, activeLoreEntries } from '../src/narrator.js';
+import { composeStorySystem } from '../src/narrator.js';
 import { planSummary, summaryStep } from '../src/summary.js';
 import { normalizeEvents } from '../src/chronicle.js';
 import { makeState } from './helpers.js';
@@ -39,19 +39,6 @@ test('накопительные поля обрезаются: «было с г
   assert.match(p, /Как звучит[^\n]*«в» «г» «д»$/m);
   assert.match(p, /Известно: …[^\n]*зацепка номер 20/);
   assert.ok(!/зацепка номер 2;/.test(p));
-});
-
-test('справочник мира: по ключам — не больше пяти, свежие упоминания важнее', () => {
-  const st = makeState();
-  st.lorebook = Array.from({ length: 9 }, (_, i) => ({ id: 'l' + i, title: 'Запись ' + i, keys: ['ключ' + i + 'ик'], content: 'x', enabled: true }));
-  st.messages = [
-    { role: 'user', content: 'ключ0ик ключ1ик ключ2ик ключ3ик' },
-    { role: 'assistant', content: 'ключ4ик ключ5ик' },
-    { role: 'user', content: 'ключ6ик ключ7ик ключ8ик' },
-  ];
-  const got = activeLoreEntries(st).map((e) => e.title);
-  assert.equal(got.length, 5);
-  assert.deepEqual(got.slice(0, 3).sort(), ['Запись 6', 'Запись 7', 'Запись 8']);
 });
 
 test('сжатие начинается раньше: запас сверх «сырых ходов» — четверть, а не половина', () => {

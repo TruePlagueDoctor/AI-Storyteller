@@ -6,6 +6,7 @@ import { normalizeScene, advanceClock, parseTimeHint, clockLabel, dayPart } from
 import { findSimilar, EVENT_TYPES, OUTCOMES, typeLabel, outcomeLabel } from './chronicle.js';
 import { matchAbility, COMPETENCE } from './skills.js';
 import { addXp, nextLevel, LEVELS } from './progress.js';
+import { normalizeEntry } from './codex.js';
 
 // Инструмент проверки доступен ТОЛЬКО в проходе рассказа: модель запрашивает
 // бросок, исход считает код. Он намеренно не входит в TOOL_DEFINITIONS.
@@ -106,6 +107,7 @@ export const TOOL_DEFINITIONS = [
           voice_sample: { type: 'string', description: 'Одна характерная реплика дословно.' },
           voice_masks: { type: 'string', description: 'Как прячет чувства.' },
           voice_taboos: { type: 'string', description: 'Чего в речи не делает.' },
+          race: { type: 'string', description: 'Народ или раса — названием из КОДЕКСА, если подходит («гном», «эльфийка»).' },
           competence: { type: 'string', enum: COMPETENCE, description: 'Насколько хорош в своём деле (только у значимых, у кого есть ремесло).' },
           skills: { type: 'array', items: { type: 'string' }, description: '1–3 ключевых умения: «следствие», «фехтование», «стража». Список целиком.' },
           mood: { type: 'string', description: 'Настроение сейчас.' },
@@ -128,6 +130,8 @@ export const TOOL_DEFINITIONS = [
           title: { type: 'string', description: 'Короткое название, напр. "Порядки в приюте".' },
           content: { type: 'string', description: 'Сами сведения, кратко и точно.' },
           keys: { type: 'string', description: 'Слова через запятую для поиска.' },
+          kind: { type: 'string', enum: ['people', 'creature', 'faction', 'place', 'other'], description: 'Раздел: народ, существо, фракция, место, прочее.' },
+          brief: { type: 'string', description: 'Выжимка одной-двумя фразами — суть для рассказчика.' },
         },
         required: ['title', 'content'],
       },
@@ -194,6 +198,7 @@ export const TOOL_DEFINITIONS = [
           time: { type: 'string', description: 'Только если время задано в тексте явно: "21:30", "рассвет". Иначе не передавай — часы считает код.' },
           present: { type: 'array', items: { type: 'string' }, description: 'ПОЛНЫЙ список, кто сейчас ФИЗИЧЕСКИ рядом с героем (имена НПС). Пустой массив — никого. Спутников и голоса в голове, помеченных «всегда с героем», не перечисляй.' },
           note: { type: 'string', description: 'Обстановка одной фразой: погода, шум, опасность, что происходит вокруг.' },
+          creatures: { type: 'array', items: { type: 'string' }, description: 'ПОЛНЫЙ список существ рядом (звери, нежить, твари — не люди с именами), лучше названиями из КОДЕКСА. Пустой — никого.' },
         },
       },
     },
@@ -505,6 +510,10 @@ function executeSceneTool(args, state) {
     if (locked.includes('present')) skipped.push('присутствующие');
     else { s.present = a.present.map((x) => String(x).trim()).filter(Boolean); changed.push('рядом'); }
   }
+  if (Array.isArray(a.creatures)) {
+    if (locked.includes('present')) skipped.push('существа');
+    else { s.creatures = a.creatures.map((x) => String(x).trim()).filter(Boolean).slice(0, 6); changed.push('существа'); }
+  }
   if (typeof a.note === 'string') {
     if (locked.includes('note')) skipped.push('обстановка'); else { s.note = a.note.trim(); changed.push('обстановка'); }
   }
@@ -617,11 +626,12 @@ function executeLoreTool(args, state) {
   const idx = state.lorebook.findIndex((e) => e.title.trim().toLowerCase() === title.toLowerCase());
 
   if (idx === -1) {
-    state.lorebook.push({
+    state.lorebook.push(normalizeEntry({
       id: randomUUID(), title, content,
       keys: keys.length ? keys : [title.split(SPACE_RE)[0]],
       always: false, enabled: true, locked: false, author: 'narrator',
-    });
+      kind: args?.kind, brief: String(args?.brief || '').trim(),
+    }));
     return 'Записано о мире: ' + title + '.';
   }
   const e = state.lorebook[idx];
@@ -664,7 +674,7 @@ function findNpc(state, name) {
 
 function executeNpcTool(name, args, state) {
   const { name: npcName, new_name: newName, description, appearance, personality, attitude, status, history, traits, wants, secret, quirk, links,
-    voice_style, voice_humor, voice_habits, voice_sample, voice_masks, voice_taboos, mood, mood_reason, competence, skills } = args || {};
+    voice_style, voice_humor, voice_habits, voice_sample, voice_masks, voice_taboos, mood, mood_reason, competence, skills, race } = args || {};
   // Умелость — только из списка; умения — до трёх коротких строк.
   const level = typeof competence === 'string' && COMPETENCE.includes(competence.trim().toLowerCase()) ? competence.trim().toLowerCase() : undefined;
   const skillList = Array.isArray(skills) ? skills.map((x) => String(x).trim()).filter(Boolean).slice(0, 3)
@@ -767,6 +777,7 @@ function executeNpcTool(name, args, state) {
     if (mood !== undefined) { npc.mood = String(mood); npc.moodReason = String(mood_reason || ''); npc.moodTurn = state.turn || 0; }
     if (level) npc.competence = level;
     if (skillList) npc.skills = skillList;
+    if (typeof race === 'string' && race.trim()) npc.race = race.trim();
     npc.locked = [];
     npc.updatedTurn = state.turn || 0;
     state.npcs.push(npc);
@@ -816,6 +827,7 @@ function executeNpcTool(name, args, state) {
   if (allow('links', links)) npc.links = String(links);
   for (const [k, v] of Object.entries(VOICE_MAP)) if (allow('voice', v)) npc[k] = String(v);
   if (allow('voice', voice_sample)) addSample(npc, voice_sample);
+  if (allow('race', typeof race === 'string' && race.trim() ? race.trim() : undefined)) npc.race = race.trim();
   if (allow('competence', level)) npc.competence = level;
   if (allow('competence', skillList)) npc.skills = skillList;
   if (allow('mood', mood)) { npc.mood = String(mood); npc.moodReason = String(mood_reason || ''); npc.moodTurn = state.turn || 0; }

@@ -1,7 +1,8 @@
 // Сборка промтов рассказчика и учётчика, проверка полноты, противоречия, сжатие истории.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { composeStorySystem, labelHeroes, heroMultiplayer, keyMatches, activeLoreEntries, whoShort } from '../src/narrator.js';
+import { composeStorySystem, labelHeroes, heroMultiplayer, keyMatches, whoShort } from '../src/narrator.js';
+import { selectCodex } from '../src/codex.js';
 import { composeSyncSystem, completenessHints, mayIntroduceNpc, syncWorthwhile, sheetForSync } from '../src/sync.js';
 import { stripToolMarkup, parseLeakedToolCalls } from '../src/llm.js';
 import { findCutIndex, planSummary, applySummary, renderTranscript } from '../src/summary.js';
@@ -22,12 +23,12 @@ test('лорбук: ключ ловит падежи, фразы — точно,
   const st = makeState({
     messages: [{ role: 'user', content: 'Иду к маяку' }],
     lorebook: [
-      { title: 'Маяк', keys: ['маяк'], content: 'Сгорел', enabled: true },
-      { title: 'Королевство', keys: [], content: 'x', always: true, enabled: true },
-      { title: 'Выключено', keys: ['маяк'], content: 'y', enabled: false },
+      { id: 'm', title: 'Маяк', keys: ['маяк'], content: 'Сгорел', enabled: true },
+      { id: 'k', title: 'Королевство', keys: [], content: 'x', always: true, enabled: true },
+      { id: 'v', title: 'Выключено', keys: ['маяк'], content: 'y', enabled: false },
     ],
   });
-  assert.deepEqual(activeLoreEntries(st).map((e) => e.title), ['Королевство', 'Маяк']);
+  assert.deepEqual(selectCodex(st).map((x) => x.entry.title), ['Королевство', 'Маяк']);
 });
 
 test('промт рассказчика: блоки на месте, раздел про инструменты убран в двухпроходном режиме', () => {
