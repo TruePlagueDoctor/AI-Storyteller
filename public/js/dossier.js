@@ -173,13 +173,97 @@ function openCodexView(id) {
 }
 function closeCodexView() { $('codexViewModal').hidden = true; }
 
+// Иллюстрация статьи: арт «типичного представителя» и управление им.
+function renderCodexArt(e) {
+  const kind = e.kind || 'other';
+  const col = dEl('div', 'codex-art');
+  const frame = dEl('div', `codex-frame kind-${kind}` + (e.image ? ' has-image' : ''));
+  if (e.image) {
+    frame.style.backgroundImage = `url('/avatars/${e.image}')`;
+    frame.title = 'Открыть крупно';
+    frame.addEventListener('click', () => showImage(e.image, e.title));
+  } else {
+    frame.appendChild(dEl('span', 'codex-frame-glyph', CODEX_GLYPH[kind]));
+    frame.appendChild(dEl('span', 'codex-frame-hint', kind === 'place' ? 'Как выглядит это место?' : 'Нарисовать типичного представителя'));
+  }
+  col.appendChild(frame);
+  const acts = dEl('div', 'codex-art-acts');
+  const draw = dEl('button', 'btn ghost', e.image ? '🎨 Перерисовать' : '🎨 Нарисовать');
+  draw.type = 'button';
+  draw.title = 'Нарисовать в Automatic1111 по тегам ниже (пусто — модель составит их по статье)';
+  const fresh = dEl('button', 'btn ghost', '↻ По статье');
+  fresh.type = 'button';
+  fresh.title = 'Составить теги заново по тексту статьи и нарисовать';
+  const up = dEl('button', 'btn ghost', 'Загрузить');
+  up.type = 'button';
+  const clear = dEl('button', 'btn ghost', 'Убрать');
+  clear.type = 'button';
+  clear.disabled = !e.image;
+  acts.append(draw, fresh, up, clear);
+  col.appendChild(acts);
+  const det = dEl('details', 'codex-tags');
+  det.appendChild(dEl('summary', null, 'Теги иллюстрации'));
+  const ta = dEl('textarea');
+  ta.rows = 4;
+  ta.placeholder = 'Пусто — модель составит теги по статье при рисовании';
+  ta.value = e.imageTags || '';
+  det.appendChild(ta);
+  col.appendChild(det);
+
+  const busy = (on, label) => { for (const b of [draw, fresh, up, clear]) b.disabled = on || (b === clear && !e.image); if (on) draw.textContent = label; };
+  const run = async (tags) => {
+    busy(true, tags ? '🎨 Рисую…' : '🎨 Теги и рисунок…');
+    frame.classList.add('busy');
+    try {
+      const data = await api(`/api/lore/${e.id}/illustrate`, { method: 'POST', body: JSON.stringify({ tags }) });
+      applyState(data);
+      for (const w of (data.illustration && data.illustration.warnings) || []) toast('A1111: ' + w);
+      if (viewingLoreId === e.id && !$('codexViewModal').hidden) renderCodexView(app.lorebook.find((x) => x.id === e.id));
+    } catch (err) {
+      toast(err.message);
+      frame.classList.remove('busy');
+      busy(false); draw.textContent = e.image ? '🎨 Перерисовать' : '🎨 Нарисовать';
+    }
+  };
+  draw.addEventListener('click', () => run(ta.value.trim()));
+  fresh.addEventListener('click', () => run(''));
+  up.addEventListener('click', () => {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/png,image/jpeg,image/webp';
+    inp.addEventListener('change', async () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      try {
+        const dataUrl = await shrinkImage(f);
+        applyState(await api(`/api/lore/${e.id}/image`, { method: 'POST', body: JSON.stringify({ dataUrl }) }));
+        renderCodexView(app.lorebook.find((x) => x.id === e.id));
+      } catch (err) { toast(err.message); }
+    });
+    inp.click();
+  });
+  clear.addEventListener('click', async () => {
+    try { applyState(await api(`/api/lore/${e.id}/image`, { method: 'DELETE' })); renderCodexView(app.lorebook.find((x) => x.id === e.id)); }
+    catch (err) { toast(err.message); }
+  });
+  return col;
+}
+
 function renderCodexView(e) {
   const body = $('codexViewBody');
   body.innerHTML = '';
   const kind = e.kind || 'other';
   $('codexViewTitle').textContent = CODEX_TITLE[kind] || 'Кодекс';
-  const head = dEl('div', 'dossier-head codex-head');
-  head.appendChild(dEl('div', `codex-emblem kind-${kind}`, CODEX_GLYPH[kind]));
+  // Как в книге: слева крупная иллюстрация, справа текст статьи.
+  const layout = dEl('div', 'codex-layout');
+  layout.appendChild(renderCodexArt(e));
+  const text = dEl('div', 'codex-text');
+  layout.appendChild(text);
+  body.appendChild(layout);
+  renderCodexText(e, text, kind);
+}
+
+function renderCodexText(e, body, kind) {
+  const head = dEl('div', 'codex-head');
   const ident = dEl('div', 'dossier-ident');
   ident.appendChild(dEl('h3', 'dossier-name', e.title));
   const tags = dEl('div', 'dossier-tags');

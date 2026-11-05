@@ -113,3 +113,43 @@ export async function sceneTags({ state, apiKey, ctx }) {
     light: Number.isFinite(sc.minute) ? dayPart(sc.minute) : '',
   };
 }
+
+// ---- Иллюстрация статьи кодекса: «типичный представитель» народа или существа ----
+// Вертикальный кадр (как портрет), но персонаж во весь рост и с окружением: это арт для статьи,
+// а не портрет конкретного человека. Место — пейзаж, фракция — её типичный член с символикой.
+const CODEX_FRAMING = {
+  people: 'Кадр: ОДИН типичный взрослый представитель народа во весь рост (full body), в характерной одежде, со снаряжением и в обычном окружении этого народа. Обязательно явный взрослый возраст (adult, mature).',
+  creature: 'Кадр: существо целиком (full body), в его среде обитания, в характерной позе; масштаб понятен по окружению. Если существо человекоподобное — явно взрослое.',
+  faction: 'Кадр: типичный взрослый член фракции во весь рост, с её символикой, цветами и снаряжением, в характерном месте.',
+  place: 'Кадр: само место — пейзаж или интерьер, вертикальная композиция, без людей в центре (no humans или далёкие силуэты).',
+  other: 'Кадр: то, о чём статья, — выразительная иллюстрация, вертикальная композиция.',
+};
+
+export async function codexTags({ state, apiKey, entry }) {
+  const e = entry || {};
+  const kind = CODEX_FRAMING[e.kind] ? e.kind : 'other';
+  const facts = [
+    e.brief ? `суть: ${e.brief}` : '',
+    ...Object.entries(e.fields || {}).filter(([k]) => k !== 'danger').map(([k, v]) => `${k}: ${v}`),
+    e.content ? `подробно: ${String(e.content).slice(0, 1200)}` : '',
+    state.worldPrompt ? `мир: ${String(state.worldPrompt).slice(0, 300)}` : '',
+  ].filter(Boolean).join('\n');
+  const messages = [
+    { role: 'system', content:
+      'Ты переводишь статью кодекса фэнтезийного мира в теги для иллюстрации (Stable Diffusion, booru-теги на английском). ' +
+      'Верни ТОЛЬКО строку тегов через запятую, 20–35 тегов, без пояснений. ' + CODEX_FRAMING[kind] + '\n' +
+      'Переведи в теги облик, одежду, снаряжение, окружение, свет и настроение из статьи; сеттинг и эпоху — из описания мира. ' +
+      'Не добавляй теги качества и стиля — они подставятся сами. Не выдумывай того, что противоречит статье.' },
+    { role: 'user', content: `Статья «${e.title || ''}» (${kind}):\n${facts || '(описания нет — только название)'}` },
+  ];
+  const data = await callOpenRouter({ purpose: 'теги иллюстрации кодекса', model: toolModelOf(state), messages, apiKey, temperature: 0.4, noReasoning: true });
+  const text = stripToolMarkup(String(data?.choices?.[0]?.message?.content || '')).trim()
+    .replace(/^[^:]*теги[^:]*:\s*/i, '').replace(/\n+/g, ', ').replace(/[.\s]+$/, '');
+  if (!text) throw new Error('Модель не вернула теги — попробуй ещё раз.');
+  return text;
+}
+
+// Стиль портретов без «портретных» тегов: для статьи нужен персонаж целиком и окружение.
+export function codexStyle(style) {
+  return String(style || '').split(',').map((t) => t.trim()).filter((t) => t && !PORTRAIT_ONLY.test(t)).join(', ');
+}

@@ -301,3 +301,25 @@ test('ссылки «народ → статья кодекса» для дос�
   r = await api('POST', '/api/npcs', { name: 'Безродный', race: 'дух' });
   assert.equal(r.data.codexLinks[r.data.npcs.find((n) => n.name === 'Безродный').id], undefined);
 });
+
+test('иллюстрация статьи кодекса: теги от модели, своя картинка, удаление', async () => {
+  let r = await api('POST', '/api/lore', { title: 'Виверна', kind: 'creature', brief: 'Летучий ящер с ядовитым хвостом.', fields: { danger: 4 } });
+  const id = r.data.lorebook.find((e) => e.title === 'Виверна').id;
+  handlers.other = (body) => { assert.match(body.messages[0].content, /существо целиком/); return reply('wyvern, dragon, flying, mountains, storm'); };
+  r = await api('POST', `/api/lore/${id}/illustrate`, {});
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  let e = r.data.lorebook.find((x) => x.id === id);
+  assert.equal(e.imageTags, 'wyvern, dragon, flying, mountains, storm');
+  assert.ok(!/upper body|looking at viewer/.test(r.data.illustration.prompt), 'портретные теги стиля убраны');
+  assert.match(r.data.illustration.prompt, /full body/);
+  assert.equal((await fetch(`${base()}/avatars/${e.image}`)).status, 200);
+  const first = e.image;
+  // Перерисовка по своим тегам — без запроса к модели, прежний файл удаляется.
+  handlers.other = () => { throw new Error('модель не должна вызываться'); };
+  r = await api('POST', `/api/lore/${id}/illustrate`, { tags: 'wyvern, night' });
+  e = r.data.lorebook.find((x) => x.id === id);
+  assert.notEqual(e.image, first);
+  assert.equal((await fetch(`${base()}/avatars/${first}`)).status, 404);
+  r = await api('DELETE', `/api/lore/${id}/image`);
+  assert.equal(r.data.lorebook.find((x) => x.id === id).image, undefined);
+});

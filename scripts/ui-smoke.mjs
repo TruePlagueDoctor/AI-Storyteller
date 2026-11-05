@@ -117,6 +117,10 @@ try {
     await page.click('#loreList .lore.kind-creature');
     await page.waitForSelector('#codexViewModal:not([hidden])');
     if (!/огонь/.test(await page.textContent('#codexViewBody'))) errors.push(`[${viewport.name}] в статье кодекса нет полей`);
+    stack.handlers.other = () => reply('ghoul, undead, graveyard, night, full body');
+    await page.click('#codexViewBody .codex-art-acts .btn >> nth=0');
+    await page.waitForSelector('#codexViewBody .codex-frame.has-image');
+    step('иллюстрация статьи рисуется');
     await page.click('#codexViewEdit');
     await page.waitForSelector('#loreModal:not([hidden])');
     if (await page.inputValue('#loreKindFields [data-field="weaknesses"]') !== 'огонь') errors.push(`[${viewport.name}] поле статьи не сохранилось`);

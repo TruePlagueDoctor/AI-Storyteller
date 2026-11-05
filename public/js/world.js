@@ -59,8 +59,9 @@ function renderLore() {
 function renderLoreCard(e) {
   const mk = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
   const kind = e.kind || 'other';
-  const el = mk('div', `lore kind-${kind}` + (e.enabled === false ? ' disabled' : ''));
+  const el = mk('div', `lore kind-${kind}` + (e.enabled === false ? ' disabled' : '') + (e.image ? ' has-thumb' : ''));
   el.dataset.id = e.id;
+  if (e.image) { const th = mk('div', 'lore-thumb'); th.style.backgroundImage = `url('/avatars/${e.image}')`; el.appendChild(th); }
   const row = mk('div', 'lore-row');
   row.appendChild(mk('span', 'lore-glyph', CODEX_GLYPH[kind]));
   row.appendChild(mk('span', 'lore-title', e.title));

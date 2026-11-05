@@ -20,7 +20,8 @@ import { planSummary, computeSummary, applySummary } from './src/summary.js';
 import { composeStorySystem, storyPromptSections } from './src/narrator.js';
 import { syncNarration, resyncNarration } from './src/sync.js';
 import { replayRequest } from './src/llm.js';
-import { portraitTags, sceneTags } from './src/art.js';
+import { portraitTags, sceneTags, codexTags, codexStyle } from './src/art.js';
+import { DEFAULT_IMAGE_SETTINGS } from './src/images.js';
 import { fillField, writeBrief } from './src/fill.js';
 import { CODEX_KINDS, KIND_LABEL, KIND_FIELDS, findPeople } from './src/codex.js';
 import { listRequests, getRequest, clearRequests, diagCounts } from './src/diag.js';
@@ -331,7 +332,12 @@ app.put('/api/lore/:id', async (req, res) => {
   try { await updateLoreEntry(req.params.id, req.body || {}); ok(res); } catch (e) { fail(res, e, 400); }
 });
 app.delete('/api/lore/:id', async (req, res) => {
-  try { await deleteLoreEntry(req.params.id); ok(res); } catch (e) { fail(res, e, 400); }
+  try {
+    const img = (getState().lorebook.find((x) => x.id === req.params.id) || {}).image;
+    await deleteLoreEntry(req.params.id);
+    await removeAvatarFile(img);
+    ok(res);
+  } catch (e) { fail(res, e, 400); }
 });
 
 // ---- Аватар героя ----
@@ -395,6 +401,57 @@ async function generatePortrait(res, subject, assign) {
   await saveState();
   res.json({ ...publicState(), portrait: { filename, tags, prompt, warnings } });
 }
+
+// ---- Иллюстрация статьи кодекса ----
+// Теги — из поля (игрок поправил) или модель составляет по статье; рисует A1111 портретным кадром.
+async function setLoreImage(id, filename, tags) {
+  const e = getState().lorebook.find((x) => x.id === id);
+  if (!e) throw new Error('Статья не найдена.');
+  const previous = e.image;
+  if (filename) e.image = filename; else delete e.image;
+  if (tags !== undefined) e.imageTags = tags;
+  await saveState();
+  if (previous && previous !== filename) await removeAvatarFile(previous);
+}
+app.post('/api/lore/:id/illustrate', async (req, res) => {
+  try {
+    const state = getState();
+    const e = state.lorebook.find((x) => x.id === req.params.id);
+    if (!e) throw new Error('Статья не найдена.');
+    let tags = String(req.body?.tags || '').trim();
+    if (!tags) {
+      if (!apiKey()) throw new Error('Не задан OPENROUTER_API_KEY — впиши теги вручную или добавь ключ.');
+      tags = await codexTags({ state, apiKey: apiKey(), entry: e });
+    }
+    const style = codexStyle(state.imageStyle || DEFAULT_IMAGE_SETTINGS.imageStyle) + ', full body, detailed background';
+    const { png, prompt, warnings } = await txt2img({ ...state, imageStyle: style }, tags, { seed: req.body?.seed });
+    const still = getState().lorebook.find((x) => x.id === e.id);
+    if (!still) throw new Error('Пока рисовалась картинка, статью удалили.');
+    await mkdir(AVATAR_DIR, { recursive: true });
+    const filename = `${randomUUID()}.png`;
+    await writeFile(join(AVATAR_DIR, filename), png);
+    await setLoreImage(e.id, filename, tags);
+    res.json({ ...publicState(), illustration: { filename, tags, prompt, warnings } });
+  } catch (err) { fail(res, err, 502); }
+});
+app.post('/api/lore/:id/image', async (req, res) => {
+  try {
+    const dataUrl = String(req.body?.dataUrl || '');
+    const m = dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) throw new Error('Нужен PNG, JPEG или WebP.');
+    const buf = Buffer.from(m[2], 'base64');
+    if (buf.length > 3 * 1024 * 1024) throw new Error('Картинка слишком большая.');
+    if (!getState().lorebook.some((x) => x.id === req.params.id)) throw new Error('Статья не найдена.');
+    await mkdir(AVATAR_DIR, { recursive: true });
+    const filename = `${randomUUID()}.${AVATAR_EXT[m[1]]}`;
+    await writeFile(join(AVATAR_DIR, filename), buf);
+    await setLoreImage(req.params.id, filename);
+    ok(res);
+  } catch (err) { fail(res, err, 400); }
+});
+app.delete('/api/lore/:id/image', async (req, res) => {
+  try { await setLoreImage(req.params.id, null); ok(res); } catch (err) { fail(res, err, 400); }
+});
 
 // ---- Заполнить поле карточки по истории (✨) ----
 // card — то, что сейчас в форме (с несохранёнными правками); ничего не сохраняем.

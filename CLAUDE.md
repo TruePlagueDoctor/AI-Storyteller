@@ -7,7 +7,7 @@
 ## Запуск и проверка
 
 - `npm install`, `.env` с `OPENROUTER_API_KEY`, `node server.js` (порт 3000). После правок пользователь перезапускает сервер и обновляет страницу Ctrl+F5.
-- Версия интерфейса печатается в консоль браузера второй строкой `public/js/core.js`: `console.log('AI Storyteller UI vNN — …')`. **Повышай номер при каждом изменении фронтенда** — по нему пользователь проверяет, что подхватилась новая версия. Сейчас v49.
+- Версия интерфейса печатается в консоль браузера второй строкой `public/js/core.js`: `console.log('AI Storyteller UI vNN — …')`. **Повышай номер при каждом изменении фронтенда** — по нему пользователь проверяет, что подхватилась новая версия. Сейчас v50.
 - **Проверки — перед каждым коммитом:** `npm test` (node:test, без сети: данные во временной папке, OpenRouter подменён) и при правках интерфейса `npm run test:ui` (Playwright, сервер с поддельной моделью, экраны компьютера и телефона; `UI_SHOTS=папка` сохраняет скриншоты). Нашёл ошибку — сначала тест, который её ловит, потом исправление.
   - `test/fake-llm.js` — `reply()`, `call()`, подмена `fetch` в процессе (для `src/*`); `test/harness.js` — настоящий `server.js` в отдельном процессе + поддельный OpenRouter/A1111 (`OPENROUTER_URL`, `STORYTELLER_DATA_DIR`); `test/helpers.js` — `makeState()`.
   - Учётчик на настоящей модели: `npm run eval:sync -- --model …` (сцены в `evals/sync-scenes.js`, отчёт в `data/evals/`). Меняешь промт учётчика или `completenessHints` — попроси пользователя прогнать до и после и сравнить цифры. Новая сцена: `must`/`forbid` проверяют итоговый мир, `ideal` — вызовы идеального учётчика (по ним `npm test` проверяет саму сцену).
@@ -24,7 +24,7 @@
 | `src/sync.js` | `composeSyncSystem` + `technicalSyncHead`/`legacySyncHead`, `syncState` (2 раунда, `completenessHints`), `syncNarration`/`resyncNarration` |
 | `src/turn.js`, `src/journal.js` | `runTurn`, `afterSync` (противоречия + замечание рассказчику + `markSeen`: `npc.lastSeen` и свидетели в `character.appearanceLog`); журнал учёта (`journalEntry`, `FIX_SIGNAL`) |
 | `src/summary.js` | сжатие: `planSummary`/`computeSummary`/`applySummary` |
-| `src/art.js`, `src/fill.js` | `portraitTags`, `sceneTags`; `fillField` (✨), `writeBrief` (✨ выжимка статьи кодекса) |
+| `src/art.js`, `src/fill.js` | `portraitTags`, `sceneTags`, `codexTags` (арт «типичного представителя» статьи кодекса; рисуется стилем портретов без портретных тегов — `codexStyle` + full body; файл в `avatars/`, `entry.image`/`entry.imageTags`); `fillField` (✨), `writeBrief` (✨ выжимка статьи кодекса) |
 | `src/paths.js` | где лежат данные (`STORYTELLER_DATA_DIR`) |
 | `src/backup.js` | резервные копии `data/backups/<время>/` (раз в сутки при старте, по кнопке, последние 10; снимки ходов не копируются); восстановление — `importSlot` новой историей |
 | `Запуск.bat`, `Обновить.bat` | Windows: запуск двойным щелчком (`OPEN_BROWSER=1` — сервер сам открывает браузер) и обновление через git или архив main (копирует себя во %TEMP%, не трогает `data`, `.env`); в git с CRLF (`.gitattributes`) |
