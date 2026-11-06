@@ -121,3 +121,32 @@ export function findSceneIssues(state, narration, action, rolls) {
   }
   return issues;
 }
+
+// ---- Вопросы в конце ответа ----
+// Модели любят заканчивать реплику вопросом к герою и переспрашивать уже решённое
+// («Уверен? Точно? Согласен?»). Это раздражает: герой уже ответил «да».
+const RECONFIRM = /(^|[^\p{L}])(уверен[аы]?|ты\s+(точно|действительно|правда|серь[её]зно|уверен[аы]?)[^.!?«»"]{0,40}|точно|согласен|согласна|согласны|не\s+передумал[аи]?|подумай(те)?\s+ещ[её]\s+раз)\s*[?]/iu;
+// Кончается ли текст вопросом: последний знак перед закрывающими кавычками и тире — «?».
+const endsWithQuestion = (t) => /\?[\s»"”'—–-]*$/.test(String(t || '').trim());
+
+export function findQuestionIssues(state, narration) {
+  const text = String(narration || '');
+  const issues = [];
+  if (RECONFIRM.test(text)) {
+    issues.push({
+      kind: 'reconfirm',
+      text: 'Персонаж переспросил то, что герой уже решил («уверен? точно? согласен?»). Не переспрашивай: согласие героя — это согласие, дальше сразу действие и последствия.',
+    });
+  }
+  // Сколько ответов подряд (с текущим) кончаются вопросом к герою.
+  const prev = (state.messages || []).filter((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string').map((m) => m.content);
+  if (prev.length && prev[prev.length - 1] === text) prev.pop(); // текущий ответ уже лежит в истории
+  const lastThree = [...prev.slice(-2), text];
+  if (lastThree.length === 3 && lastThree.every(endsWithQuestion)) {
+    issues.push({
+      kind: 'question-endings',
+      text: 'Три ответа подряд заканчиваются вопросом к герою. Закончи иначе: действием или решением персонажа, событием, условием, паузой — игрок сам скажет, что делать.',
+    });
+  }
+  return issues;
+}

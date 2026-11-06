@@ -1,6 +1,6 @@
 // Ход целиком: рассказ → учёт → сверка текста с состоянием.
 
-import { findContradictions, findSceneIssues, autoFix, correctionNote } from './contradictions.js';
+import { findContradictions, findSceneIssues, findQuestionIssues, autoFix, correctionNote } from './contradictions.js';
 import { toolModelOf } from './llm.js';
 import { narrate, lastPlayerAction } from './narrator.js';
 import { syncState, syncWorthwhile } from './sync.js';
@@ -27,7 +27,8 @@ export function afterSync(state, narration, rolls = []) {
   const issues = findContradictions(state, narration);
   const fixed = autoFix(issues);
   const scene = findSceneIssues(state, narration, lastPlayerAction(state), rolls);
-  state.correctionNote = correctionNote([...issues, ...scene]) || undefined;
+  const questions = findQuestionIssues(state, narration);
+  state.correctionNote = correctionNote([...issues, ...scene, ...questions]) || undefined;
   markSeen(state);
   return { issues: issues.map((i) => i.text), fixed };
 }
