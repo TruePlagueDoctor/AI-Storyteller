@@ -5,6 +5,7 @@ import { toolModelOf } from './llm.js';
 import { narrate, lastPlayerAction } from './narrator.js';
 import { syncState, syncWorthwhile } from './sync.js';
 import { sameName } from './tools.js';
+import { codexMisses } from './codex.js';
 
 // После хода: кто был рядом с героем — тот его видел. Последняя встреча нужна рассказчику,
 // чтобы давно не видевшие героя НПС не знали того, что с ним случилось потом.
@@ -23,12 +24,15 @@ export function markSeen(state) {
 
 // Сверка текста с состоянием после учёта: числовые огрехи чиним сразу,
 // смысловые передаём рассказчику замечанием на следующий ход.
-export function afterSync(state, narration, rolls = []) {
+export function afterSync(state, narration, rolls = [], { codexSeen = null } = {}) {
   const issues = findContradictions(state, narration);
   const fixed = autoFix(issues);
   const scene = findSceneIssues(state, narration, lastPlayerAction(state), rolls);
   const questions = findQuestionIssues(state, narration);
-  state.correctionNote = correctionNote([...issues, ...scene, ...questions]) || undefined;
+  const missed = codexMisses(state, narration, codexSeen);
+  const codex = missed.length ? [{ kind: 'codex', text: `Ты вывел ${missed.map((t) => `«${t}»`).join(', ')}, не зная статьи кодекса. ` +
+    'Сверь с ней облик и повадки (codex_lookup) и дальше заглядывай в статью до того, как выводить существо в сцену.' }] : [];
+  state.correctionNote = correctionNote([...issues, ...scene, ...questions, ...codex]) || undefined;
   markSeen(state);
   return { issues: issues.map((i) => i.text), fixed };
 }
@@ -43,7 +47,7 @@ export async function runTurn({ state, apiKey, skipSync = false, beforeSync = nu
   const journal = [];
   const syncTimer = [];
   const sync = state.stateSync !== false; // по умолчанию включён
-  const { narration, rolls, truncated } = await narrate(state, apiKey, !sync, { journal, timer: narrTimer });
+  const { narration, rolls, truncated, codexSeen, lookups } = await narrate(state, apiKey, !sync, { journal, timer: narrTimer });
   let syncInfo;
   // Снимок мира «после текста, до учёта» — для кнопки «переучесть».
   if (sync && beforeSync) { try { beforeSync(); } catch { /* не критично */ } }
@@ -60,7 +64,7 @@ export async function runTurn({ state, apiKey, skipSync = false, beforeSync = nu
       syncInfo = { status: 'failed', error: String(e.message || e).slice(0, 200), calls: journal, model: toolModelOf(state), timing: syncTimer };
     }
   }
-  const { issues, fixed } = afterSync(state, narration, rolls);
+  const { issues, fixed } = afterSync(state, narration, rolls, { codexSeen });
 
   return {
     narration: narration || '(Рассказчик молчит. Попробуй описать своё действие иначе.)',
@@ -69,6 +73,7 @@ export async function runTurn({ state, apiKey, skipSync = false, beforeSync = nu
     issues,
     fixed,
     sync: syncInfo,
+    lookups: lookups && lookups.length ? lookups : undefined,
     timing: { narrate: narrTimer },
   };
 }

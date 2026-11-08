@@ -46,9 +46,14 @@ function makeEntryEl(role, text, index, entry) {
     bar.append(msg, btn);
     div.appendChild(bar);
   }
-  if (entry && ((entry.ticks && entry.ticks.length) || (entry.growth && entry.growth.length))) {
+  if (entry && ((entry.ticks && entry.ticks.length) || (entry.growth && entry.growth.length) || (entry.lookups && entry.lookups.length))) {
     const fx = document.createElement('div');
     fx.className = 'turn-fx';
+    if (entry.lookups && entry.lookups.length) {
+      const l = document.createElement('div'); l.className = 'fx-tick';
+      l.textContent = '📖 Рассказчик заглянул в кодекс: ' + entry.lookups.join(', ');
+      fx.appendChild(l);
+    }
     for (const t of entry.ticks || []) { const l = document.createElement('div'); l.className = 'fx-tick'; l.textContent = '⏳ ' + t; fx.appendChild(l); }
     for (const g of entry.growth || []) { const l = document.createElement('div'); l.className = 'fx-growth'; l.textContent = '✦ ' + g; fx.appendChild(l); }
     div.appendChild(fx);

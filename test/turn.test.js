@@ -165,3 +165,31 @@ test('учётчик: ошибка и пропуск в одном ходу — 
   const r = await syncNarration({ state: st, apiKey: 'k', narration: 'Ты отдаёшь ключ и ждёшь. Через час стражник возвращается с ответом от капитана.' });
   assert.equal(r.status, 'done', r.error);
 });
+
+test('подглядывание в кодекс: статья приходит до описания, существо не попадает в замечание', async () => {
+  const lorebook = [{ id: 'j', title: 'Прыгун', kind: 'creature', brief: 'Заражённый, прыгает по стенам.', fields: { danger: 3, look: 'вытянутые руки, без глаз' }, keys: [], content: '', enabled: true }];
+  const st = makeState({ messages: [{ role: 'user', content: 'Спускаюсь в метро' }, { role: 'assistant', content: 'Станция пуста.' }, { role: 'user', content: 'Иду по тоннелю' }], stateSync: false, diceEnabled: false, lorebook });
+  fake = installFakeFetch([
+    (body) => {
+      assert.ok(body.tools.some((t) => t.function.name === 'codex_lookup'), 'инструмент предложен даже без кубиков');
+      assert.match(body.messages[0].content, /Бестиарий: Прыгун \(☠☠☠\)/);
+      assert.ok(!/без глаз/.test(body.messages[0].content), 'полной статьи в промте ещё нет');
+      return reply('', [call('codex_lookup', { titles: ['Прыгун'] })]);
+    },
+    (body) => {
+      assert.match(body.messages.at(-1).content, /Облик: вытянутые руки, без глаз/);
+      return reply('Со стены срывается прыгун — безглазый, с длинными руками.');
+    },
+  ]);
+  const out = await runTurn({ state: st, apiKey: 'k' });
+  assert.deepEqual(out.lookups, ['Прыгун']);
+  assert.ok(!/codex_lookup/.test(st.correctionNote || ''));
+});
+
+test('существо без подглядывания — замечание рассказчику на следующий ход', async () => {
+  const lorebook = [{ id: 'j', title: 'Прыгун', kind: 'creature', brief: 'Заражённый.', keys: [], content: '', enabled: true }];
+  const st = makeState({ messages: [{ role: 'user', content: 'Иду' }, { role: 'assistant', content: 'Тихо.' }, { role: 'user', content: 'Дальше' }], stateSync: false, diceEnabled: false, lorebook });
+  fake = installFakeFetch([reply('Из темноты выскакивает прыгун.')]);
+  await runTurn({ state: st, apiKey: 'k' });
+  assert.match(st.correctionNote, /«Прыгун», не зная статьи/);
+});

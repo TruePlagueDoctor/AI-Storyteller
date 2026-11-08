@@ -72,7 +72,7 @@ export function whoShort(n, limit = 80) {
 // ходах — так мир не занимает контекст целиком.
 
 export { keyMatches } from './narrator-keys.js';
-import { codexBlock } from './codex.js';
+import { codexBlock, renderCodex, hasCodex, LOOKUP_TOOL, lookupCodex } from './codex.js';
 
 
 const NARRATION_DIRECTIVES = {
@@ -460,12 +460,18 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
   const narrationParts = [];
   let finishReason = null;
   const rolls = [];
-  const rounds = withTools ? MAX_TOOL_ROUNDS : (dice ? 3 : 1);
+  // Подглядывание в кодекс: что рассказчик видел в промте + что прочитал сам. По этому после хода
+  // видно, не вывел ли он существо, не зная его статьи.
+  const lookup = hasCodex(state);
+  const codexSeen = lookup ? renderCodex(state).shown : null;
+  const lookups = [];
+  const rounds = withTools ? MAX_TOOL_ROUNDS : (dice || lookup ? 4 : 1);
 
   for (let round = 0; round < rounds; round++) {
     let tools;
     if (withTools) tools = dice ? [...toolsFor(state), rollToolFor(state)] : toolsFor(state);
     else if (dice) tools = [rollToolFor(state)];
+    if (lookup) tools = [...(tools || []), LOOKUP_TOOL];
 
     const data = await callOpenRouter({
       purpose: withTools ? 'рассказчик (с инструментами)' : 'рассказчик',
@@ -503,7 +509,12 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
       let args = {};
       try { args = JSON.parse(call.function.arguments || '{}'); } catch { args = {}; }
       let result;
-      if (call.function.name === 'roll_check') {
+      if (call.function.name === 'codex_lookup') {
+        const r = lookupCodex(state, args.titles ?? args.title);
+        for (const id of r.found) codexSeen.add(id);
+        lookups.push(...(Array.isArray(args.titles) ? args.titles : [args.titles ?? args.title]).filter(Boolean).map(String));
+        result = r.text;
+      } else if (call.function.name === 'roll_check') {
         const character = resolveCharacterFor(state, args.character);
         // Черты цели влияют на исход: труса легче запугать, упрямца труднее убедить.
         const tgt = String(args.target || '').trim().toLowerCase();
@@ -571,5 +582,5 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
   // не должны засорять контекст следующих ходов.
   const narration = stripHeroLabel(narrationParts.join('\n\n')).trim();
   if (!withTools && narration) state.messages.push({ role: 'assistant', content: narration, hero: state.activeCharacterId });
-  return { narration, rolls, truncated: finishReason === 'length' };
+  return { narration, rolls, truncated: finishReason === 'length', codexSeen, lookups };
 }

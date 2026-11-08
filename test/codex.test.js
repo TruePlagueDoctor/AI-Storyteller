@@ -1,7 +1,7 @@
 // Кодекс мира: какие статьи и в каком объёме идут рассказчику.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeEntry, findPeople, selectCodex, codexBlock, narratorIndex, CODEX_BUDGET_TOKENS, INDEX_BUDGET_TOKENS, entryBrief } from '../src/codex.js';
+import { normalizeEntry, findPeople, selectCodex, codexBlock, narratorIndex, lookupCodex, codexMisses, renderCodex, CODEX_BUDGET_TOKENS, INDEX_BUDGET_TOKENS, OPENING_BUDGET_TOKENS, entryBrief } from '../src/codex.js';
 import { composeStorySystem } from '../src/narrator.js';
 import { makeState, hero } from './helpers.js';
 
@@ -36,6 +36,7 @@ test('выжимка: своя или первая фраза описания',
 test('в сцене: существо — полностью, народ НПС — выжимка, предубеждения — только между теми, кто рядом', () => {
   const st = makeState({ lorebook: codex() });
   hero(st).race = 'эльфийка';
+  st.messages = [{ role: 'assistant', content: 'Таверна.' }];
   st.npcs = [{ name: 'Торин', race: 'гном', locked: [] }, { name: 'Грок', race: 'орк', locked: [] }];
   st.scene.present = ['Торин'];
   st.scene.creatures = ['Упыри'];
@@ -74,6 +75,7 @@ test('бюджет: полные статьи сжимаются до выжим
   const big = 'Очень длинное описание. '.repeat(120);
   const lore = Array.from({ length: 12 }, (_, i) => entry({ title: `Тварь ${i}`, kind: 'creature', brief: `Тварь номер ${i}. ` + 'жуткая '.repeat(20), content: big, fields: { habits: big } }));
   const st = makeState({ lorebook: lore });
+  st.messages = [{ role: 'assistant', content: 'Ночь.' }];
   st.scene.creatures = lore.map((e) => e.title);
   const block = codexBlock(st);
   assert.ok(block.length / 3.2 <= CODEX_BUDGET_TOKENS * 1.05, `размер ${Math.round(block.length / 3.2)} токенов`);
@@ -149,4 +151,44 @@ test('оглавление: длинный кодекс укладывается
   assert.match(idx, /Народы: Народ 0/);
   assert.match(idx, /\(и ещё \d+\)/);
   assert.equal(narratorIndex(makeState({ lorebook: [] })), '');
+});
+
+test('начало игры: рассказчик знакомится с бестиарием по выжимкам, потом — обычный режим', () => {
+  const st = makeState({ lorebook: codex() });
+  const sel = selectCodex(st);
+  const level = (t) => (sel.find((x) => x.entry.title === t) || {}).level;
+  assert.equal(level('Упыри'), 'brief');
+  assert.equal(level('Виверна'), 'brief');
+  assert.equal(level('Гильдия теней'), 'brief');
+  assert.ok(sel.findIndex((x) => x.entry.title === 'Упыри') < sel.findIndex((x) => x.entry.title === 'Гильдия теней'), 'бестиарий — раньше фракций');
+  assert.match(codexBlock(st), /Виверна \[бестиарий\] — Летучий ящер/);
+  st.messages = [{ role: 'user', content: 'Начнём' }, { role: 'assistant', content: 'Утро в деревне.' }];
+  assert.equal(selectCodex(st).find((x) => x.entry.title === 'Виверна'), undefined);
+});
+
+test('начало игры: свой, больший бюджет', () => {
+  const lore = Array.from({ length: 60 }, (_, i) => entry({ title: `Тварь ${i}`, kind: 'creature', brief: 'жуткая '.repeat(15) }));
+  const block = codexBlock(makeState({ lorebook: lore }));
+  assert.ok(block.length / 3.2 <= OPENING_BUDGET_TOKENS * 1.05);
+  assert.ok(block.length / 3.2 > CODEX_BUDGET_TOKENS, 'больше обычного');
+});
+
+test('подглядывание: полная статья по названию, ненайденное — с подсказкой', () => {
+  const st = makeState({ lorebook: codex() });
+  const r = lookupCodex(st, ['Упыри', 'упырь', 'Мертвяки']);
+  assert.match(r.text, /Слабости: огонь, серебро/);
+  assert.equal(r.found.length, 2);
+  assert.match(r.text, /«Мертвяки» в кодексе не найдено/);
+  assert.match(lookupCodex(st, []).text, /Не указано/);
+});
+
+test('проверка: существо в тексте без статьи в промте и без подглядывания', () => {
+  const st = makeState({ lorebook: codex() });
+  st.messages = [{ role: 'assistant', content: 'Тихо.' }];
+  const seen = renderCodex(st).shown;
+  assert.deepEqual(codexMisses(st, 'Из тумана выходят упыри.', seen), ['Упыри']);
+  seen.add(st.lorebook.find((e) => e.title === 'Упыри').id);
+  assert.deepEqual(codexMisses(st, 'Из тумана выходят упыри.', seen), []);
+  assert.deepEqual(codexMisses(st, 'Гном кивает.', renderCodex(st).shown), [], 'народы не проверяем');
+  assert.deepEqual(codexMisses(st, 'упыри', null), [], 'нет данных — молчим');
 });

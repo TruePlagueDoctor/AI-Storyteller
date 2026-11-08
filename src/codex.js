@@ -105,6 +105,12 @@ function sceneParty(state) {
   return { heroes, near };
 }
 
+// Начало игры: ни одного ответа рассказчика (служебные OOC не в счёт).
+export function isOpening(state) {
+  return !(state.messages || []).some((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string' && m.content.trim());
+}
+export const OPENING_BUDGET_TOKENS = 2400;
+
 export function selectCodex(state) {
   const book = (state.lorebook || []).filter((e) => e.enabled !== false).map((e) => (e.kind ? e : normalizeEntry(e)));
   if (!book.length) return [];
@@ -128,6 +134,11 @@ export function selectCodex(state) {
   for (const e of book) if (e.kind === 'place' && loc && mentioned(e, loc)) pick(e, 'brief', 70, 'место сцены');
   for (const e of book) if (mentioned(e, last2)) pick(e, 'brief', 60, 'упомянуто');
   for (const e of book) if (mentioned(e, older)) pick(e, 'brief', 40, 'упоминалось');
+  // Открывающая сцена: рассказчик ещё ничего не писал — пусть знает мир не только по названиям.
+  if (isOpening(state)) {
+    const order = { creature: 30, people: 25, faction: 20, place: 15 };
+    for (const e of book) if (order[e.kind]) pick(e, 'brief', order[e.kind], 'начало игры');
+  }
   return [...picked.values()].sort((a, b) => b.prio - a.prio);
 }
 
@@ -177,7 +188,8 @@ export function narratorIndex(state) {
   const kinds = [['creature', 'Бестиарий'], ['people', 'Народы'], ['faction', 'Фракции'], ['place', 'Места']];
   const lists = kinds.map(([k, n]) => [n, book.filter((e) => e.kind === k).map(label)]).filter(([, l]) => l.length);
   if (!lists.length) return '';
-  const head = 'Что есть в этом мире (когда сцене нужен зверь, чудовище, народ, фракция или место — бери отсюда, а не выдумывай; новое — только если ничего не подходит):';
+  const head = 'Что есть в этом мире (когда сцене нужен зверь, чудовище, народ, фракция или место — бери отсюда, а не выдумывай; новое — только если ничего не подходит). ' +
+    'Чудовища — всегда конкретный вид отсюда, не безымянная «тварь». Выводишь в сцену того, о ком ниже нет подробностей, — сначала загляни в статью (codex_lookup), потом пиши:';
   // По одному названию по кругу, пока влезает: так ни один раздел не съедает весь бюджет.
   const taken = lists.map(() => []);
   let used = tok(head) + lists.reduce((a, [n]) => a + tok(n + ': \n'), 0);
@@ -194,11 +206,14 @@ export function narratorIndex(state) {
   return [head, ...lines].join('\n') + (more ? `\n(и ещё ${more})` : '');
 }
 
-export function codexBlock(state) {
+// Блок кодекса для рассказчика и какие статьи в нём показаны (полностью или выжимкой).
+export function renderCodex(state) {
   const sel = selectCodex(state);
   const prejudice = prejudiceLines(state);
   const index = narratorIndex(state);
-  if (!sel.length && !prejudice.length && !index) return '';
+  const shown = new Set();
+  if (!sel.length && !prejudice.length && !index) return { text: '', shown };
+  const budget = isOpening(state) ? OPENING_BUDGET_TOKENS : CODEX_BUDGET_TOKENS;
   const head = '=== КОДЕКС МИРА ===\nНароды, существа, фракции и места этого мира. Не противоречь им; подробности сверх написанного додумывай в том же духе.';
   let used = tok(head);
   const parts = [head];
@@ -211,12 +226,58 @@ export function codexBlock(state) {
   for (const x of sel) {
     const full = x.level === 'full' ? renderFull(x.entry) : null;
     const brief = renderBrief(x.entry);
-    if (full && used + tok(full) <= CODEX_BUDGET_TOKENS) { parts.push(full); used += tok(full); }
-    else if (used + tok(brief) <= CODEX_BUDGET_TOKENS) { parts.push(brief); used += tok(brief); }
+    if (full && used + tok(full) <= budget) { parts.push(full); used += tok(full); shown.add(x.entry.id); }
+    else if (used + tok(brief) <= budget) { parts.push(brief); used += tok(brief); shown.add(x.entry.id); }
     else dropped.push(x.entry.title);
   }
   if (dropped.length) parts.push(`(не поместилось: ${dropped.slice(0, 12).join(', ')}${dropped.length > 12 ? '…' : ''})`);
-  return parts.join('\n');
+  return { text: parts.join('\n'), shown };
+}
+export const codexBlock = (state) => renderCodex(state).text;
+
+// ---- Подглядывание в кодекс ----
+// Рассказчик перед тем, как вывести в сцену существо (народ, фракцию), берёт его полную статью —
+// чтобы первое же появление было по кодексу, а не «киношным зомби».
+export const LOOKUP_TOOL = {
+  type: 'function',
+  function: {
+    name: 'codex_lookup',
+    description:
+      'Прочитать статьи кодекса мира перед тем, как писать. Вызывай, когда собираешься вывести в сцену существо, ' +
+      'народ, фракцию или место из оглавления кодекса, которых нет в кодексе подробно. Названия — как в оглавлении.',
+    parameters: {
+      type: 'object',
+      properties: { titles: { type: 'array', items: { type: 'string' }, description: 'Названия статей, до трёх.' } },
+      required: ['titles'],
+    },
+  },
+};
+export const hasCodex = (state) => (state.lorebook || []).some((e) => e.enabled !== false);
+
+// Возвращает текст для модели и id найденных статей.
+export function lookupCodex(state, titles) {
+  const book = (state.lorebook || []).filter((e) => e.enabled !== false).map((e) => (e.kind ? e : normalizeEntry(e)));
+  const list = (Array.isArray(titles) ? titles : [titles]).map(str).filter(Boolean).slice(0, 3);
+  const found = [];
+  const out = [];
+  for (const t of list) {
+    const e = findAny(book, t);
+    if (e) { found.push(e.id); out.push(renderFull(e)); continue; }
+    const similar = book.filter((x) => nameMatches(x, t)).map((x) => x.title).slice(0, 6);
+    out.push(`«${t}» в кодексе не найдено.` + (similar.length ? ` Похожие: ${similar.join(', ')}.` : ' Возьми название из оглавления.'));
+  }
+  if (!list.length) out.push('Не указано, что искать: передай названия из оглавления кодекса.');
+  return { text: out.join('\n'), found };
+}
+
+// Какие существа и фракции появились в тексте, хотя рассказчик их статей не видел и не заглядывал в них.
+export function codexMisses(state, narration, seen) {
+  if (!seen) return [];
+  const text = norm(narration);
+  if (!text) return [];
+  return (state.lorebook || []).filter((e) => e.enabled !== false).map((e) => (e.kind ? e : normalizeEntry(e)))
+    .filter((e) => (e.kind === 'creature' || e.kind === 'faction') && !seen.has(e.id) && mentioned(e, text))
+    .map((e) => e.title);
 }
 
 // Оглавление для учётчика: только названия по разделам — чтобы указывать народ НПС и существ в сцене.
