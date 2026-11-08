@@ -161,13 +161,48 @@ function renderFull(e) {
   return s;
 }
 
+// Оглавление для рассказчика: что вообще есть в мире (существа — с опасностью и местом обитания),
+// чтобы он брал зверей, народы и фракции отсюда, а не выдумывал. Ограничено INDEX_BUDGET_TOKENS.
+export const INDEX_BUDGET_TOKENS = 250;
+export function narratorIndex(state) {
+  const book = (state.lorebook || []).filter((e) => e.enabled !== false).map((e) => (e.kind ? e : normalizeEntry(e)));
+  const label = (e) => {
+    if (e.kind !== 'creature') return e.title;
+    const f = e.fields || {};
+    const bits = [];
+    if (f.danger) bits.push('☠'.repeat(f.danger));
+    if (str(f.habitat)) bits.push(cut(str(f.habitat).replace(/\s+/g, ' '), 30));
+    return bits.length ? `${e.title} (${bits.join(', ')})` : e.title;
+  };
+  const kinds = [['creature', 'Бестиарий'], ['people', 'Народы'], ['faction', 'Фракции'], ['place', 'Места']];
+  const lists = kinds.map(([k, n]) => [n, book.filter((e) => e.kind === k).map(label)]).filter(([, l]) => l.length);
+  if (!lists.length) return '';
+  const head = 'Что есть в этом мире (когда сцене нужен зверь, чудовище, народ, фракция или место — бери отсюда, а не выдумывай; новое — только если ничего не подходит):';
+  // По одному названию по кругу, пока влезает: так ни один раздел не съедает весь бюджет.
+  const taken = lists.map(() => []);
+  let used = tok(head) + lists.reduce((a, [n]) => a + tok(n + ': \n'), 0);
+  const longest = Math.max(...lists.map(([, l]) => l.length));
+  for (let i = 0; i < longest; i++) {
+    lists.forEach(([, l], j) => {
+      if (i >= l.length || taken[j].length < i) return;
+      const t = tok(l[i] + ', ');
+      if (used + t <= INDEX_BUDGET_TOKENS) { taken[j].push(l[i]); used += t; }
+    });
+  }
+  const more = lists.reduce((a, [, l], j) => a + l.length - taken[j].length, 0);
+  const lines = lists.map(([n], j) => taken[j].length ? `${n}: ${taken[j].join(', ')}` : null).filter(Boolean);
+  return [head, ...lines].join('\n') + (more ? `\n(и ещё ${more})` : '');
+}
+
 export function codexBlock(state) {
   const sel = selectCodex(state);
   const prejudice = prejudiceLines(state);
-  if (!sel.length && !prejudice.length) return '';
+  const index = narratorIndex(state);
+  if (!sel.length && !prejudice.length && !index) return '';
   const head = '=== КОДЕКС МИРА ===\nНароды, существа, фракции и места этого мира. Не противоречь им; подробности сверх написанного додумывай в том же духе.';
   let used = tok(head);
   const parts = [head];
+  if (index) { parts.push(index); used += tok(index); }
   if (prejudice.length) {
     const p = 'Кто здесь как к кому относится (играй через поведение, не объявляй вслух):\n' + prejudice.join('\n');
     parts.push(p); used += tok(p);

@@ -1,7 +1,7 @@
 // Кодекс мира: какие статьи и в каком объёме идут рассказчику.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeEntry, findPeople, selectCodex, codexBlock, CODEX_BUDGET_TOKENS, entryBrief } from '../src/codex.js';
+import { normalizeEntry, findPeople, selectCodex, codexBlock, narratorIndex, CODEX_BUDGET_TOKENS, INDEX_BUDGET_TOKENS, entryBrief } from '../src/codex.js';
 import { composeStorySystem } from '../src/narrator.js';
 import { makeState, hero } from './helpers.js';
 
@@ -50,7 +50,7 @@ test('в сцене: существо — полностью, народ НПС 
   assert.match(block, /Упыри[\s\S]*Слабости: огонь, серебро/);
   assert.match(block, /Гномы о народе «Эльфы»: презирают за спесь/);
   assert.match(block, /Эльфы о народе «Гномы»: считают грубыми/);
-  assert.ok(!/Орки/.test(block), 'вражда с орками — не в этой сцене');
+  assert.ok(!/о народе «Орки»/.test(block), 'вражда с орками — не в этой сцене');
 });
 
 test('упоминания: в последнем ходе игрока — полностью, в последних сообщениях — выжимкой, давнее — нет', () => {
@@ -125,4 +125,28 @@ test('рассказчик дописывает кодекс: раздел и в
   executeTool('record_lore', { title: 'Кобольды', kind: 'creature', brief: 'Мелкие пещерные пакостники.', content: 'Живут в шахтах.' }, st);
   assert.equal(st.lorebook[0].kind, 'creature');
   assert.equal(st.lorebook[0].brief, 'Мелкие пещерные пакостники.');
+});
+
+test('оглавление: рассказчик знает, кто есть в мире, даже если в сцене никого', () => {
+  const lore = codex();
+  lore.find((e) => e.title === 'Упыри').fields.habitat = 'старые кладбища и склепы';
+  const st = makeState({ lorebook: lore });
+  const p = composeStorySystem(st);
+  assert.match(p, /бери отсюда, а не выдумывай/);
+  assert.match(p, /Бестиарий: Упыри \(☠☠☠, старые кладбища и склепы\), Виверна/);
+  assert.match(p, /Народы: Гномы, Эльфы, Орки/);
+  assert.match(p, /Фракции: Гильдия теней/);
+  assert.ok(!/Виверна \(/.test(p), 'без опасности и места — просто название');
+});
+
+test('оглавление: длинный кодекс укладывается в свой бюджет, разделы делят его поровну', () => {
+  const lore = [
+    ...Array.from({ length: 80 }, (_, i) => entry({ title: `Существо с длинным названием ${i}`, kind: 'creature', fields: { danger: 4, habitat: 'очень далёкие и тёмные болота востока' } })),
+    ...Array.from({ length: 30 }, (_, i) => entry({ title: `Народ ${i}`, kind: 'people' })),
+  ];
+  const idx = narratorIndex(makeState({ lorebook: lore }));
+  assert.ok(idx.length / 3.2 <= INDEX_BUDGET_TOKENS, `размер ${Math.round(idx.length / 3.2)}`);
+  assert.match(idx, /Народы: Народ 0/);
+  assert.match(idx, /\(и ещё \d+\)/);
+  assert.equal(narratorIndex(makeState({ lorebook: [] })), '');
 });
