@@ -25,7 +25,7 @@
 | `src/sync.js` | `composeSyncSystem` + `technicalSyncHead`/`legacySyncHead`, `syncState` (2 раунда, `completenessHints`), `syncNarration`/`resyncNarration` |
 | `src/turn.js`, `src/journal.js` | `runTurn`, `afterSync` (противоречия + замечание рассказчику + `markSeen`: `npc.lastSeen` и свидетели в `character.appearanceLog`); журнал учёта (`journalEntry`, `FIX_SIGNAL`) |
 | `src/summary.js` | сжатие: `planSummary`/`computeSummary`/`applySummary` |
-| `src/art.js`, `src/fill.js` | `portraitTags`, `sceneTags`, `codexTags` (арт «типичного представителя» статьи кодекса; рисуется стилем портретов без портретных тегов — `codexStyle` + full body; файл в `avatars/`, `entry.image`/`entry.imageTags`); `fillField` (✨), `writeBrief` (✨ выжимка статьи кодекса) |
+| `src/art.js`, `src/fill.js` | `portraitTags`, `sceneTags`, `codexTags` (запросы тегов — с `maxTokens` и штрафом за повторы; `cleanTags` убирает повторы и мусор, режет по числу — модель бывает зацикливается) (арт «типичного представителя» статьи кодекса; рисуется стилем портретов без портретных тегов — `codexStyle` + full body; файл в `avatars/`, `entry.image`/`entry.imageTags`); `fillField` (✨), `writeBrief` (✨ выжимка статьи кодекса) |
 | `src/paths.js` | где лежат данные (`STORYTELLER_DATA_DIR`) |
 | `src/backup.js` | резервные копии `data/backups/<время>/` (раз в сутки при старте, по кнопке, последние 10; снимки ходов не копируются); восстановление — `importSlot` новой историей |
 | `Запуск.bat`, `Обновить.bat` | Windows: запуск двойным щелчком (`OPEN_BROWSER=1` — сервер сам открывает браузер) и обновление через git или архив main (копирует себя во %TEMP%, не трогает `data`, `.env`); в git с CRLF (`.gitattributes`) |

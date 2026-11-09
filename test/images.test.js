@@ -52,3 +52,24 @@ test('настройки выключают второй проход и рук�
   const r = await txt2img(settings({ sdUrl: sd.url }), 'x');
   assert.ok(r.warnings.some((w) => /ADetailer не установлен/.test(w)));
 });
+
+test('теги: зациклившийся ответ модели обрезается до осмысленного начала', async () => {
+  const { cleanTags } = await import('../src/art.js');
+  const loop = '1girl, adult, dark hair, Dark Hair, glowing eyes, ' + Array(500).fill('glaring').join(', ');
+  assert.equal(cleanTags(loop), '1girl, adult, dark hair, glowing eyes, glaring');
+  const many = Array.from({ length: 100 }, (_, i) => `tag${i}`).join(', ');
+  assert.equal(cleanTags(many, 40).split(', ').length, 40);
+  assert.equal(cleanTags('- 1boy\n- beard\nсовсем длинная строка пояснений которую модель зачем-то дописала после тегов и которая не тег'), '1boy, beard');
+  assert.equal(cleanTags(''), '');
+});
+
+test('теги портрета: потолок длины ответа и штраф за повторы в запросе', async () => {
+  const { installFakeFetch, reply } = await import('./fake-llm.js');
+  const { portraitTags } = await import('../src/art.js');
+  const fake = installFakeFetch([reply('1girl, adult, ' + Array(300).fill('dark').join(', '), [], 'length')]);
+  restore = fake.restore;
+  const tags = await portraitTags({ state: { model: 'm' }, apiKey: 'k', subject: { name: 'Ада', appearance: 'тёмные волосы' } });
+  assert.equal(tags, '1girl, adult, dark');
+  assert.ok(fake.requests[0].max_tokens > 0 && fake.requests[0].max_tokens <= 500);
+  assert.ok(fake.requests[0].frequency_penalty > 0);
+});

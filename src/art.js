@@ -4,6 +4,24 @@ import { clockLabel, dayPart } from './scene.js';
 import { callOpenRouter, stripToolMarkup, toolModelOf } from './llm.js';
 
 
+// Теги в порядок: без повторов и мусора, не больше max. Модель иногда зацикливается
+// («glaring, glaring, glaring…» до упора) — тогда остаётся осмысленное начало.
+export function cleanTags(text, max = 60) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of String(text || '').split(/[,\n]+/)) {
+    const t = raw.trim().replace(/^(?:[-•*]\s*|\d+[.)]\s+)/, '').replace(/[.;\s]+$/, '');
+    if (!t || t.length > 60) continue;
+    const k = t.toLowerCase().replace(/[()]/g, '').replace(/\s+/g, ' ');
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(t);
+    if (out.length >= max) break;
+  }
+  return out.join(', ');
+}
+const TAG_CALL = { noReasoning: true, frequencyPenalty: 0.4 };
+
 // Перевести описание внешности в теги для SD (booru-стиль). Один дешёвый запрос.
 export async function portraitTags({ state, apiKey, subject }) {
   const { name, appearance, description, race, social, kind } = subject;
@@ -27,9 +45,11 @@ export async function portraitTags({ state, apiKey, subject }) {
       'Не выдумывай того, чего нет в описании.' },
     { role: 'user', content: `${kind === 'hero' ? 'Герой' : 'Персонаж'}: ${name}\n${facts || '(описания нет — только имя)'}` },
   ];
-  const data = await callOpenRouter({ purpose: 'теги портрета', model: toolModelOf(state), messages, apiKey, temperature: 0.3, noReasoning: true });
+  const data = await callOpenRouter({ purpose: 'теги портрета', model: toolModelOf(state), messages, apiKey, temperature: 0.3, maxTokens: 400, ...TAG_CALL });
   const text = String(data?.choices?.[0]?.message?.content || '').trim();
-  return stripToolMarkup(text).replace(/^[^:]*теги[^:]*:\s*/i, '').replace(/\n+/g, ', ').replace(/[.\s]+$/, '');
+  const tags = cleanTags(stripToolMarkup(text).replace(/^[^:]*теги[^:]*:\s*/i, ''), 40);
+  if (!tags) throw new Error('Модель не вернула теги — попробуй ещё раз.');
+  return tags;
 }
 
 // ---- Иллюстрация сцены ----
@@ -55,7 +75,7 @@ function sceneCandidates(ctx) {
   }
   return out.slice(0, 8).map((c) => ({
     ...c,
-    tags: c.tags ? c.tags.split(',').map((t) => t.trim()).filter((t) => t && !PORTRAIT_ONLY.test(t)).join(', ') : '',
+    tags: c.tags ? cleanTags(c.tags, 40).split(', ').filter((t) => t && !PORTRAIT_ONLY.test(t)).join(', ') : '',
   }));
 }
 
@@ -95,15 +115,17 @@ export async function sceneTags({ state, apiKey, ctx }) {
     (ctx.action ? `ДЕЙСТВИЕ ИГРОКА: ${String(ctx.action).slice(0, 400)}\n\n` : '') +
     `ФРАГМЕНТ:\n${text.length > 3000 ? text.slice(0, 3000) + '…' : text}`;
   const data = await callOpenRouter({
-    purpose: 'теги сцены', model: toolModelOf(state), apiKey, temperature: 0.4, noReasoning: true,
+    purpose: 'теги сцены', model: toolModelOf(state), apiKey, temperature: 0.4, maxTokens: 700, ...TAG_CALL,
     messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
   });
   const raw = String(data?.choices?.[0]?.message?.content || '').trim();
   let parsed = null;
   const m = raw.match(/\{[\s\S]*\}/);
   if (m) { try { parsed = JSON.parse(m[0]); } catch { /* не JSON */ } }
-  let tags = parsed && typeof parsed.tags === 'string' ? parsed.tags : stripToolMarkup(raw).replace(/^[^:]*теги[^:]*:\s*/i, '');
-  tags = tags.replace(/\n+/g, ', ').replace(/\s*,\s*/g, ', ').replace(/(, )+/g, ', ').replace(/^[,\s]+|[.,\s]+$/g, '');
+  // Оборванный JSON (упёрлись в потолок длины) — достаём теги из него как есть.
+  const cut = !parsed && raw.match(/"tags"\s*:\s*"([^"]*)/);
+  let tags = parsed && typeof parsed.tags === 'string' ? parsed.tags : cut ? cut[1] : stripToolMarkup(raw).replace(/^[^:]*теги[^:]*:\s*/i, '');
+  tags = cleanTags(tags, 60);
   if (!tags) throw new Error('Модель не вернула описание кадра — попробуйте ещё раз или другую модель учёта.');
   return {
     tags,
@@ -142,9 +164,8 @@ export async function codexTags({ state, apiKey, entry }) {
       'Не добавляй теги качества и стиля — они подставятся сами. Не выдумывай того, что противоречит статье.' },
     { role: 'user', content: `Статья «${e.title || ''}» (${kind}):\n${facts || '(описания нет — только название)'}` },
   ];
-  const data = await callOpenRouter({ purpose: 'теги иллюстрации кодекса', model: toolModelOf(state), messages, apiKey, temperature: 0.4, noReasoning: true });
-  const text = stripToolMarkup(String(data?.choices?.[0]?.message?.content || '')).trim()
-    .replace(/^[^:]*теги[^:]*:\s*/i, '').replace(/\n+/g, ', ').replace(/[.\s]+$/, '');
+  const data = await callOpenRouter({ purpose: 'теги иллюстрации кодекса', model: toolModelOf(state), messages, apiKey, temperature: 0.4, maxTokens: 450, ...TAG_CALL });
+  const text = cleanTags(stripToolMarkup(String(data?.choices?.[0]?.message?.content || '')).trim().replace(/^[^:]*теги[^:]*:\s*/i, ''), 45);
   if (!text) throw new Error('Модель не вернула теги — попробуй ещё раз.');
   return text;
 }

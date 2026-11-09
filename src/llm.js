@@ -121,11 +121,12 @@ export async function callOpenRouter(opts) {
   return data;
 }
 
-async function postOpenRouter({ model, messages, apiKey, tools, temperature, frequencyPenalty, presencePenalty, toolChoice = 'auto', noReasoning = false, _noReasoningFlag = false, _relaxed = false, capture = {} }) {
+async function postOpenRouter({ model, messages, apiKey, tools, temperature, frequencyPenalty, presencePenalty, maxTokens, toolChoice = 'auto', noReasoning = false, _noReasoningFlag = false, _relaxed = false, capture = {} }) {
   const relaxed = _relaxed || RELAXED.has(model);
   // usage.include — OpenRouter вернёт стоимость запроса.
   const body = { model, messages, usage: { include: true } };
   if (temperature !== undefined) body.temperature = temperature;
+  if (maxTokens) body.max_tokens = maxTokens; // потолок ответа: зациклившаяся модель не пишет тысячи слов
   if (!relaxed && frequencyPenalty) body.frequency_penalty = frequencyPenalty;
   if (!relaxed && presencePenalty) body.presence_penalty = presencePenalty;
   if (tools) {

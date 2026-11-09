@@ -20,7 +20,7 @@ import { planSummary, computeSummary, applySummary } from './src/summary.js';
 import { composeStorySystem, storyPromptSections } from './src/narrator.js';
 import { syncNarration, resyncNarration } from './src/sync.js';
 import { replayRequest } from './src/llm.js';
-import { portraitTags, sceneTags, codexTags, codexStyle } from './src/art.js';
+import { portraitTags, sceneTags, codexTags, codexStyle, cleanTags } from './src/art.js';
 import { DEFAULT_IMAGE_SETTINGS } from './src/images.js';
 import { fillField, writeBrief } from './src/fill.js';
 import { CODEX_KINDS, KIND_LABEL, KIND_FIELDS, findPeople } from './src/codex.js';
@@ -390,7 +390,8 @@ app.get('/api/images/ping', async (_req, res) => {
 
 async function generatePortrait(res, subject, assign) {
   const state = getState();
-  const tags = String(subject.tagsOverride || '').trim() || await portraitTags({ state, apiKey: apiKey(), subject });
+  // Теги из поля тоже чистим: там мог остаться зациклившийся ответ модели.
+  const tags = cleanTags(subject.tagsOverride, 80) || await portraitTags({ state, apiKey: apiKey(), subject });
   const { png, prompt, warnings } = await txt2img(state, tags);
   await mkdir(AVATAR_DIR, { recursive: true });
   const filename = `${randomUUID()}.png`;
@@ -422,7 +423,7 @@ app.post('/api/lore/:id/illustrate', async (req, res) => {
     const state = getState();
     const e = state.lorebook.find((x) => x.id === req.params.id);
     if (!e) throw new Error('Статья не найдена.');
-    let tags = String(req.body?.tags || '').trim();
+    let tags = cleanTags(req.body?.tags, 80);
     if (!tags) {
       if (!apiKey()) throw new Error('Не задан OPENROUTER_API_KEY — впиши теги вручную или добавь ключ.');
       tags = await codexTags({ state, apiKey: apiKey(), entry: e });
@@ -498,7 +499,7 @@ app.post('/api/log/:index/illustrate', async (req, res) => {
     const state = getState();
     const entry = state.log[index];
     if (entry.role !== 'narrator') throw new Error('Иллюстрировать можно только реплику рассказчика.');
-    const tags = String(req.body?.tags || '').trim();
+    const tags = cleanTags(req.body?.tags, 80);
     if (!tags) throw new Error('Пустое описание кадра.');
     const textBefore = entry.text;
     const { png, prompt, seed, width, height, warnings, hires, faceFix } = await txt2img(state, tags, { kind: 'scene', seed: req.body?.seed });
