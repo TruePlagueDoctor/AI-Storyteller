@@ -20,7 +20,7 @@
 | Файл | Что внутри |
 |---|---|
 | `server.js` | маршруты API, `runPlayerTurn` (замок хода `turnInFlight`, `whileIdle` — запрет менять партию/ленту/героев во время хода), снимки, тайминги, фоновое сжатие истории (`scheduleCompression`), генерация портретов/иллюстраций, `publicState()` |
-| `src/llm.js` | `callOpenRouter` (цепочка откатов + запись в диагностику), `replayRequest`, `toolModelOf`, разбор утёкшей разметки (`stripToolMarkup`, `parseLeakedToolCalls`) |
+| `src/llm.js` | `callOpenRouter` (цепочка откатов + запись в диагностику; у каждого запроса потолок ответа — `maxTokens` или `DEFAULT_MAX_TOKENS` 16000), `replayRequest`, `toolModelOf`, разбор утёкшей разметки (`stripToolMarkup`, `parseLeakedToolCalls`) |
 | `src/narrator.js` | `composeStorySystem` / `storyPromptSections` (промт рассказчика по разделам: лорбук, герои, НПС, хроника, сцена; разбор размера — `/api/prompt/breakdown`, «Диагностика → Состав промта»), `labelHeroes`, `narrate` (с `roll_check`) |
 | `src/sync.js` | `composeSyncSystem` + `technicalSyncHead`/`legacySyncHead`, `syncState` (2 раунда, `completenessHints`), `syncNarration`/`resyncNarration` |
 | `src/turn.js`, `src/journal.js` | `runTurn`, `afterSync` (противоречия + замечание рассказчику + `markSeen`: `npc.lastSeen` и свидетели в `character.appearanceLog`); журнал учёта (`journalEntry`, `FIX_SIGNAL`) |

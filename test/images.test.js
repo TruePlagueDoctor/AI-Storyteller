@@ -73,3 +73,13 @@ test('теги портрета: потолок длины ответа и шт�
   assert.ok(fake.requests[0].max_tokens > 0 && fake.requests[0].max_tokens <= 500);
   assert.ok(fake.requests[0].frequency_penalty > 0);
 });
+
+test('любой запрос к модели — с потолком длины ответа', async () => {
+  const { installFakeFetch, reply } = await import('./fake-llm.js');
+  const { callOpenRouter, DEFAULT_MAX_TOKENS } = await import('../src/llm.js');
+  const fake = installFakeFetch([reply('ок')]);
+  restore = fake.restore;
+  await callOpenRouter({ purpose: 'тест', model: 'm', apiKey: 'k', messages: [{ role: 'user', content: 'x' }] });
+  assert.equal(fake.requests[0].max_tokens, DEFAULT_MAX_TOKENS);
+  assert.ok(DEFAULT_MAX_TOKENS <= 20000);
+});
