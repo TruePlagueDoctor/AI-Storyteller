@@ -1,6 +1,6 @@
 // Ход целиком: рассказ → учёт → сверка текста с состоянием.
 
-import { findContradictions, findSceneIssues, findQuestionIssues, autoFix, correctionNote } from './contradictions.js';
+import { findContradictions, findSceneIssues, findQuestionIssues, findClicheIssues, autoFix, correctionNote } from './contradictions.js';
 import { toolModelOf } from './llm.js';
 import { narrate, lastPlayerAction } from './narrator.js';
 import { syncState, syncWorthwhile } from './sync.js';
@@ -28,7 +28,7 @@ export function afterSync(state, narration, rolls = [], { codexSeen = null } = {
   const issues = findContradictions(state, narration);
   const fixed = autoFix(issues);
   const scene = findSceneIssues(state, narration, lastPlayerAction(state), rolls);
-  const questions = findQuestionIssues(state, narration);
+  const questions = [...findQuestionIssues(state, narration), ...findClicheIssues(narration)];
   const missed = codexMisses(state, narration, codexSeen);
   const codex = missed.length ? [{ kind: 'codex', text: `Ты вывел ${missed.map((t) => `«${t}»`).join(', ')}, не зная статьи кодекса. ` +
     'Сверь с ней облик и повадки (codex_lookup) и дальше заглядывай в статью до того, как выводить существо в сцену.' }] : [];
