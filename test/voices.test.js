@@ -3,7 +3,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { installFakeFetch, reply, call } from './fake-llm.js';
 import { runTurn, markSeen } from '../src/turn.js';
-import { voiceCandidates, voiceMessages, parseVoice, MAX_VOICES } from '../src/voices.js';
+import { voiceCandidates, voiceMessages, parseVoice, guardVoice, MAX_VOICES } from '../src/voices.js';
 import { composeStorySystem } from '../src/narrator.js';
 import { makeState, hero } from './helpers.js';
 
@@ -61,7 +61,7 @@ test('только что вошедший не слышал прежних ре
   st.npcs[0].lastSeen = { turn: 1, day: 1, since: 1 }; // давно не виделись
   const text = voiceMessages(st, st.npcs[0]).map((m) => m.content).join('\n');
   assert.ok(!text.includes('Подхожу к воротам'));
-  assert.match(text, /только что оказался в этой сцене/);
+  assert.match(text, /Ольт только что оказался в этой сцене/);
 });
 
 test('markSeen ведёт счёт, с какого хода персонаж рядом без перерыва', () => {
@@ -84,13 +84,13 @@ test('ход: персонаж решает до рассказа, расска�
   const st = world();
   fake = installFakeFetch([
     (body) => {
-      assert.match(body.messages[0].content, /^Ты играешь одного персонажа/);
+      assert.match(body.messages[0].content, /^Задание: сыграть одного персонажа/);
       assert.ok(body.max_tokens <= 400);
       return reply('РЕШЕНИЕ: содрать серебряный\nРЕПЛИКА: Серебряный — и иди.\nВЫДАЁТ: оглядывается на караульную');
     },
     (body) => {
       const prompt = body.messages.map((m) => m.content).join('\n');
-      assert.match(prompt, /ПЕРСОНАЖИ, КОТОРЫЕ РЕШИЛИ САМИ[\s\S]*Ольт — намерение: содрать серебряный; говорит: «Серебряный — и иди\.»; снаружи заметно: оглядывается на караульную/);
+      assert.match(prompt, /ПЕРСОНАЖИ, КОТОРЫЕ РЕШИЛИ САМИ[\s\S]*Ольт \(персонаж, не герой\) — делает: содрать серебряный; его слова: «Серебряный — и иди\.»; снаружи заметно: оглядывается на караульную/);
       assert.ok(!prompt.includes('берёт взятки'), 'тайну играющего сам рассказчик не видит');
       assert.ok(prompt.includes('беглая баронесса'), 'тайны остальных — как раньше');
       return reply('— Серебряный — и иди, — бросает Ольт, оглянувшись на караульную.');
@@ -125,4 +125,51 @@ test('без отметки промт рассказчика прежний: т
   const p = composeStorySystem(st);
   assert.ok(p.includes('СКРЫВАЕТ (герой не знает): берёт взятки'));
   assert.ok(!p.includes('РЕШИЛИ САМИ'));
+});
+
+// Жалоба: модель персонажа путала себя с героем. Причина — в запросе персонаж был «ты», а в приложенном
+// тексте рассказчика «ты» — это герой.
+test('в запросе персонажа нет двусмысленного «ты»: карточка в третьем лице, чужое «ты» подписано', () => {
+  const st = world();
+  st.messages[1].content = 'Ты подходишь к воротам. Ольт поднимает алебарду.';
+  const [sys, user] = voiceMessages(st, st.npcs[0]).map((m) => m.content);
+  assert.match(sys, /Твой персонаж — Ольт\. Герой игрока — Ян\. Это разные люди/);
+  assert.ok(!/ЧТО ТЫ СКРЫВАЕШЬ|Кто ты|=== ТЫ/.test(sys), 'карточка не обращается к персонажу на «ты»');
+  assert.match(sys, /СКРЫВАЕТ: берёт взятки/);
+  assert.match(user, /«ты» в этих отрывках — это Ян, герой игрока, а НЕ Ольт/);
+  assert.match(user, /\[Игрок пишет за героя \(Ян\), «я» здесь — Ян\]: Подхожу к воротам/);
+  assert.match(user, /\[Рассказчик — герою \(Ян\)\]: Ты подходишь к воротам/);
+  assert.match(user, /РЕШЕНИЕ: Ольт …/);
+  assert.match(user.slice(-700), /Отвечай только за своего персонажа \(Ольт\)\. Ян — не твой персонаж/);
+  // Повествование от третьего лица — пояснять «ты» не нужно.
+  st.narration = 'third';
+  assert.ok(!/«ты» в этих отрывках/.test(voiceMessages(st, st.npcs[0])[1].content));
+  st.narration = 'second_vy';
+  assert.match(voiceMessages(st, st.npcs[0])[1].content, /«вы» в этих отрывках — это Ян/);
+});
+
+test('защита: ответ «за героя» отбрасывается, повтор слов игрока не выдаётся за реплику персонажа', () => {
+  const st = world();
+  const olt = st.npcs[0];
+  assert.equal(guardVoice({ decision: 'Ян показывает бумаги и проходит', line: '', tell: '' }, st, olt), null, 'решение о действиях героя — не решение персонажа');
+  assert.equal(guardVoice({ decision: 'Прошу пропустить меня', line: 'Ольт, пропусти меня', tell: '' }, st, olt), null, 'модель повторила ход игрока');
+  assert.deepEqual(guardVoice({ decision: 'Ольт не пускает Яна без бумаг', line: 'Бумаги покажи.', tell: '' }, st, olt),
+    { decision: 'Ольт не пускает Яна без бумаг', line: 'Бумаги покажи.', tell: '' });
+  assert.deepEqual(guardVoice({ decision: 'не пускать', line: 'Ольт, пропусти меня', tell: 'мнётся' }, st, olt),
+    { decision: 'не пускать', line: '', tell: 'мнётся' }, 'чужая реплика убрана, остальное остаётся');
+});
+
+test('рассказчику решение подаётся с пометкой, что это персонаж, а не герой', async () => {
+  const st = world();
+  fake = installFakeFetch([
+    reply('РЕШЕНИЕ: Ольт требует серебряный\nРЕПЛИКА: Серебряный — и иди.\nВЫДАЁТ: —'),
+    (body) => {
+      const prompt = body.messages.map((m) => m.content).join('\n');
+      assert.match(prompt, /• Ольт \(персонаж, не герой\) — делает: Ольт требует серебряный; его слова: «Серебряный — и иди\.»/);
+      assert.match(prompt, /Это поступки и слова самих персонажей, не героя/);
+      return reply('— Серебряный — и иди, — бросает Ольт.');
+    },
+    reply('', [call('nothing', {})]),
+  ]);
+  await runTurn({ state: st, apiKey: 'k' });
 });

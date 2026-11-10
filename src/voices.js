@@ -41,71 +41,112 @@ function witnessed(state, npc) {
   return msgs.slice(0, -1).slice(-count); // без текущего хода игрока — он идёт отдельно
 }
 
+// Карточка — в третьем лице. Раньше она обращалась к персонажу на «ты» («Кто ты», «ЧЕГО ТЫ ХОЧЕШЬ»), а ниже шёл
+// текст рассказчика, где «ты» — герой: модель путала себя с героем и приписывала себе его поступки.
 function cardLines(n) {
   const out = [];
   const add = (label, v) => { if (v && String(v).trim()) out.push(`${label}: ${String(v).trim()}`); };
-  add('Кто ты', n.description);
+  add('Кто это', n.description);
   add('Народ', n.race);
   add('Внешность', n.appearance);
   if ((n.traits || []).length) add('Черты', n.traits.join(', '));
   if (n.competence && n.competence !== 'обычный') add('Умелость', `${n.competence}${(n.skills || []).length ? ' — ' + n.skills.join(', ') : ''}`);
-  else if ((n.skills || []).length) add('Умеешь', n.skills.join(', '));
+  else if ((n.skills || []).length) add('Умеет', n.skills.join(', '));
   add('Характер и речь', n.personality);
   add('Изюминка', n.quirk);
-  add('ЧЕГО ТЫ ХОЧЕШЬ', n.wants);
-  add('ЧТО ТЫ СКРЫВАЕШЬ', n.secret);
+  add('ХОЧЕТ', n.wants);
+  add('СКРЫВАЕТ', n.secret);
   add('Связи', n.links);
   add('Манера речи', n.voiceStyle);
   add('Юмор', n.voiceHumor);
   add('Привычки в речи', n.voiceHabits);
-  add('Как прячешь чувства', n.voiceMasks);
+  add('Как прячет чувства', n.voiceMasks);
   add('В речи никогда', n.voiceTaboos);
-  if (Array.isArray(n.voiceSamples) && n.voiceSamples.length) add('Как ты звучишь (образцы интонации, не повторяй дословно)', n.voiceSamples.slice(-4).map((s) => `«${s}»`).join(' '));
+  if (Array.isArray(n.voiceSamples) && n.voiceSamples.length) add('Как звучит (образцы интонации, не повторять дословно)', n.voiceSamples.slice(-4).map((x) => `«${x}»`).join(' '));
   return out;
 }
 
 export function voiceMessages(state, npc) {
   const hero = state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0];
   const heroName = hero ? hero.name : 'герой';
+  const me = npc.name;
   const sc = state.scene || {};
-  let sys = `Ты играешь одного персонажа ролевой игры — ${npc.name}. Ты не рассказчик: не описываешь мир и не решаешь за других. ` +
-    'Ты знаешь только то, что написано ниже и что слышал в сцене; чего здесь нет — ты не знаешь и не выдумываешь фактов о мире. ' +
-    'Действуй в своих интересах и в своём характере: можешь отказать, торговаться, солгать, промолчать, уйти от ответа — если тебе так выгоднее. ' +
-    'Тайну не раскрывай без веской причины.';
+  let sys = `Задание: сыграть одного персонажа ролевой игры. Твой персонаж — ${me}. Герой игрока — ${heroName}. Это разные люди: ` +
+    `за ${heroName} решает и говорит только игрок, а ты отвечаешь только за персонажа по имени ${me}.\n` +
+    `Ты не рассказчик: мир не описываешь и за других не решаешь. ${me} знает только то, что написано ниже и что слышал в сцене; ` +
+    'чего здесь нет — он не знает, фактов о мире не выдумывай. ' +
+    `${me} действует в своих интересах и в своём характере: может отказать, торговаться, солгать, промолчать, уйти от ответа — если ему так выгоднее. ` +
+    'Тайну он не раскрывает без веской причины.';
   const world = String(state.worldPrompt || '').trim();
   if (world) sys += `\n\n=== МИР (общеизвестное) ===\n${world.length > WORLD_CHARS ? world.slice(0, WORLD_CHARS) + '…' : world}`;
-  sys += `\n\n=== ТЫ: ${npc.name} ===\n${cardLines(npc).join('\n') || 'О тебе пока известно мало — держись того, что уже прозвучало.'}`;
+  sys += `\n\n=== ТВОЙ ПЕРСОНАЖ: ${me} ===\n${cardLines(npc).join('\n') || 'О нём пока известно мало — держись того, что уже прозвучало.'}`;
 
   const about = [];
-  if (npc.attitude) about.push(`Твоё отношение: ${npc.attitude}`);
-  if (npc.history) about.push(`Что между вами было: ${tailItems(npc.history, 8, 900)}`);
-  if (hero && hero.appearance && hero.appearance.trim()) about.push(`Как он выглядит: ${hero.appearance.trim()}`);
+  if (npc.attitude) about.push(`Отношение персонажа ${me} к нему: ${npc.attitude}`);
+  if (npc.history) about.push(`Что между ними было («герой» в записях — это ${heroName}): ${tailItems(npc.history, 8, 900)}`);
+  if (hero && hero.appearance && hero.appearance.trim()) about.push(`Как выглядит ${heroName}: ${hero.appearance.trim()}`);
   const facts = (state.events || []).filter((e) => [...(e.participants || []), ...(e.knownBy || [])].some((p) => isNpc(npc, p))).slice(-8)
     .map((e) => `• ${e.text}${e.status === 'done' ? ' (уже в прошлом)' : ''}`);
-  if (facts.length) about.push('Что ты знаешь из случившегося:\n' + facts.join('\n'));
-  sys += `\n\n=== ${heroName.toUpperCase()} ДЛЯ ТЕБЯ ===\n${about.join('\n') || 'Ты видишь его впервые.'}`;
+  if (facts.length) about.push(`Что ${me} знает из случившегося:\n` + facts.join('\n'));
+  sys += `\n\n=== ГЕРОЙ ИГРОКА: ${heroName} (глазами персонажа ${me}) ===\n${about.join('\n') || `${me} видит его впервые.`}`;
 
   const now = [];
   if (sc.location) now.push(`Место: ${sc.location}`);
   const clock = Number.isFinite(sc.minute) && Number.isFinite(sc.day) ? clockLabel(sc) : '';
   if (clock) now.push(`Время: ${clock}`);
   const others = (sc.present || []).filter((p) => !isNpc(npc, p));
-  now.push(`Рядом: ${[heroName, ...others].join(', ')}`);
-  if (npc.mood) now.push(`Твоё настроение: ${npc.mood}${npc.moodReason ? ` — потому что ${npc.moodReason}` : ''}`);
+  now.push(`Рядом с ним: ${[heroName, ...others].join(', ')}`);
+  if (npc.mood) now.push(`Настроение персонажа ${me}: ${npc.mood}${npc.moodReason ? ` — потому что ${npc.moodReason}` : ''}`);
   sys += `\n\n=== СЕЙЧАС ===\n${now.join('\n')}`;
 
+  // Отрывки истории написаны для игрока: «ты» (или «вы») в них — герой. Подписываем каждый и объясняем это явно.
   const nameOf = (id) => (state.characters.find((c) => c.id === id) || {}).name || heroName;
-  const heard = witnessed(state, npc).map((m) => (m.role === 'user' ? `${nameOf(m.hero)}: ${m.content}` : `Что было дальше: ${m.content}`));
-  let user = heard.length ? `Что ты видел и слышал только что:\n${heard.join('\n\n')}\n\n` : 'Ты только что оказался в этой сцене.\n\n';
-  user += `Сейчас ${heroName} делает или говорит:\n${lastPlayerAction(state)}`;
-  if (state.directorNote && state.directorNote.trim()) {
-    user += `\n\n[Пожелание игрока к истории: ${state.directorNote.trim()} — учти, если это касается тебя, но оставайся собой.]`;
+  const second = state.narration === 'third' ? '' : state.narration === 'second_vy' ? 'вы' : 'ты';
+  const playerTag = (who) => `[Игрок пишет за героя (${who}), «я» здесь — ${who}]`;
+  const heard = witnessed(state, npc).map((m) => (m.role === 'user' ? `${playerTag(nameOf(m.hero))}: ${m.content}` : `[Рассказчик — герою (${nameOf(m.hero)})]: ${m.content}`));
+  let user = '';
+  if (second) {
+    user += `Важно: «${second}» в этих отрывках — это ${heroName}, герой игрока, а НЕ ${me}. Рассказчик обращается к герою; ` +
+      `персонаж ${me} в них назван по имени. Всё, что сделал «${second}» или «я», — сделал ${heroName}.\n\n`;
   }
-  user += '\n\nОтветь тремя строками и больше ничего не пиши:\n' +
-    'РЕШЕНИЕ: что ты делаешь и чего добиваешься прямо сейчас (одна фраза)\n' +
-    'РЕПЛИКА: что ты говоришь вслух, своим голосом (1–3 фразы; «—», если молчишь)\n' +
-    'ВЫДАЁТ: что в тебе может заметить внимательный человек — жест, заминка, взгляд («—», если ничего)';
+  user += heard.length ? `Что ${me} видел и слышал только что:\n${heard.join('\n\n')}\n\n` : `${me} только что оказался в этой сцене.\n\n`;
+  user += `Новый ход, на который ${me} отвечает:\n${playerTag(heroName)}: ${lastPlayerAction(state)}`;
+  if (state.directorNote && state.directorNote.trim()) {
+    user += `\n\n[Пожелание игрока к истории: ${state.directorNote.trim()} — учти, если это касается персонажа ${me}, но он остаётся собой.]`;
+  }
+  user += `\n\nОтвечай только за своего персонажа (${me}). ${heroName} — не твой персонаж: не пиши, что он делает, говорит или чувствует, и не повторяй его слова.\n` +
+    'Ответь тремя строками и больше ничего не пиши:\n' +
+    `РЕШЕНИЕ: ${me} … — что он делает и чего добивается прямо сейчас (одна фраза в третьем лице, начни с его имени)\n` +
+    `РЕПЛИКА: что ${me} говорит вслух, его собственные слова (1–3 фразы; «—», если молчит)\n` +
+    `ВЫДАЁТ: что в нём может заметить внимательный человек — жест, заминка, взгляд («—», если ничего)`;
   return [{ role: 'system', content: sys }, { role: 'user', content: user }];
+}
+
+// Защита от ответа «не за того»: модель описала действия героя или повторила слова игрока.
+// Признаки простые и осторожные: лучше отбросить сомнительный ответ (персонажа сыграет рассказчик), чем вписать в сцену чужое.
+const flat = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+export function guardVoice(v, state, npc) {
+  if (!v) return null;
+  const hero = state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0];
+  const out = { ...v };
+  const heroFirst = first(hero && hero.name);
+  const npcFirst = first(npc && npc.name);
+  const starts = (word, name) => name.length >= 2 && word.startsWith(name) && word.length - name.length <= 2;
+  // Решение начинается с имени героя («Ян показывает бумаги») — это не решение персонажа.
+  const lead = first(flat(out.decision));
+  if (lead && starts(lead, heroFirst) && !(starts(lead, npcFirst) && npcFirst.length >= heroFirst.length)) out.decision = '';
+  // Реплика повторяет то, что написал игрок, — модель ответила за героя.
+  const action = flat(lastPlayerAction(state));
+  const line = flat(out.line);
+  if (line.length >= 8 && action.length >= 8 && (action.includes(line) || line.includes(action))) {
+    out.line = '';
+    // И решение от первого лица после такого повтора — тоже о герое («Прошу пропустить меня»).
+    if (/(^|\s)(я|меня|мне|мной|мой|моя|моё|мою|мои)(\s|$)/.test(flat(out.decision))) out.decision = '';
+  }
+  // Что-то пришлось выбросить и ни решения, ни реплики не осталось — ответ не о персонаже, не используем.
+  const dropped = out.decision !== v.decision || out.line !== v.line;
+  if (dropped && !out.decision && !out.line) return null;
+  return out.decision || out.line || out.tell ? out : null;
 }
 
 const EMPTY = /^(?:[—–-]+|нет|ничего|молчит|молчу)?[.\s]*$/i;
@@ -138,7 +179,7 @@ export async function npcVoices(state, apiKey, timer = null) {
         temperature: state.temperature ?? 0.8,
         maxTokens: 400, noReasoning: true,
       });
-      const v = parseVoice(data?.choices?.[0]?.message?.content);
+      const v = guardVoice(parseVoice(data?.choices?.[0]?.message?.content), state, npc);
       return v ? { name: npc.name, ...v } : null;
     } catch { return null; }
   }));

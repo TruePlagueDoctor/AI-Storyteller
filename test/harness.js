@@ -15,7 +15,7 @@ export const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAA
 // Какой это запрос — по началу системного промта.
 export function kindOf(body) {
   const sys = String(body.messages?.[0]?.content || '');
-  if (sys.startsWith('Ты играешь одного персонажа')) return 'voice';
+  if (sys.startsWith('Задание: сыграть одного персонажа')) return 'voice';
   if (sys.startsWith('РОЛЬ: учётчик') || sys.startsWith('Ты — учётчик состояния')) return 'sync';
   if (sys.includes('архивариус')) return 'summary';
   if (sys.includes('=== КАК ВЕСТИ ЭТОТ ХОД')) return 'narrator';
