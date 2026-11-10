@@ -23,7 +23,6 @@
         <button class="btn ghost" id="searchBtn" title="Поиск по истории (Ctrl+K)"><span class="btn-ico">🔍</span><span class="btn-label">Поиск</span></button>
         <button class="btn ghost diag-btn" id="diagBtn" title="Диагностика: запросы к модели и ошибки"><span class="btn-ico">🩺</span><span class="btn-label">Диагностика</span><span class="diag-dot" id="diagDot" hidden></span></button>
         <button class="btn ghost" id="settingsBtn" title="Настройки"><span class="btn-ico">⚙</span><span class="btn-label">Настройки</span></button>
-        <button class="btn ghost danger" id="resetBtn" title="Начать историю заново"><span class="btn-ico">↺</span><span class="btn-label">Заново</span></button>
         <button class="btn ghost sheet-toggle" id="sheetToggle" title="Лист героя, НПС, мир"><span class="btn-ico">☰</span><span class="btn-label">Лист</span></button>
       </div>
     </header>
@@ -31,6 +30,8 @@
     <main class="stage">
       <!-- Лента повествования -->
       <section class="chronicle" aria-label="Повествование">
+        <!-- Телефон: место и время сцены всегда на виду (на компьютере они в карточке сцены справа) -->
+        <button class="scene-strip" id="sceneStrip" type="button" title="Сцена: место, время, кто рядом. Нажми, чтобы открыть лист."><span id="sceneStripText"></span></button>
         <div class="log" id="log">
           <div class="empty-log" id="emptyLog">
             <p class="empty-title">Лист пуст, история ещё не начата.</p>

@@ -25,6 +25,8 @@ function renderSlots(data) {
     const acts = document.createElement('div');
     acts.className = 'slot-acts';
     for (const [act, glyph, title, cls] of [
+      // «Начать заново» — только у текущей истории; раньше кнопка стояла в шапке рядом с настройками.
+      ...(sl.active ? [['reset', '↺', 'Начать эту историю заново: лента и листы сотрутся, герои и настройки останутся', 'danger']] : []),
       ['rename', '✎', 'Переименовать', ''],
       ['duplicate', '⧉', 'Сделать копию', ''],
       ['delete', '✕', 'Удалить', 'danger'],
@@ -110,6 +112,7 @@ function applyFullState(data) {
 
 async function slotAction(id, act) {
   try {
+    if (act === 'reset') { await resetGame(); if (!app.log.length) $('slotsModal').hidden = true; return; }
     if (act === 'rename') {
       const cur = (await api('/api/slots')).slots.find((x) => x.id === id);
       const name = prompt('Название истории:', cur ? cur.name : '');

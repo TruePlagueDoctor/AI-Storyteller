@@ -144,7 +144,8 @@ async function init() {
   });
   $('charModal').addEventListener('click', (e) => { if (e.target.id === 'charModal') closeCharModal(); });
 
-  $('resetBtn').addEventListener('click', resetGame);
+  $('sceneStrip').addEventListener('click', () => $('sheetToggle').click());
+  $('toast').addEventListener('click', () => { $('toast').hidden = true; });
 
   $('tabHeroes').addEventListener('click', () => switchPanel('heroes'));
   $('tabNpcs').addEventListener('click', () => switchPanel('npcs'));

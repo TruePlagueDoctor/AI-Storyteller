@@ -185,6 +185,14 @@ try {
     await page.click('#slotsClose');
     step('настройки и список историй открываются');
 
+    // Правки v59: «Заново» ушло из шапки в список историй; на телефоне место и время — строкой над лентой.
+    if (await page.$('#resetBtn')) errors.push(`[${viewport.name}] кнопка «Заново» осталась в шапке`);
+    if (!(await page.$('#slotList .slot.active [data-act="reset"]'))) errors.push(`[${viewport.name}] в списке историй нет «начать заново» у текущей`);
+    const strip = await page.evaluate(() => { const e = document.getElementById('sceneStrip'); return { shown: getComputedStyle(e).display !== 'none', text: e.textContent }; });
+    if (strip.shown !== (viewport.width <= 900)) errors.push(`[${viewport.name}] строка сцены: показана=${strip.shown}`);
+    if (!/Городские ворота · день 1/.test(strip.text)) errors.push(`[${viewport.name}] в строке сцены нет места и времени: ${strip.text}`);
+    step('«заново» в списке историй, строка сцены');
+
     // «Играет сам»: галочка в редакторе НПС, после хода под ответом — что персонаж решил.
     await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
     const npcId = (await stack.api('GET', '/api/state')).data.npcs[0].id;
@@ -199,12 +207,23 @@ try {
     await page.waitForSelector('.fx-voice', { timeout: 15000 });
     await page.click('.fx-voice summary >> nth=-1');
     if (!/Бумаги покажи/.test(await page.textContent('.fx-voice >> nth=-1'))) errors.push(`[${viewport.name}] решение персонажа не показано под ответом`);
+    await page.evaluate(() => toast('Проверка уведомления: оно не должно закрывать текст истории'));
+    const cover = await page.evaluate(() => {
+      const t = document.getElementById('toast').getBoundingClientRect();
+      return [...document.querySelectorAll('.entry.narrator, .entry.player')].filter((e) => {
+        const r = e.getBoundingClientRect();
+        return r.bottom > t.top && r.top < t.bottom && r.right > t.left && r.left < t.right;
+      }).length;
+    });
+    if (viewport.width > 900 && cover) errors.push(`[${viewport.name}] уведомление закрывает реплики ленты: ${cover}`);
     if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-voice.png`), fullPage: false });
     await stack.api('PUT', `/api/npcs/${npcId}`, { self: false });
     step('персонаж «играет сам»: отметка и решение под ответом');
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     if (overflow > 1) errors.push(`[${viewport.name}] горизонтальная прокрутка: лишние ${overflow}px`);
+    await page.click('#toast').catch(() => {}); // щелчок убирает уведомление
+    if (!(await page.evaluate(() => document.getElementById('toast').hidden))) errors.push(`[${viewport.name}] уведомление не убирается щелчком`);
     if (shots) await page.screenshot({ path: join(shots, `${viewport.name}.png`), fullPage: false });
     await page.close();
   }

@@ -17,6 +17,8 @@ function renderScene() {
   faces.innerHTML = '';
   const boundNpcs = (app.npcs || []).filter((n) => n.bound && !n.archived);
   const names = [...(sc.present || []), ...boundNpcs.filter((n) => !(sc.present || []).some((p) => findNpcByName(p) === n)).map((n) => n.name)];
+  // Строка сцены над лентой (телефон): место · время · кто рядом.
+  $('sceneStripText').textContent = ['📍 ' + (sc.location || 'место не задано'), clockText(sc), names.length ? names.join(', ') : ''].filter(Boolean).join(' · ');
   $('scenePresent').hidden = names.length > 0;
   for (const name of names) {
     const n = findNpcByName(name);
