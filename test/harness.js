@@ -32,7 +32,7 @@ export function defaultHandlers() {
   };
 }
 
-export async function startStack({ handlers = defaultHandlers() } = {}) {
+export async function startStack({ handlers = defaultHandlers(), env = {} } = {}) {
   const seen = [];
   const fake = createServer(async (req, res) => {
     let raw = ''; for await (const ch of req) raw += ch;
@@ -59,7 +59,7 @@ export async function startStack({ handlers = defaultHandlers() } = {}) {
   const stack = { base, fakeUrl, seen, handlers, output: '' };
   const server = spawn(process.execPath, ['server.js'], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(port), STORYTELLER_DATA_DIR: dataDir, OPENROUTER_URL: `${fakeUrl}/chat`, OPENROUTER_API_KEY: 'test' },
+    env: { ...process.env, PORT: String(port), STORYTELLER_DATA_DIR: dataDir, OPENROUTER_URL: `${fakeUrl}/chat`, OPENROUTER_API_KEY: 'test', LAN_ACCESS: '', LAN_PASSWORD: '', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stdout.on('data', (d) => { stack.output += d; });

@@ -31,11 +31,16 @@ import { txt2img, pingSd } from './src/images.js';
 import { advanceStatuses } from './src/statuses.js';
 import { PUBLIC_DIR, AVATAR_DIR, SCENE_DIR } from './src/paths.js';
 import { makeBackup, listBackups, maybeDailyBackup, readBackupSlot } from './src/backup.js';
+import { accessConfig, accessGuard, lanAddresses } from './src/access.js';
+import { createServer } from 'node:http';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 
+// Доступ: только этот компьютер; из сети — по LAN_ACCESS=1 и паролю (см. src/access.js). Раньше всего остального.
+const access = accessConfig();
+app.use(accessGuard(access));
 app.use(express.json({ limit: '6mb' }));
 // Статику не кэшируем: иначе браузер показывает старый app.js после обновления
 // и кажется, что правки не приехали.
@@ -845,9 +850,25 @@ await loadState();
 // Раз в сутки при запуске — копия всех партий (data/backups, последние 10).
 try { const b = await maybeDailyBackup(); if (b) console.log(`  Резервная копия партий: data/backups/${b.id}`); }
 catch (e) { console.warn('  Не удалось сделать резервную копию:', e.message); }
-app.listen(PORT, () => {
+const onListening = () => {
   console.log(`\n  ИИ-рассказчик запущен: http://localhost:${PORT}`);
+  if (access.lan) {
+    const ips = lanAddresses();
+    console.log('  Открыт доступ из локальной сети (по паролю LAN_PASSWORD)' + (ips.length ? ': ' + ips.map((ip) => `http://${ip}:${PORT}`).join(', ') : '.'));
+  } else if (access.wanted) {
+    console.log('  ⚠  LAN_ACCESS=1, но пароль LAN_PASSWORD не задан — доступ из сети НЕ открыт. Впиши пароль в .env.');
+  } else {
+    console.log('  Игра доступна только с этого компьютера. С телефона — см. LAN_ACCESS в .env.example.');
+  }
   // Запуск двойным щелчком (Запуск.bat) — сразу открыть игру в браузере.
   if (process.env.OPEN_BROWSER === '1') openBrowser(`http://localhost:${PORT}`);
   console.log(apiKey() ? '' : '  ⚠  OPENROUTER_API_KEY не задан — создай .env из .env.example.\n');
-});
+};
+if (access.lan) {
+  app.listen(PORT, onListening);
+} else {
+  // Только локальный адрес: из сети к серверу не подключиться вовсе. «localhost» в браузере может означать
+  // и ::1 — слушаем и его, если в системе есть IPv6.
+  app.listen(PORT, '127.0.0.1', onListening);
+  createServer(app).on('error', () => { /* нет IPv6 или порт занят — достаточно 127.0.0.1 */ }).listen(PORT, '::1');
+}
