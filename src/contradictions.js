@@ -170,12 +170,32 @@ const META = /(говорил[аио]?\s+больше\s+(любых\s+)?слов
 // Афоризм в конце: обобщение вместо события.
 const KICKER = /((больше|сильнее|громче|страшнее|правдивее|честнее|красноречивее),?\s+чем\s+(любые|любых|все|тысяч)|(в\s+этом|в\s+этой|в\s+том)\s+(и\s+)?(было|была|был|есть|заключал\p{L}*)\s+(вся|весь|всё|правда|суть|смысл|ответ)|(вся|в\s+этом\s+вся|в\s+этом\s+и\s+была)\s+(суть|правда|разница)|(всё|все)\s+только\s+начиналось|ничто\s+уже\s+не\s+будет\s+прежним|(^|[.!?…]\s+)(иногда|порой)\s+[^.!?…]{0,60}\s+(значит\s+больше|важнее|правдивее|громче\s+слов))/iu;
 
-export function findClicheIssues(narration) {
-  const text = authorText(narration);
-  if (!text) return [];
+// Реплики персонажей: строки через тире и цитаты в «».
+function speechText(text) {
+  const t = String(text || '');
+  const dash = t.split('\n').map((l) => l.trim()).filter((l) => /^[—–-]/.test(l));
+  const quotes = t.match(/«[^»]*»/g) || [];
+  return [...dash, ...quotes.map((q) => q.slice(1, -1))].join('\n');
+}
+const contrastPairs = (t) => sentencesOf(t).reduce((n, s, i, all) => n + (CONTRAST_PAIR.test(s + ' ' + (all[i + 1] || '')) ? 1 : 0), 0);
+const contrastSoft = (t) => (String(t).match(CONTRAST_SOFT) || []).length;
+
+// prev — прошлые ответы рассказчика: в репликах одна такая фигура — манера персонажа,
+// а когда так говорят все и из ответа в ответ — штамп модели.
+export function findClicheIssues(narration, prev = []) {
   const issues = [];
-  const pairs = sentencesOf(text).reduce((n, s, i, all) => n + (CONTRAST_PAIR.test(s + ' ' + (all[i + 1] || '')) ? 1 : 0), 0);
-  const soft = (text.match(CONTRAST_SOFT) || []).length;
+  const speechCount = [...prev.slice(-2), narration].reduce((n, t) => { const sp = speechText(t); return n + contrastPairs(sp) + contrastSoft(sp); }, 0);
+  const nowSpeech = speechText(narration);
+  if (speechCount >= 2 && (contrastPairs(nowSpeech) + contrastSoft(nowSpeech)) >= 1) {
+    issues.push({
+      kind: 'cliche-speech',
+      text: 'Персонажи раз за разом говорят «не X, а Y» («Это не страх, это злость») — так у всех одинаково. Оставь эту фигуру разве что одному, если она в его манере; остальные говорят прямо, своими словами.',
+    });
+  }
+  const text = authorText(narration);
+  if (!text) return issues;
+  const pairs = contrastPairs(text);
+  const soft = contrastSoft(text);
   if (pairs >= 1 || soft >= 2) {
     issues.push({
       kind: 'cliche-contrast',
