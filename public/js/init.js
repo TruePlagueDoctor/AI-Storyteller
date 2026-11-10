@@ -277,6 +277,12 @@ async function init() {
   $('sceneModalClose').addEventListener('click', () => { $('sceneModal').hidden = true; });
   $('sceneCancel').addEventListener('click', () => { $('sceneModal').hidden = true; });
   $('sceneSave').addEventListener('click', saveScene);
+  document.querySelectorAll('#charModal .lock-btn').forEach((b) => b.addEventListener('click', (e) => {
+    e.preventDefault();
+    const f = b.dataset.lock;
+    if (charLocks.has(f)) charLocks.delete(f); else charLocks.add(f);
+    renderCharLocks();
+  }));
   document.querySelectorAll('#sceneModal .lock-btn').forEach((b) => b.addEventListener('click', (e) => {
     e.preventDefault();
     const f = b.dataset.lock;

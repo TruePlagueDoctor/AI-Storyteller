@@ -238,6 +238,15 @@ async function saveSettings() {
 }
 
 // ---- Редактор героя ----
+// Замки полей героя: имя, раса, положение — кнопками у подписей; внешность — галочкой под полем.
+let charLocks = new Set();
+function renderCharLocks() {
+  document.querySelectorAll('#charModal .lock-btn').forEach((b) => {
+    const on = charLocks.has(b.dataset.lock);
+    b.textContent = on ? '🔒' : '🔓';
+    b.classList.toggle('on', on);
+  });
+}
 function openCharModal(char) {
   refreshPeopleList();
   editingCharId = char ? char.id : null;
@@ -249,6 +258,11 @@ function openCharModal(char) {
   $('charSocial').value = char ? (char.social || '') : '';
   $('charAppearance').value = char ? (char.appearance || '') : '';
   $('charLookLock').checked = Boolean(char && Array.isArray(char.locked) && char.locked.includes('appearance'));
+  charLocks = new Set(char && Array.isArray(char.locked) ? char.locked : []);
+  renderCharLocks();
+  const aliases = char && Array.isArray(char.aliases) ? char.aliases : [];
+  $('charAliasesHint').hidden = !aliases.length;
+  $('charAliasesHint').textContent = aliases.length ? `Прежде звался: ${aliases.join(', ')} — так его зовут те, кто не слышал о перемене.` : '';
   syncFillLocks();
   const prevLook = char && char.appearancePrev && char.appearancePrev !== char.appearance ? char.appearancePrev : '';
   $('charLookRestore').hidden = !prevLook;
@@ -340,7 +354,7 @@ async function saveChar() {
   const social = $('charSocial').value;
   const appearance = $('charAppearance').value;
   const editing = editingCharId ? app.characters.find((c) => c.id === editingCharId) : null;
-  const locked = new Set(editing && Array.isArray(editing.locked) ? editing.locked : []);
+  const locked = new Set(editing ? charLocks : []);
   if ($('charLookLock').checked) locked.add('appearance'); else locked.delete('appearance');
   if (!name) { toast('У героя должно быть имя.'); return; }
   try {

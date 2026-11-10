@@ -112,7 +112,8 @@ function migrate(s) {
     if (typeof c.present !== 'boolean') c.present = true;
     if (!c.skillXp || typeof c.skillXp !== 'object') c.skillXp = {};
     if (!c.practiceDays || typeof c.practiceDays !== 'object') c.practiceDays = {}; // умение → игровой день последней тренировки
-    if (!Array.isArray(c.appearanceLog)) c.appearanceLog = []; // перемены внешности и кто их видел
+    if (!Array.isArray(c.appearanceLog)) c.appearanceLog = []; // перемены внешности, расы, имени и кто их видел
+    if (!Array.isArray(c.aliases)) c.aliases = []; // прежние имена героя («известен также как»)
     if (!Array.isArray(c.blocks)) c.blocks = [];
     for (const b of c.blocks) if (!b.id) b.id = randomUUID();
   }
@@ -448,7 +449,7 @@ function captureFullSnapshot() {
   return {
     at: stamp(),
     blocksByChar: Object.fromEntries(state.characters.map((c) => [c.id, deepCopy(c.blocks)])),
-    charsByid: Object.fromEntries(state.characters.map((c) => [c.id, { skillXp: deepCopy(c.skillXp || {}), practiceDays: deepCopy(c.practiceDays || {}), appearanceLog: deepCopy(c.appearanceLog || []), appearance: c.appearance, social: c.social }])),
+    charsByid: Object.fromEntries(state.characters.map((c) => [c.id, { skillXp: deepCopy(c.skillXp || {}), practiceDays: deepCopy(c.practiceDays || {}), appearanceLog: deepCopy(c.appearanceLog || []), appearance: c.appearance, social: c.social, name: c.name, race: c.race, aliases: deepCopy(c.aliases || []) }])),
     npcs: deepCopy(state.npcs),
     threads: deepCopy(state.threads),
     scene: deepCopy(state.scene),
@@ -678,18 +679,19 @@ export async function addCharacter({ name, persona } = {}) {
   return c;
 }
 
+export const HERO_LOCKS = ['appearance', 'social', 'name', 'race'];
 export async function updateCharacter(id, { name, persona, race, social, appearance, present, locked } = {}) {
   const c = state.characters.find((x) => x.id === id);
   if (!c) throw new Error('Герой не найден.');
-  const before = { appearance: c.appearance, social: c.social };
+  const before = { appearance: c.appearance, social: c.social, name: c.name, race: c.race };
   if (typeof name === 'string' && name.trim()) c.name = name.trim();
   if (typeof persona === 'string') c.persona = persona;
   if (typeof race === 'string') c.race = race;
   if (typeof social === 'string') c.social = social;
   if (typeof appearance === 'string') { if (appearance.trim() !== (c.appearance || '')) delete c.portraitTags; c.appearance = appearance; }
   if (typeof present === 'boolean') c.present = present;
-  if (Array.isArray(locked)) c.locked = locked.filter((f) => ['appearance', 'social'].includes(f));
-  noteManual('char', c.id, before, { appearance: c.appearance, social: c.social }); // откатываемые поля героя
+  if (Array.isArray(locked)) c.locked = locked.filter((f) => HERO_LOCKS.includes(f));
+  noteManual('char', c.id, before, { appearance: c.appearance, social: c.social, name: c.name, race: c.race }); // откатываемые поля героя
   await saveState();
   return c;
 }
@@ -781,6 +783,9 @@ function applySnapshot(snap) {
       c.appearanceLog = deepCopy(extra.appearanceLog || []);
       if (extra.appearance !== undefined) c.appearance = extra.appearance;
       if (extra.social !== undefined) c.social = extra.social;
+      if (extra.name) c.name = extra.name;
+      if (extra.race !== undefined) c.race = extra.race;
+      if (extra.aliases) c.aliases = deepCopy(extra.aliases);
     }
   }
   state.npcs = deepCopy(snap.npcs);

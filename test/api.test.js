@@ -352,3 +352,23 @@ test('перегенерация через API не откатывает руч
   assert.equal(l2.content, 'стало');
   assert.equal(data.npcs.find((n) => n.id === npc.id), undefined, 'НПС, которого завёл учётчик за отменённый ход, откатился');
 });
+
+test('имя и раса героя: учётчик меняет, перегенерация откатывает, замки сохраняются', async () => {
+  let { data } = await api('GET', '/api/state');
+  const h = data.characters[0];
+  const name0 = h.name;
+  handlers.narrator = () => reply('Ты принимаешь обет. Отныне тебя зовут Сестрой Пепел, и кожа твоя сереет, как у нежити.');
+  handlers.sync = () => reply('', [call('update_hero', { name: 'Сестра Пепел', race: 'нежить' })]);
+  ({ data } = await api('POST', '/api/action', { text: 'Принимаю обет' }));
+  assert.equal(data.characters[0].name, 'Сестра Пепел');
+  assert.equal(data.characters[0].race, 'нежить');
+  assert.ok(data.characters[0].aliases.includes(name0));
+  handlers.sync = () => reply('', [call('nothing', {})]);
+  handlers.narrator = () => reply('Ты отказываешься от обета и уходишь из храма под дождь.');
+  ({ data } = await api('POST', '/api/regenerate'));
+  assert.equal(data.characters[0].name, name0, 'имя откатилось вместе с ходом');
+  assert.ok(!data.characters[0].aliases.includes(name0));
+  ({ data } = await api('PUT', `/api/characters/${h.id}`, { name: name0, locked: ['name', 'race', 'social', 'bogus'] }));
+  assert.deepEqual((await api('GET', '/api/state')).data.characters[0].locked, ['name', 'race', 'social']);
+  await api('PUT', `/api/characters/${h.id}`, { locked: [] });
+});

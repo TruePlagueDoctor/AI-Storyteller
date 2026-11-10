@@ -2024,3 +2024,12 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
   padding: 8px 10px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.5; resize: vertical; }
 .codex-tags textarea:focus { outline: none; border-color: var(--brass-dim); }
 .codex-tags .btn { width: 100%; justify-content: center; font-size: 11px; }
+
+/* Замок у подписи поля (сцена, герой): тихий, пока открыт; явный, когда закреплено. */
+.lock-btn {
+  background: none; border: 0; padding: 0 2px; margin-left: 6px; cursor: pointer;
+  font-size: 12px; line-height: 1; opacity: 0.35; vertical-align: baseline; filter: grayscale(1);
+}
+.lock-btn:hover { opacity: 0.8; }
+.lock-btn.on { opacity: 1; filter: none; }
+.field-col > .field-label:has(.lock-btn) { display: flex; align-items: center; gap: 0; }

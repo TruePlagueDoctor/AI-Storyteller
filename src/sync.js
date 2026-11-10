@@ -29,6 +29,9 @@ export function sheetForSync(character) {
   const about = [
     look ? `  внешность${locks.includes('appearance') ? ' 🔒' : ''}: ${look.length > 600 ? look.slice(0, 599) + '…' : look}` : '',
     character.social ? `  положение${locks.includes('social') ? ' 🔒' : ''}: ${character.social}` : '',
+    character.race ? `  раса${locks.includes('race') ? ' 🔒' : ''}: ${character.race}` : '',
+    locks.includes('name') ? '  имя 🔒' : '',
+    character.aliases && character.aliases.length ? `  прежние имена: ${character.aliases.join(', ')}` : '',
   ].filter(Boolean).join('\n');
   // Лист пуст — учётчику нужно описание героя, чтобы завести стартовый лист.
   const persona = !character.blocks.length && character.persona && character.persona.trim()
@@ -145,7 +148,8 @@ function technicalSyncHead(state) {
     '- обучение, ремесло, давняя практика → block type:ability, value: новичок|ученик|опытный|мастер. Разовое действие — не умение; рост от бросков считает код',
     '- герой тренировался или учился умению, которое уже есть в листе → practice (kind:lesson — у наставника); применение в деле — не практика',
     '- отношение группы или фракции к герою → block type:relationship',
-    '- внешность или положение героя изменились надолго → update_hero (appearance_change | social). Грязь, растрёпанность — не перемена',
+    '- внешность или положение героя изменились надолго → update_hero (appearance_change | social). Грязь, растрёпанность — не перемена; ' +
+      'превращение в другое существо → race; герой навсегда сменил имя → name (легенда и маска — нет)',
     '- место сменилось, прошло время, кто-то пришёл или ушёл → scene. elapsed_minutes: реплика 1–5, разговор ≈10, схватка ≈5, путь по городу ≈60, ночь ≈480. ' +
       'present — ПОЛНЫЙ список НПС физически рядом; creatures — звери и твари рядом (названия из КОДЕКСА), ушли — []',
     '- значимый НПС действовал, говорил, изменился → npc (только изменившиеся поля, см. ПОЛЯ НПС)',

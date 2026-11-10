@@ -147,6 +147,20 @@ try {
     }
     await page.click('#dossierClose');
     step('досье героя открывается');
+    await page.click('#charEditBtn');
+    await page.waitForSelector('#charModal:not([hidden])');
+    await page.click('#charModal .lock-btn[data-lock="race"]');
+    await page.click('#charSave');
+    await page.waitForSelector('#charModal', { state: 'hidden' });
+    const heroLocks = await page.evaluate(() => fetch('/api/state').then((r) => r.json()).then((d) => d.characters[0].locked));
+    if (!heroLocks.includes('race')) errors.push(`[${viewport.name}] замок расы героя не сохранился: ${JSON.stringify(heroLocks)}`);
+    await page.click('#charEditBtn');
+    await page.waitForSelector('#charModal:not([hidden])');
+    if ((await page.textContent('#charModal .lock-btn[data-lock="race"]')) !== '🔒') errors.push(`[${viewport.name}] замок расы не показан закрытым`);
+    await page.click('#charModal .lock-btn[data-lock="race"]');
+    await page.click('#charSave');
+    await page.waitForSelector('#charModal', { state: 'hidden' });
+    step('замки полей героя сохраняются');
     if (viewport.name === 'mobile') await page.click('#sheetClose').catch(() => {});
 
     await page.click('#diagBtn');

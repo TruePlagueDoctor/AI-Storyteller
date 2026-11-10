@@ -133,13 +133,14 @@ function heroesBlock(state) {
     s += `\n\n• ${c.name}${active && c.id === active.id ? ' (активный)' : ''}`;
     if (c.persona && c.persona.trim()) s += `\n  ${c.persona.trim()}`;
     const card = [];
+    if (c.aliases && c.aliases.length) card.push(`прежде звался: ${c.aliases.join(', ')} — кто знал его раньше и не слышал о перемене, зовёт по-старому`);
     if (c.race && c.race.trim()) card.push(`раса: ${c.race.trim()}`);
     if (c.social && c.social.trim()) card.push(`положение: ${c.social.trim()}`);
     if (card.length) s += `\n  ${card.join('; ')}`;
     if (c.appearance && c.appearance.trim()) s += `\n  Внешность: ${c.appearance.trim()}`;
     const changes = (c.appearanceLog || []).filter((e) => e && e.text);
     if (changes.length) {
-      s += '\n  Недавние перемены во внешности (о них знают только видевшие): ' + changes.map((e) =>
+      s += '\n  Недавние перемены (внешность, раса, имя — о них знают только видевшие): ' + changes.map((e) =>
         `«${e.text}» — ход ${e.turn}, видели: ${e.seenBy && e.seenBy.length ? e.seenBy.join(', ') : 'никто из НПС'}`).join('; ');
     }
     s += `\n  Лист: ${sheetSnapshot(c, state.statusCatalog)}`;

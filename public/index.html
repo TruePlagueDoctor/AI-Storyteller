@@ -447,8 +447,9 @@
           <input type="file" id="charAvatarFile" accept="image/png,image/jpeg,image/webp" hidden />
         </div>
         <label class="field">
-          <span class="field-label">Имя</span>
+          <span class="field-label">Имя <button type="button" class="lock-btn" data-lock="name" title="Закрепить: учётчик не переименует героя">🔓</button></span>
           <input type="text" id="charName" placeholder="Имя героя" />
+          <span class="field-hint" id="charAliasesHint" hidden></span>
         </label>
         <label class="field toggle-field">
           <input type="checkbox" id="charPresent" />
@@ -459,11 +460,11 @@
         </label>
         <div class="field field-row">
           <label class="field-col">
-            <span class="field-label">Раса</span>
+            <span class="field-label">Раса <button type="button" class="lock-btn" data-lock="race" title="Закрепить: учётчик не сменит расу даже при превращении">🔓</button></span>
             <input type="text" id="charRace" placeholder="человек, полуэльф…" list="codexPeople" />
           </label>
           <label class="field-col">
-            <span class="field-label">Положение</span>
+            <span class="field-label">Положение <button type="button" class="lock-btn" data-lock="social" title="Закрепить: учётчик не меняет положение">🔓</button></span>
             <input type="text" id="charSocial" placeholder="наёмник, дворянин…" />
           </label>
         </div>

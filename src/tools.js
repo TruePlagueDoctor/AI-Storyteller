@@ -227,9 +227,11 @@ export const TOOL_DEFINITIONS = [
     function: {
       name: 'update_hero',
       description:
-        'Внешность или положение героя игрока — только когда они в тексте ИЗМЕНИЛИСЬ надолго (шрам, стрижка, превращение, новый титул). ' +
+        'Внешность, положение, раса или имя героя игрока — только когда они в тексте ИЗМЕНИЛИСЬ надолго (шрам, стрижка, превращение, новый титул). ' +
         'Деталь изменилась или добавилась — appearance_change, код допишет её к прежнему. ' +
-        'Облик изменился почти целиком — appearance: ПОЛНОЕ новое описание на основе прежнего (оно есть в данных).',
+        'Облик изменился почти целиком — appearance: ПОЛНОЕ новое описание на основе прежнего (оно есть в данных). ' +
+        'race — только при явном превращении в другое существо. name — только если герой НАВСЕГДА сменил имя; ' +
+        'легенда, маска, имя для одного разговора — не смена имени.',
       parameters: {
         type: 'object',
         properties: {
@@ -237,6 +239,8 @@ export const TOOL_DEFINITIONS = [
           appearance_change: { type: 'string', description: 'Что изменилось или добавилось — одна-две фразы: "на щеке свежий шрам".' },
           appearance: { type: 'string', description: 'Полное новое описание внешности (заменяет прежнее целиком).' },
           social: { type: 'string', description: 'Общественное положение.' },
+          race: { type: 'string', description: 'Новая раса — только при превращении. Название народа из КОДЕКСА, если подходит.' },
+          name: { type: 'string', description: 'Новое постоянное имя. Прежнее сохранится как «известен также как».' },
         },
       },
     },
@@ -250,7 +254,8 @@ export function resolveCharacterFor(state, name) {
 function resolveCharacter(state, name) {
   if (name && String(name).trim()) {
     const n = String(name).trim().toLowerCase();
-    const found = state.characters.find((c) => c.name.trim().toLowerCase() === n);
+    const found = state.characters.find((c) => c.name.trim().toLowerCase() === n)
+      || state.characters.find((c) => (c.aliases || []).some((a) => a.trim().toLowerCase() === n));
     if (found) return found;
   }
   return state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0];
@@ -567,24 +572,56 @@ function executePracticeTool(args, state) {
 }
 
 function executeHeroTool(args, state) {
-  const { character, appearance, appearance_change: change, social } = args || {};
+  const { character, appearance, appearance_change: change, social, race, name: newName } = args || {};
   const c = resolveCharacter(state, character);
   const locked = Array.isArray(c.locked) ? c.locked : [];
   const changed = [];
   const notes = [];
   const prevLook = (c.appearance || '').trim();
-  const setLook = (text, what) => {
-    if (prevLook) c.appearancePrev = prevLook; // для кнопки «вернуть прежнюю»
-    c.appearance = text;
-    delete c.portraitTags; // старые теги портрета больше не описывают героя
-    changed.push('внешность');
-    // Кто видел перемену: остальные НПС о ней не знают (иначе принц, не видевший героиню
-    // полсотни ходов, рассуждает о её новых ушах).
+  // Кто видел перемену: остальные НПС о ней не знают (иначе принц, не видевший героиню
+  // полсотни ходов, рассуждает о её новых ушах). То же — о новой расе и новом имени.
+  const logChange = (what) => {
     const sc = state.scene || {};
     const seenBy = [...(sc.present || []), ...(state.npcs || []).filter((n) => n.bound && !n.archived).map((n) => n.name)];
     c.appearanceLog = [...(Array.isArray(c.appearanceLog) ? c.appearanceLog : []),
       { turn: state.turn || 0, day: sc.day || 1, text: what, seenBy: [...new Set(seenBy)] }].slice(-6);
   };
+  const setLook = (text, what) => {
+    if (prevLook) c.appearancePrev = prevLook; // для кнопки «вернуть прежнюю»
+    c.appearance = text;
+    delete c.portraitTags; // старые теги портрета больше не описывают героя
+    changed.push('внешность');
+    logChange(what);
+  };
+
+  // Имя — первым: проверка может отказать, и тогда ничего не меняем.
+  const nn = typeof newName === 'string' ? newName.trim() : '';
+  if (nn && nn.toLowerCase() !== c.name.trim().toLowerCase()) {
+    const low = nn.toLowerCase();
+    const clash = state.characters.find((x) => x !== c && (x.name.trim().toLowerCase() === low || (x.aliases || []).some((a) => a.toLowerCase() === low)))
+      || (state.npcs || []).find((n) => !n.archived && n.name.trim().toLowerCase() === low);
+    if (locked.includes('name')) notes.push('имя закреплено игроком — не изменено');
+    else if (clash) return `Ошибка: имя «${nn}» уже занято (${clash.blocks ? 'герой' : 'НПС'} «${clash.name}»). Имя героя не изменено.`;
+    else if (nn.length > 60) return 'Ошибка: name — только имя, без пояснений. Не изменено.';
+    else {
+      const old = c.name;
+      c.aliases = [...new Set([...(c.aliases || []).filter((a) => a.toLowerCase() !== low), old])].slice(-5);
+      c.name = nn;
+      changed.push(`имя (прежнее «${old}» — известен также как)`);
+      logChange(`теперь зовётся «${nn}» (прежде «${old}»)`);
+    }
+  }
+  const nr = typeof race === 'string' ? race.trim() : '';
+  if (nr && nr.toLowerCase() !== String(c.race || '').trim().toLowerCase()) {
+    if (locked.includes('race')) notes.push('раса закреплена игроком — не изменена');
+    else {
+      const old = String(c.race || '').trim();
+      c.race = nr;
+      delete c.portraitTags;
+      changed.push('раса');
+      logChange(old ? `стал(а) другим существом: ${old} → ${nr}` : `раса: ${nr}`);
+    }
+  }
 
   if ((typeof appearance === 'string' && appearance.trim()) || (typeof change === 'string' && change.trim())) {
     if (locked.includes('appearance')) {
@@ -719,7 +756,8 @@ function executeNpcTool(name, args, state) {
   if (idx !== -1 && state.npcs[idx].archived) { delete state.npcs[idx].archived; }
 
   // Герой игрока — не НПС: его лист ведётся через block и update_hero.
-  if (name !== 'remove_npc' && (state.characters || []).some((c) => sameName(c.name, npcName) || c.name.trim().toLowerCase() === String(npcName).trim().toLowerCase())) {
+  if (name !== 'remove_npc' && (state.characters || []).some((c) => sameName(c.name, npcName) || c.name.trim().toLowerCase() === String(npcName).trim().toLowerCase()
+    || (c.aliases || []).some((a) => a.trim().toLowerCase() === String(npcName).trim().toLowerCase()))) {
     return `Ошибка: «${npcName}» — герой игрока, а не НПС. Его меняют через block и update_hero. Не записано.`;
   }
   // «Дорн-караванщик» при уже известном «Дорн» — почти наверняка тот же человек.

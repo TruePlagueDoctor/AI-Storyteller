@@ -43,7 +43,7 @@ test('рассказчик видит, кто не знает о перемен�
   executeTool('update_hero', { appearance_change: 'уши заострились, как у эльфов' }, st);
   markSeen(st);
   const p = composeStorySystem(st);
-  assert.match(p, /Недавние перемены во внешности[^\n]*уши заострились[^\n]*ход 40[^\n]*видели: Лира/);
+  assert.match(p, /Недавние перемены[^\n]*уши заострились[^\n]*ход 40[^\n]*видели: Лира/);
   assert.match(p, /Принц Аларик[^\n]*последняя встреча с героем: день 2/);
   assert.ok(!/Лира[^\n]*последняя встреча/.test(p), 'тот, кто рядом, — без пометки');
   assert.match(p, /ЗНАНИЕ ПЕРСОНАЖЕЙ/);
@@ -55,4 +55,44 @@ test('темы сценария — не «в каждой сцене устам
   assert.match(p, /Темы: превращение, сны, ночь/);
   assert.ok(!/в каждой сцене/.test(p));
   assert.ok(!/держи в каждом ходу/.test(p));
+});
+
+test('смена расы при превращении: в листе, в журнале перемен, со свидетелями', () => {
+  const st = world();
+  hero(st).race = 'человек';
+  hero(st).portraitTags = '1girl, human';
+  const r = executeTool('update_hero', { race: 'заражённая' }, st);
+  assert.match(r, /раса/);
+  assert.equal(hero(st).race, 'заражённая');
+  assert.equal(hero(st).portraitTags, undefined, 'портрет больше не похож');
+  assert.match(hero(st).appearanceLog.at(-1).text, /человек → заражённая/);
+  assert.deepEqual(hero(st).appearanceLog.at(-1).seenBy, ['Лира']);
+});
+
+test('смена имени: прежнее — «известен также как», герой находится по любому', () => {
+  const st = world();
+  const r = executeTool('update_hero', { name: 'Сестра Пепел' }, st);
+  assert.match(r, /прежнее «Эйра»/);
+  assert.equal(hero(st).name, 'Сестра Пепел');
+  assert.deepEqual(hero(st).aliases, ['Эйра']);
+  executeTool('update_hero', { character: 'Эйра', social: 'послушница ордена' }, st);
+  assert.equal(hero(st).social, 'послушница ордена', 'по прежнему имени — тот же герой');
+  assert.match(executeTool('npc', { name: 'Эйра', attitude: 'тепло' }, st), /герой игрока/);
+  const p = composeStorySystem(st);
+  assert.match(p, /прежде звался: Эйра/);
+  assert.match(p, /теперь зовётся «Сестра Пепел»/);
+});
+
+test('имя и раса: замки игрока, занятое имя — отказ', () => {
+  const st = world();
+  hero(st).locked = ['name', 'race'];
+  hero(st).race = 'человек';
+  const r = executeTool('update_hero', { name: 'Пепел', race: 'нежить' }, st);
+  assert.match(r, /имя закреплено/);
+  assert.match(r, /раса закреплена/);
+  assert.equal(hero(st).name, 'Эйра');
+  assert.equal(hero(st).race, 'человек');
+  hero(st).locked = [];
+  assert.match(executeTool('update_hero', { name: 'Лира' }, st), /уже занято/);
+  assert.equal(hero(st).name, 'Эйра');
 });
