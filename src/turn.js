@@ -91,7 +91,8 @@ export async function runTurn({ state, apiKey, skipSync = false, beforeSync = nu
     fixed,
     sync: syncInfo,
     lookups: lookups && lookups.length ? lookups : undefined,
-    voices: voices.length ? voices : undefined,
+    voices: voices.length ? [...voices] : undefined,
+    voiceNote: (voices.missed || []).length ? `${voices.missed.join(', ')} — не ответил вовремя, его сыграл рассказчик` : undefined,
     timing: { narrate: narrTimer, voices: voiceTimer.length ? voiceTimer : undefined },
   };
 }

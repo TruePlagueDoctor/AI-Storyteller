@@ -2075,3 +2075,8 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
   color: var(--brass-dim);
 }
 .entry[data-who] { opacity: 0.82; }
+
+/* ---- Ожидание хода: что сейчас запрошено у модели и «прервать» ---- */
+.thinking-stage { margin-top: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-faint); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.thinking-stage .link-btn { font-size: 11px; color: var(--brass-dim); }
+.thinking-stage .link-btn:hover { color: var(--brass); }

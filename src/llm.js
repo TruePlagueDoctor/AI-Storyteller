@@ -6,7 +6,27 @@ import { recordRequest, explainError, getRequest } from './diag.js';
 
 // Адрес можно переопределить (тесты подставляют свой сервер-заглушку).
 const OPENROUTER_URL = process.env.OPENROUTER_URL || 'https://openrouter.ai/api/v1/chat/completions';
-const REQUEST_TIMEOUT_MS = 120000;  // 2 минуты — с запасом на длинный ответ
+// Предел ожидания одного запроса — на ВЕСЬ ответ. Раньше таймер снимался, как только приходили заголовки,
+// а OpenRouter присылает их сразу и держит соединение, пока модель пишет: зависший ответ не обрывался вовсе.
+// Теперь предел настоящий, поэтому он больше прежних 2 минут — длинный ответ «думающей» модели успеет.
+const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS) || 240000;
+
+// Что сейчас запрошено у модели — чтобы игрок видел, чего ждёт ход, и мог его прервать.
+// Ход — это несколько запросов подряд (персонажи, рассказчик, учёт); молчаливые «161 с» ничего не объясняли.
+const inFlight = new Map(); // номер → { purpose, model, startedAt, ac }
+let flightSeq = 0;
+let turnCancelled = false;
+export function requestsInFlight() {
+  const now = Date.now();
+  return [...inFlight.values()].map((r) => ({ purpose: r.purpose, model: r.model, sec: Math.round((now - r.startedAt) / 1000) }));
+}
+// Прервать ход: обрываются идущие запросы, а следующие запросы этого хода не начинаются.
+export function cancelTurnRequests() {
+  turnCancelled = true;
+  for (const r of inFlight.values()) { r.cancelled = true; r.ac.abort(); }
+}
+export function resetTurnCancel() { turnCancelled = false; }
+const CANCELLED = 'Ход прерван.';
 
 // Модель учёта и служебных запросов: отдельная, если задана, иначе — модель рассказа.
 export const toolModelOf = (state) => (state.toolModel && state.toolModel.trim() ? state.toolModel.trim() : state.model);
@@ -123,7 +143,8 @@ export async function callOpenRouter(opts) {
 }
 
 export const DEFAULT_MAX_TOKENS = 16000;
-async function postOpenRouter({ model, messages, apiKey, tools, temperature, frequencyPenalty, presencePenalty, maxTokens, toolChoice = 'auto', noReasoning = false, _noReasoningFlag = false, _relaxed = false, capture = {} }) {
+async function postOpenRouter({ model, messages, apiKey, tools, temperature, frequencyPenalty, presencePenalty, maxTokens, toolChoice = 'auto', noReasoning = false, _noReasoningFlag = false, _relaxed = false, capture = {}, purpose = 'запрос', timeoutMs = REQUEST_TIMEOUT_MS }) {
+  if (turnCancelled) throw new Error(CANCELLED);
   const relaxed = _relaxed || RELAXED.has(model);
   // usage.include — OpenRouter вернёт стоимость запроса.
   const body = { model, messages, usage: { include: true } };
@@ -147,7 +168,10 @@ async function postOpenRouter({ model, messages, apiKey, tools, temperature, fre
   // Без таймаута зависший провайдер вешает весь ход: игрок не видит ни ответа,
   // ни ошибки, и не может ничего отправить заново.
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  const flight = { purpose, model, startedAt: Date.now(), ac };
+  const flightId = ++flightSeq;
+  inFlight.set(flightId, flight);
   capture.body = body; capture.status = undefined; capture.rawText = undefined;
   let res;
   try {
@@ -163,19 +187,29 @@ async function postOpenRouter({ model, messages, apiKey, tools, temperature, fre
       signal: ac.signal,
     });
   } catch (err) {
+    if (flight.cancelled) throw new Error(CANCELLED);
     if (err.name === 'AbortError') {
-      throw new Error(`Модель не ответила за ${Math.round(REQUEST_TIMEOUT_MS / 1000)} с. Попробуй отправить снова.`);
+      throw new Error(`Модель не ответила за ${Math.round(timeoutMs / 1000)} с. Попробуй отправить снова.`);
     }
     throw new Error(`Не удалось связаться с OpenRouter: ${err.message}`);
   } finally {
-    clearTimeout(timer);
+    // Ответ ещё читается ниже (тело может идти долго) — запрос считается идущим до конца чтения.
+    if (!res || !res.ok) { clearTimeout(timer); inFlight.delete(flightId); }
   }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     capture.status = res.status; capture.rawText = text.slice(0, 4000);
     throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 500)}`);
   }
-  return res.json();
+  try {
+    return await res.json();
+  } catch (err) {
+    if (flight.cancelled) throw new Error(CANCELLED);
+    if (err.name === 'AbortError') throw new Error(`Модель не ответила за ${Math.round(timeoutMs / 1000)} с. Попробуй отправить снова.`);
+    throw new Error(`Ответ модели оборвался: ${err.message}`);
+  } finally {
+    clearTimeout(timer); inFlight.delete(flightId);
+  }
 }
 
 // Повтор запроса из диагностики: то же тело (можно с другой моделью), без откатов —

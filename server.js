@@ -19,7 +19,7 @@ import { runTurn, afterSync } from './src/turn.js';
 import { planSummary, computeSummary, applySummary } from './src/summary.js';
 import { storyPromptSections, storyRequestParts, promptLayoutOf } from './src/narrator.js';
 import { syncNarration, resyncNarration } from './src/sync.js';
-import { replayRequest } from './src/llm.js';
+import { replayRequest, requestsInFlight, cancelTurnRequests, resetTurnCancel } from './src/llm.js';
 import { stamp, visibleTo, viewMessages } from './src/lines.js';
 import { companionIds, groupOf } from './src/relations.js';
 import { portraitTags, sceneTags, codexTags, codexStyle, cleanTags } from './src/art.js';
@@ -653,8 +653,20 @@ function lockTurn(res) {
     return false;
   }
   turnInFlight = true;
+  resetTurnCancel();
   return true;
 }
+function unlockTurn() { turnInFlight = false; resetTurnCancel(); }
+
+// Чего ждёт идущий ход: какие запросы к модели сейчас в работе и сколько секунд.
+app.get('/api/turn/status', (_req, res) => res.json({ running: turnInFlight, requests: turnInFlight ? requestsInFlight() : [] }));
+// Прервать ход: идущие запросы обрываются, реплика игрока остаётся «на повтор», мир — как до хода.
+// Если рассказ уже написан и шёл учёт — рассказ остаётся, а учёт помечается несостоявшимся (его можно «переучесть»).
+app.post('/api/turn/abort', (_req, res) => {
+  if (!turnInFlight) return res.status(400).json({ error: 'Сейчас ход не выполняется.' });
+  cancelTurnRequests();
+  res.json({ ok: true });
+});
 
 async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
   if (!lockTurn(res)) return;
@@ -674,7 +686,7 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
   state._growth = [];
   try {
     clearPreSync();
-    const { narration, rolls, issues, truncated, sync, timing, lookups, voices } = await runTurn({ state, apiKey: apiKey(), skipSync: ooc, beforeSync: capturePreSync });
+    const { narration, rolls, issues, truncated, sync, timing, lookups, voices, voiceNote } = await runTurn({ state, apiKey: apiKey(), skipSync: ooc, beforeSync: capturePreSync });
     const growth = state._growth || [];
     if (ooc) {
       // Ответ на реплику вне истории не должен попасть в предысторию.
@@ -693,6 +705,7 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
       growth: growth.length ? growth : undefined,
       lookups: lookups || undefined,
       voices: voices || undefined,
+      voiceNote: voiceNote || undefined,
     };
     state.log.push(entry);
     bindPreSync(state.log.length - 1);
@@ -702,7 +715,7 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
     // Полное состояние, а не выборка: иначе интерфейс не узнаёт о сцене,
     // справочнике мира и прочем, что могло измениться за ход.
     res.json({ ...publicState(), narration });
-    turnInFlight = false;
+    unlockTurn();
     if (!ooc) scheduleCompression();
   } catch (err) {
     const message = String(err.message || err);
@@ -710,7 +723,7 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
     await markTurnFailed(message);
     res.status(502).json({ error: message, log: state.log, pendingTurn: true });
   } finally {
-    turnInFlight = false;
+    unlockTurn();
   }
 }
 
@@ -783,7 +796,7 @@ app.post('/api/continue', async (_req, res) => {
     await saveState();
     fail(res, err, 502);
   } finally {
-    turnInFlight = false;
+    unlockTurn();
   }
 });
 
@@ -813,7 +826,7 @@ app.post('/api/resync', async (req, res) => {
     await saveState();
     fail(res, err, 502);
   } finally {
-    turnInFlight = false;
+    unlockTurn();
   }
 });
 
