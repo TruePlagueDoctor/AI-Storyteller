@@ -1,3 +1,4 @@
+import { viewMessages } from './lines.js';
 import { VITAL_STAT } from './dice.js';
 
 // Сверка текста рассказчика с состоянием, которым владеет код.
@@ -139,7 +140,7 @@ export function findQuestionIssues(state, narration) {
     });
   }
   // Сколько ответов подряд (с текущим) кончаются вопросом к герою.
-  const prev = (state.messages || []).filter((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string').map((m) => m.content);
+  const prev = viewMessages(state).filter((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string').map((m) => m.content);
   if (prev.length && prev[prev.length - 1] === text) prev.pop(); // текущий ответ уже лежит в истории
   const lastThree = [...prev.slice(-2), text];
   if (lastThree.length === 3 && lastThree.every(endsWithQuestion)) {
@@ -147,6 +148,27 @@ export function findQuestionIssues(state, narration) {
       kind: 'question-endings',
       text: 'Три ответа подряд заканчиваются вопросом к герою. Закончи иначе: действием или решением персонажа, событием, условием, паузой — игрок сам скажет, что делать.',
     });
+  }
+  return issues;
+}
+
+// ---- Оформление: разметка и меню вариантов ----
+// Лента показывает прозу: заголовки, списки и **жирный** выглядят мусором, а меню «1. … 2. …» в конце
+// подталкивает игрока выбирать из предложенного вместо своего хода.
+const MD_MARK = /(^|\n)\s{0,3}#{1,4}\s+\S|\*\*[^*\n]+\*\*|(^|\n)\s*[*•]\s+\S[^\n]*\n\s*[*•]\s+\S/u;
+const OPTION_LINE = /^\s*(?:\d{1,2}[.)]|[а-гa-d]\))\s+\S/iu;
+const OPTIONS_ASK = /(?:^|\n)\s*(?:варианты(?:\s+действий)?\s*:|что\s+(?:ты\s+|вы\s+)?(?:будешь|будете|станешь|станете)\s+делать\s*\?|твои\s+действия\s*[:?]|ваши\s+действия\s*[:?])\s*$/iu;
+export function findFormatIssues(narration) {
+  const text = String(narration || '').trim();
+  const issues = [];
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const tail = lines.slice(-4);
+  const menu = tail.filter((l) => OPTION_LINE.test(l)).length >= 2 || OPTIONS_ASK.test(text);
+  if (menu) {
+    issues.push({ kind: 'options', text: 'Ответ закончился списком вариантов действий или вопросом «что будешь делать?». Не предлагай варианты: закончи событием или репликой персонажа — игрок решит сам.' });
+  }
+  if (MD_MARK.test(text)) {
+    issues.push({ kind: 'markup', text: 'В ответе была разметка (заголовки, списки или **жирный**). Пиши только прозу и реплики, без разметки.' });
   }
   return issues;
 }

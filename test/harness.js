@@ -15,6 +15,7 @@ export const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAA
 // Какой это запрос — по началу системного промта.
 export function kindOf(body) {
   const sys = String(body.messages?.[0]?.content || '');
+  if (sys.startsWith('Ты играешь одного персонажа')) return 'voice';
   if (sys.startsWith('РОЛЬ: учётчик') || sys.startsWith('Ты — учётчик состояния')) return 'sync';
   if (sys.includes('архивариус')) return 'summary';
   if (sys.includes('=== КАК ВЕСТИ ЭТОТ ХОД')) return 'narrator';
@@ -26,11 +27,12 @@ export function defaultHandlers() {
     narrator: () => reply('Ты стоишь у ворот. Стражник Ольт смотрит на тебя: «Чего надо?»'),
     sync: () => reply('', [call('nothing', {})]),
     summary: () => reply('Ян пришёл к воротам.'),
+    voice: () => reply('РЕШЕНИЕ: не пускать без бумаг\nРЕПЛИКА: Бумаги покажи.\nВЫДАЁТ: косится на караульную'),
     other: () => reply('1boy, mature male, adult'),
   };
 }
 
-export async function startStack({ handlers = defaultHandlers() } = {}) {
+export async function startStack({ handlers = defaultHandlers(), env = {} } = {}) {
   const seen = [];
   const fake = createServer(async (req, res) => {
     let raw = ''; for await (const ch of req) raw += ch;
@@ -57,7 +59,7 @@ export async function startStack({ handlers = defaultHandlers() } = {}) {
   const stack = { base, fakeUrl, seen, handlers, output: '' };
   const server = spawn(process.execPath, ['server.js'], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(port), STORYTELLER_DATA_DIR: dataDir, OPENROUTER_URL: `${fakeUrl}/chat`, OPENROUTER_API_KEY: 'test' },
+    env: { ...process.env, PORT: String(port), STORYTELLER_DATA_DIR: dataDir, OPENROUTER_URL: `${fakeUrl}/chat`, OPENROUTER_API_KEY: 'test', LAN_ACCESS: '', LAN_PASSWORD: '', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stdout.on('data', (d) => { stack.output += d; });

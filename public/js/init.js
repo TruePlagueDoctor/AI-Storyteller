@@ -144,7 +144,9 @@ async function init() {
   });
   $('charModal').addEventListener('click', (e) => { if (e.target.id === 'charModal') closeCharModal(); });
 
-  $('resetBtn').addEventListener('click', resetGame);
+  $('scopeBtn').addEventListener('click', toggleFeedScope);
+  $('sceneStrip').addEventListener('click', () => $('sheetToggle').click());
+  $('toast').addEventListener('click', () => { $('toast').hidden = true; });
 
   $('tabHeroes').addEventListener('click', () => switchPanel('heroes'));
   $('tabNpcs').addEventListener('click', () => switchPanel('npcs'));
@@ -297,6 +299,9 @@ async function init() {
   try {
     const s = await api('/api/state');
     modelLabel.textContent = s.model || '—';
+    // Лента рисуется глазами активного героя — он должен быть известен до неё.
+    if (Array.isArray(s.characters)) app.characters = s.characters;
+    if (s.activeCharacterId) app.activeCharacterId = s.activeCharacterId;
     renderLog(s.log);
     applyState(s, { animate: false });
     snapshotCharSigs();

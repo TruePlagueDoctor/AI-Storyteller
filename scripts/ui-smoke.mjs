@@ -185,8 +185,76 @@ try {
     await page.click('#slotsClose');
     step('настройки и список историй открываются');
 
+    // Правки v59: «Заново» ушло из шапки в список историй; на телефоне место и время — строкой над лентой.
+    if (await page.$('#resetBtn')) errors.push(`[${viewport.name}] кнопка «Заново» осталась в шапке`);
+    if (!(await page.$('#slotList .slot.active [data-act="reset"]'))) errors.push(`[${viewport.name}] в списке историй нет «начать заново» у текущей`);
+    const strip = await page.evaluate(() => { const e = document.getElementById('sceneStrip'); return { shown: getComputedStyle(e).display !== 'none', text: e.textContent }; });
+    if (strip.shown !== (viewport.width <= 900)) errors.push(`[${viewport.name}] строка сцены: показана=${strip.shown}`);
+    if (!/Городские ворота · день 1/.test(strip.text)) errors.push(`[${viewport.name}] в строке сцены нет места и времени: ${strip.text}`);
+    step('«заново» в списке историй, строка сцены');
+
+    // «Играет сам»: галочка в редакторе НПС, после хода под ответом — что персонаж решил.
+    await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+    const npcId = (await stack.api('GET', '/api/state')).data.npcs[0].id;
+    await page.evaluate((id) => openNpcModal(app.npcs.find((n) => n.id === id)), npcId);
+    await page.waitForSelector('#npcModal:not([hidden])');
+    await page.check('#npcSelf');
+    await page.click('#npcSave');
+    await page.waitForSelector('#npcModal', { state: 'hidden' });
+    if (!(await stack.api('GET', '/api/state')).data.npcs[0].self) errors.push(`[${viewport.name}] отметка «играет сам» не сохранилась`);
+    await page.fill('#input', 'Ольт, что там за стеной?');
+    await page.press('#input', 'Enter');
+    await page.waitForSelector('.fx-voice', { timeout: 15000 });
+    await page.click('.fx-voice summary >> nth=-1');
+    if (!/Бумаги покажи/.test(await page.textContent('.fx-voice >> nth=-1'))) errors.push(`[${viewport.name}] решение персонажа не показано под ответом`);
+    await page.evaluate(() => toast('Проверка уведомления: оно не должно закрывать текст истории'));
+    const cover = await page.evaluate(() => {
+      const t = document.getElementById('toast').getBoundingClientRect();
+      return [...document.querySelectorAll('.entry.narrator, .entry.player')].filter((e) => {
+        const r = e.getBoundingClientRect();
+        return r.bottom > t.top && r.top < t.bottom && r.right > t.left && r.left < t.right;
+      }).length;
+    });
+    if (viewport.width > 900 && cover) errors.push(`[${viewport.name}] уведомление закрывает реплики ленты: ${cover}`);
+    if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-voice.png`), fullPage: false });
+    await stack.api('PUT', `/api/npcs/${npcId}`, { self: false });
+    step('персонаж «играет сам»: отметка и решение под ответом');
+
+    // Линии героев: новый герой «со своей историей» видит пустую ленту, прежние ходы — по кнопке «лента».
+    const heroBefore = (await stack.api('GET', '/api/state')).data.activeCharacterId;
+    await page.click('#addCharBtn').catch(() => page.evaluate(() => openCharModal(null)));
+    await page.waitForSelector('#charModal:not([hidden])');
+    await page.fill('#charName', 'Мира');
+    if (await page.isHidden('#charSeparateField')) errors.push(`[${viewport.name}] у нового героя нет выбора «своя отдельная история»`);
+    await page.check('#charSeparate');
+    await page.click('#charSave');
+    await page.waitForSelector('#charModal', { state: 'hidden' });
+    await page.waitForSelector('#emptyLog');
+    if (!/У этого героя история ещё не начата/.test(await page.textContent('#emptyLog'))) errors.push(`[${viewport.name}] у новой героини не пустая лента`);
+    if (!/лента: Мира/.test(await page.textContent('#scopeBtn'))) errors.push(`[${viewport.name}] нет кнопки ленты героя`);
+    stack.handlers.narrator = () => reply('Мира сходит с корабля в порту. Над водой кричат чайки.');
+    await page.click('#startBtn');
+    await page.waitForFunction(() => document.querySelectorAll('.entry.narrator').length === 1 && !document.getElementById('thinkingEntry'));
+    if (!(await page.$('.regen-bar'))) errors.push(`[${viewport.name}] у последнего ответа героини нет перегенерации`);
+    await page.click('#scopeBtn');
+    const all = await page.evaluate(() => ({ n: document.querySelectorAll('.entry.narrator').length, who: document.querySelectorAll('.entry[data-who]').length }));
+    if (all.n < 3 || !all.who) errors.push(`[${viewport.name}] общая лента: ответов ${all.n}, подписанных чужих ${all.who}`);
+    if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-lines.png`), fullPage: false });
+    // Назад к первому герою: его лента, без ходов Миры, и переиграть чужой последний ход нельзя.
+    await page.evaluate((id) => switchChar(id), heroBefore);
+    await page.waitForFunction(() => /лента: Герой/.test(document.getElementById('scopeBtn').textContent));
+    const back = await page.evaluate(() => ({ text: document.getElementById('log').textContent, regen: Boolean(document.querySelector('.regen-bar')) }));
+    if (/чайки/.test(back.text)) errors.push(`[${viewport.name}] в ленте первого героя видны ходы Миры`);
+    if (back.regen) errors.push(`[${viewport.name}] предлагается переиграть ход другого героя`);
+    const miraId = (await stack.api('GET', '/api/state')).data.characters.find((c) => c.name === 'Мира').id;
+    await stack.api('DELETE', `/api/characters/${miraId}`);
+    stack.handlers.narrator = () => reply('Ты стоишь у ворот. Стражник Ольт смотрит на тебя: «Чего надо?»'); // как по умолчанию — для следующего экрана
+    step('линии героев: своя лента, общая по кнопке, чужой ход не переиграть');
+
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     if (overflow > 1) errors.push(`[${viewport.name}] горизонтальная прокрутка: лишние ${overflow}px`);
+    await page.click('#toast').catch(() => {}); // щелчок убирает уведомление
+    if (!(await page.evaluate(() => document.getElementById('toast').hidden))) errors.push(`[${viewport.name}] уведомление не убирается щелчком`);
     if (shots) await page.screenshot({ path: join(shots, `${viewport.name}.png`), fullPage: false });
     await page.close();
   }

@@ -172,8 +172,9 @@ test('подглядывание в кодекс: статья приходит 
   fake = installFakeFetch([
     (body) => {
       assert.ok(body.tools.some((t) => t.function.name === 'codex_lookup'), 'инструмент предложен даже без кубиков');
-      assert.match(body.messages[0].content, /Бестиарий: Прыгун \(☠☠☠\)/);
-      assert.ok(!/без глаз/.test(body.messages[0].content), 'полной статьи в промте ещё нет');
+      const prompt = body.messages.map((m) => m.content).join('\n'); // кодекс едет в конце запроса, с состоянием мира
+      assert.match(prompt, /Бестиарий: Прыгун \(☠☠☠\)/);
+      assert.ok(!/без глаз/.test(prompt), 'полной статьи в промте ещё нет');
       return reply('', [call('codex_lookup', { titles: ['Прыгун'] })]);
     },
     (body) => {

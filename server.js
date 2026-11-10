@@ -17,9 +17,11 @@ import {
 } from './src/state.js';
 import { runTurn, afterSync } from './src/turn.js';
 import { planSummary, computeSummary, applySummary } from './src/summary.js';
-import { composeStorySystem, storyPromptSections } from './src/narrator.js';
+import { storyPromptSections, storyRequestParts, promptLayoutOf } from './src/narrator.js';
 import { syncNarration, resyncNarration } from './src/sync.js';
 import { replayRequest } from './src/llm.js';
+import { stamp, visibleTo, viewMessages } from './src/lines.js';
+import { companionIds, groupOf } from './src/relations.js';
 import { portraitTags, sceneTags, codexTags, codexStyle, cleanTags } from './src/art.js';
 import { DEFAULT_IMAGE_SETTINGS } from './src/images.js';
 import { fillField, writeBrief } from './src/fill.js';
@@ -29,11 +31,16 @@ import { txt2img, pingSd } from './src/images.js';
 import { advanceStatuses } from './src/statuses.js';
 import { PUBLIC_DIR, AVATAR_DIR, SCENE_DIR } from './src/paths.js';
 import { makeBackup, listBackups, maybeDailyBackup, readBackupSlot } from './src/backup.js';
+import { accessConfig, accessGuard, lanAddresses } from './src/access.js';
+import { createServer } from 'node:http';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 
+// Доступ: только этот компьютер; из сети — по LAN_ACCESS=1 и паролю (см. src/access.js). Раньше всего остального.
+const access = accessConfig();
+app.use(accessGuard(access));
 app.use(express.json({ limit: '6mb' }));
 // Статику не кэшируем: иначе браузер показывает старый app.js после обновления
 // и кажется, что правки не приехали.
@@ -55,6 +62,9 @@ function publicState() {
   return {
     characters: s.characters,
     activeCharacterId: s.activeCharacterId,
+    // Кто сейчас рядом с активным героем (спутники) и у кого своя отдельная история — для вкладок и редактора героя.
+    companions: companionIds(s),
+    soloHeroes: s.characters.filter((c) => !s.characters.some((x) => x.id !== c.id && groupOf(x) === groupOf(c))).map((c) => c.id),
     npcs: s.npcs,
     lorebook: s.lorebook,
     codexKinds: { kinds: CODEX_KINDS, labels: KIND_LABEL, fields: KIND_FIELDS },
@@ -86,6 +96,7 @@ function publicState() {
     stateSync: s.stateSync,
     loreAutoWrite: s.loreAutoWrite,
     syncPromptStyle: s.syncPromptStyle || 'technical',
+    promptLayout: promptLayoutOf(s),
     diceEnabled: s.diceEnabled,
     summary: s.summary,
     compressing: compression.running,
@@ -114,16 +125,17 @@ app.get('/api/state', (_req, res) => ok(res));
 // Собранный системный промт рассказчика — как его видит модель на следующем ходу.
 app.get('/api/prompt', (_req, res) => {
   const state = getState();
-  res.type('text/plain; charset=utf-8').send(composeStorySystem(state, { withTools: state.stateSync === false }));
+  const { system, late } = storyRequestParts(state, { withTools: state.stateSync === false });
+  res.type('text/plain; charset=utf-8').send(late ? `${system}\n\n––––– дальше идёт история, а в конце запроса, перед ходом игрока: –––––\n\n${late}` : system);
 });
 
 // Из чего состоит запрос рассказчику и сколько весит каждая часть — чтобы видеть, что разрастается.
 app.get('/api/prompt/breakdown', (_req, res) => {
   const state = getState();
   const tok = (n) => Math.round(n / 3.2); // русский текст: ~3 символа на токен у DeepSeek/GLM
-  const sections = storyPromptSections(state, { withTools: state.stateSync === false })
-    .map((s) => ({ label: s.label, chars: s.text.length, tokens: tok(s.text.length) }));
-  const msgs = (state.messages || []).filter((m) => typeof m.content === 'string');
+  const sections = storyPromptSections(state, { withTools: state.stateSync === false, layout: promptLayoutOf(state) })
+    .map((s) => ({ label: s.label, chars: s.text.length, tokens: tok(s.text.length), late: s.late || undefined }));
+  const msgs = viewMessages(state).filter((m) => typeof m.content === 'string');
   const histChars = msgs.reduce((a, m) => a + m.content.length, 0);
   sections.push({ label: `История дословно (${msgs.length} сообщ.)`, chars: histChars, tokens: tok(histChars), history: true });
   const total = sections.reduce((a, s) => a + s.tokens, 0);
@@ -192,6 +204,7 @@ app.post('/api/log/:index/truncate', whileIdle, async (req, res) => {
   } catch (e) { fail(res, e, 400); }
 });
 app.post('/api/log/:index/swipe', whileIdle, async (req, res) => {
+  if (!tailIsMine(res)) return;
   try { await switchVariant(Number(req.params.index), Number(req.body?.dir) || 1); ok(res); } catch (e) { fail(res, e, 400); }
 });
 app.post('/api/log/:index/branch', whileIdle, async (req, res) => {
@@ -559,7 +572,8 @@ app.delete('/api/characters/:id/avatar', async (req, res) => {
 });
 
 // ---- Ход игры ----
-app.post('/api/action', async (req, res) => {
+// whileIdle — до любых правок истории: иначе реплика второго запроса попадала в ленту идущего хода.
+app.post('/api/action', whileIdle, async (req, res) => {
   if (!apiKey()) {
     return res.status(400).json({ error: 'Не задан OPENROUTER_API_KEY. Скопируй .env.example в .env и впиши ключ.' });
   }
@@ -571,15 +585,18 @@ app.post('/api/action', async (req, res) => {
   // иначе в истории окажутся две реплики игрока подряд.
   await dropPendingTurn();
 
-  if (state.messages.length === 0 && !text) {
+  // Пусто в истории ЭТОГО героя и нет текста — вступительная сцена (и для нового героя в идущей партии).
+  if (viewMessages(state).length === 0 && !text) {
     state.messages.push({
+      ...stamp(state),
       role: 'user',
-      content: 'Начни игру: задай вступительную сцену и создай стартовые блоки для героев.',
+      // Листы в двухпроходном режиме заводит учётчик — рассказчика о блоках не просим (у него нет инструментов).
+      content: state.stateSync === false ? 'Начни игру: задай вступительную сцену и создай стартовые блоки для героев.' : 'Начни игру: задай вступительную сцену.',
     });
   } else {
     // hero — за кого сделан ход: после переключения рассказчик не должен путать, с кем что было.
-    state.messages.push({ role: 'user', content: text || 'Продолжай.', hero: state.activeCharacterId });
-    if (text) state.log.push({ role: 'player', text, hero: state.activeCharacterId });
+    state.messages.push({ role: 'user', content: text || 'Продолжай.', ...stamp(state) });
+    if (text) state.log.push({ role: 'player', text, ...stamp(state) });
   }
 
   await runPlayerTurn(state, res);
@@ -619,6 +636,17 @@ function scheduleCompression() {
   })();
 }
 
+// Последний ход в общей ленте сделан другим героем (у активного своя линия): переигрывать, договаривать
+// и переучитывать его отсюда нельзя — это чужой ход, и мир после него общий.
+function tailIsMine(res) {
+  const s = getState();
+  const last = s.log[s.log.length - 1];
+  if (!last || visibleTo(last, s.activeCharacterId)) return true;
+  const who = (s.characters.find((c) => c.id === last.hero) || {}).name || 'другого героя';
+  res.status(400).json({ error: `Последний ход сделан за героя «${who}» — переключись на него, чтобы переиграть или продолжить этот ход.` });
+  return false;
+}
+
 function lockTurn(res) {
   if (turnInFlight) {
     res.status(409).json({ error: 'Ход уже выполняется — дождись ответа.' });
@@ -646,7 +674,7 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
   state._growth = [];
   try {
     clearPreSync();
-    const { narration, rolls, issues, truncated, sync, timing, lookups } = await runTurn({ state, apiKey: apiKey(), skipSync: ooc, beforeSync: capturePreSync });
+    const { narration, rolls, issues, truncated, sync, timing, lookups, voices } = await runTurn({ state, apiKey: apiKey(), skipSync: ooc, beforeSync: capturePreSync });
     const growth = state._growth || [];
     if (ooc) {
       // Ответ на реплику вне истории не должен попасть в предысторию.
@@ -655,8 +683,8 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
       }
     }
     const entry = {
-      role: 'narrator', text: narration, hero: state.activeCharacterId,
-      timing: { narrate: (timing && timing.narrate) || [] },
+      role: 'narrator', text: narration, ...stamp(state),
+      timing: { narrate: (timing && timing.narrate) || [], voices: (timing && timing.voices) || undefined },
       sync: sync || undefined,
       rolls: rolls && rolls.length ? rolls : undefined,
       issues: issues && issues.length ? issues : undefined,
@@ -664,6 +692,7 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
       ticks: ticks.length ? ticks : undefined,
       growth: growth.length ? growth : undefined,
       lookups: lookups || undefined,
+      voices: voices || undefined,
     };
     state.log.push(entry);
     bindPreSync(state.log.length - 1);
@@ -686,10 +715,11 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
 }
 
 // Повторить сорвавшийся ход.
-app.post('/api/retry', async (_req, res) => {
+app.post('/api/retry', whileIdle, async (_req, res) => {
   if (!apiKey()) return res.status(400).json({ error: 'Не задан OPENROUTER_API_KEY.' });
   const state = getState();
   if (!hasPendingTurn()) return res.status(400).json({ error: 'Нечего повторять.' });
+  if (!tailIsMine(res)) return;
   trimFailedTail();          // выбросить недоделанный ответ прошлой попытки
   await clearTurnFailure();
   const last = state.log[state.log.length - 1];
@@ -697,7 +727,7 @@ app.post('/api/retry', async (_req, res) => {
 });
 
 // ---- Сообщение рассказчику вне истории (OOC) ----
-app.post('/api/ooc', async (req, res) => {
+app.post('/api/ooc', whileIdle, async (req, res) => {
   if (!apiKey()) {
     return res.status(400).json({ error: 'Не задан OPENROUTER_API_KEY.' });
   }
@@ -708,8 +738,8 @@ app.post('/api/ooc', async (req, res) => {
 
   const wrapped = oocWrap(text);
 
-  state.messages.push({ role: 'user', content: wrapped, ooc: true });
-  state.log.push({ role: 'ooc', text });
+  state.messages.push({ role: 'user', content: wrapped, ooc: true, ...stamp(state) });
+  state.log.push({ role: 'ooc', text, ...stamp(state) });
   await runPlayerTurn(state, res, { ooc: true });
 });
 
@@ -719,9 +749,10 @@ app.post('/api/continue', async (_req, res) => {
   const state = getState();
   const last = state.log[state.log.length - 1];
   if (!last || last.role !== 'narrator') return res.status(400).json({ error: 'Нечего продолжать.' });
+  if (!tailIsMine(res)) return;
 
   if (!lockTurn(res)) return;
-  state.messages.push({ role: 'user', content: 'Продолжи ровно с того места, где оборвалось. Не повторяй уже написанное.', ooc: true });
+  state.messages.push({ role: 'user', content: 'Продолжи ровно с того места, где оборвалось. Не повторяй уже написанное.', ooc: true, ...stamp(state) });
   try {
     const contStart = Date.now();
     const { narration, timing } = await runTurn({ state, apiKey: apiKey(), skipSync: true });
@@ -762,6 +793,7 @@ app.post('/api/resync', async (req, res) => {
   if (!lockTurn(res)) return;
   const state = getState();
   try {
+    if (!tailIsMine(res)) return;
     if (!canResync()) {
       return res.status(400).json({ error: 'Переучесть можно только последний ход и только сыгранный после обновления (до обрезки или свайпа).' });
     }
@@ -795,6 +827,7 @@ app.post('/api/regenerate', async (_req, res) => {
   if (!canRegenerate()) {
     return res.status(400).json({ error: 'Нечего перегенерировать.' });
   }
+  if (!tailIsMine(res)) return;
   try {
     rewindLastTurn(); // мир, опыт, лорбук и номер хода — к точке до хода
     const lastUser = [...state.messages].reverse().find((m) => m.role === 'user');
@@ -817,9 +850,25 @@ await loadState();
 // Раз в сутки при запуске — копия всех партий (data/backups, последние 10).
 try { const b = await maybeDailyBackup(); if (b) console.log(`  Резервная копия партий: data/backups/${b.id}`); }
 catch (e) { console.warn('  Не удалось сделать резервную копию:', e.message); }
-app.listen(PORT, () => {
+const onListening = () => {
   console.log(`\n  ИИ-рассказчик запущен: http://localhost:${PORT}`);
+  if (access.lan) {
+    const ips = lanAddresses();
+    console.log('  Открыт доступ из локальной сети (по паролю LAN_PASSWORD)' + (ips.length ? ': ' + ips.map((ip) => `http://${ip}:${PORT}`).join(', ') : '.'));
+  } else if (access.wanted) {
+    console.log('  ⚠  LAN_ACCESS=1, но пароль LAN_PASSWORD не задан — доступ из сети НЕ открыт. Впиши пароль в .env.');
+  } else {
+    console.log('  Игра доступна только с этого компьютера. С телефона — см. LAN_ACCESS в .env.example.');
+  }
   // Запуск двойным щелчком (Запуск.bat) — сразу открыть игру в браузере.
   if (process.env.OPEN_BROWSER === '1') openBrowser(`http://localhost:${PORT}`);
   console.log(apiKey() ? '' : '  ⚠  OPENROUTER_API_KEY не задан — создай .env из .env.example.\n');
-});
+};
+if (access.lan) {
+  app.listen(PORT, onListening);
+} else {
+  // Только локальный адрес: из сети к серверу не подключиться вовсе. «localhost» в браузере может означать
+  // и ::1 — слушаем и его, если в системе есть IPv6.
+  app.listen(PORT, '127.0.0.1', onListening);
+  createServer(app).on('error', () => { /* нет IPv6 или порт занят — достаточно 127.0.0.1 */ }).listen(PORT, '::1');
+}

@@ -1,5 +1,5 @@
 // Версия сборки — видна в консоли браузера (F12), помогает проверить, что файл обновился.
-console.log('AI Storyteller UI v55 — замки имени, расы и положения героя');
+console.log('AI Storyteller UI v60 — у каждого героя своя лента и предыстория');
 
 // ---- Метаданные типов блоков ----
 const TYPE_META = {
@@ -68,11 +68,25 @@ function snapshotCharSigs() {
   for (const c of app.characters) charSigs[c.id] = charSig(c);
 }
 
+// ---- Линии героев: у каждого своя лента ----
+// Реплика видна герою, если ход его, если он был рядом (with), или запись старая, без пометки (тогда лента была общей).
+let feedScope = 'hero'; // 'hero' — лента активного героя, 'all' — все ходы по порядку
+function heroSees(e, heroId = app.activeCharacterId) {
+  if (!e || !e.hero || e.hero === heroId) return true;
+  return Array.isArray(e.with) ? e.with.includes(heroId) : true;
+}
+// Рядом ли герой с активным (спутник): та же компания и отмечен «в истории».
+function heroNear(c) { return c.id === app.activeCharacterId || (app.companions || []).includes(c.id); }
+function entryVisible(e) { return feedScope === 'all' || heroSees(e); }
+
 // ---- Применяем свежее состояние с сервера ----
 function applyState(data, { animate = false } = {}) {
   // Обновляем только то, что пришло: ответ без поля не должен стирать данные.
   if (Array.isArray(data.characters)) app.characters = data.characters;
+  const heroChanged = Boolean(data.activeCharacterId && app.activeCharacterId && data.activeCharacterId !== app.activeCharacterId);
   if (data.activeCharacterId) app.activeCharacterId = data.activeCharacterId;
+  if (Array.isArray(data.companions)) app.companions = data.companions;
+  if (Array.isArray(data.soloHeroes)) app.soloHeroes = data.soloHeroes;
   if (data.activeSlotId) app.activeSlotId = data.activeSlotId;
   if (Array.isArray(data.npcs)) app.npcs = data.npcs;
   if (Array.isArray(data.lorebook)) app.lorebook = data.lorebook;
@@ -100,4 +114,6 @@ function applyState(data, { animate = false } = {}) {
   renderSheet(activeChar(), animate);
   renderNpcs(animate);
   renderLore();
+  // Сменился герой — показываем его ленту.
+  if (heroChanged) { feedScope = 'hero'; renderLog(Array.isArray(data.log) ? data.log : app.log); decorateLastNarrator(); }
 }

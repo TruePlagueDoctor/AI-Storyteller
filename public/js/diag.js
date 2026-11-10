@@ -40,7 +40,7 @@ function renderDiagList() {
     const el = document.createElement('div');
     el.className = 'diag-item ' + r.status + (r.id === diagSelected ? ' active' : '');
     el.dataset.id = r.id;
-    const tokens = r.in !== undefined ? `${r.in}→${r.out ?? '?'} ток` : '';
+    const tokens = r.in !== undefined ? `${r.in}→${r.out ?? '?'} ток${r.cached ? ` · кэш ${Math.round(r.cached / Math.max(r.in, 1) * 100)}%` : ''}` : '';
     el.innerHTML = `<div class="diag-item-top"><span class="diag-purpose"><span class="diag-ico">${DIAG_ICON[r.status]}</span> ${esc(r.purpose)}</span><span class="diag-mini">${fmtTime(r.at)}</span></div>` +
       `<div class="diag-mini">${esc(r.model || '')} · ${fmtMs(r.ms || 0)}${tokens ? ' · ' + tokens : ''}${r.cost !== undefined ? ' · ' + fmtCost(r.cost) : ''}</div>` +
       (r.status !== 'ok' ? `<div class="diag-mini" style="color:var(--${r.status === 'error' ? 'danger' : 'brass'})">${esc(r.hint || (r.warn || []).join('; ') || r.error || '')}</div>` : '');
@@ -77,7 +77,7 @@ async function showDiag(id) {
     `<span class="diag-chip ${r.status}">${r.status === 'ok' ? 'успешно' : r.status === 'warn' ? 'с предупреждением' : 'ошибка' + (r.httpStatus ? ' ' + r.httpStatus : '')}</span>`,
     `<span class="diag-chip">${esc(r.model || '?')}${r.provider ? ' · ' + esc(r.provider) : ''}</span>`,
     `<span class="diag-chip">${fmtMs(r.ms || 0)}</span>`,
-    r.in !== undefined ? `<span class="diag-chip">вход ${r.in} · выход ${r.out ?? '?'}${r.reasoning ? ` (из них размышления ${r.reasoning})` : ''}</span>` : '',
+    r.in !== undefined ? `<span class="diag-chip">вход ${r.in}${r.cached ? ` (из кэша ${r.cached} — ${Math.round(r.cached / Math.max(r.in, 1) * 100)}%)` : ''} · выход ${r.out ?? '?'}${r.reasoning ? ` (из них размышления ${r.reasoning})` : ''}</span>` : '',
     r.cost !== undefined ? `<span class="diag-chip">${fmtCost(r.cost)}</span>` : '',
     r.finish ? `<span class="diag-chip">finish: ${esc(r.finish)}</span>` : '',
     `<span class="diag-chip">${fmtTime(r.at)}</span>`,
@@ -171,11 +171,13 @@ async function showPromptBreakdown() {
   const el = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
   box.appendChild(el('h3', 'diag-h', 'Состав промта рассказчика'));
   box.appendChild(el('p', 'diag-sub', `≈ ${d.total.toLocaleString('ru-RU')} токенов на следующем ходу (оценка). Ход ${d.counts.turn}.`));
+  const fresh = d.sections.filter((s) => s.late).reduce((a, s) => a + s.tokens, 0);
+  if (fresh) box.appendChild(el('p', 'diag-sub', `Экономная раскладка: меняется каждый ход только состояние мира (≈ ${fresh.toLocaleString('ru-RU')} ток., отмечено ↻) и новая реплика; остальное провайдер может взять из кэша.`));
   const max = Math.max(...d.sections.map((s) => s.tokens), 1);
   const table = el('div', 'pb-table');
   for (const s of [...d.sections].sort((a, b) => b.tokens - a.tokens)) {
     const row = el('div', 'pb-row' + (s.history ? ' history' : ''));
-    row.appendChild(el('span', 'pb-label', s.label));
+    row.appendChild(el('span', 'pb-label', (s.late ? '↻ ' : '') + s.label));
     const bar = el('span', 'pb-bar'); const fill = el('i'); fill.style.width = (s.tokens / max * 100) + '%'; bar.appendChild(fill);
     row.appendChild(bar);
     row.appendChild(el('span', 'pb-num', `${s.tokens.toLocaleString('ru-RU')} · ${Math.round(s.tokens / d.total * 100)}%`));

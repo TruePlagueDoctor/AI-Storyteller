@@ -16,8 +16,10 @@ function renderTabs() {
       tab.appendChild(av);
     }
     tab.appendChild(document.createTextNode(c.name));
-    if (c.present === false) tab.classList.add('absent');
-    tab.title = (c.persona || c.name) + (c.present === false ? ' · не в истории' : '');
+    const near = heroNear(c);
+    const solo = (app.soloHeroes || []).includes(c.id) && app.characters.length > 1;
+    if (!near) tab.classList.add('absent');
+    tab.title = (c.persona || c.name) + (near ? '' : solo ? ' · своя отдельная история' : ' · не рядом с героем');
 
     // Глазок прямо на вкладке: убрать героя из истории можно, не переключаясь
     // на него — иначе он стал бы активным, а активного убрать нельзя.
@@ -25,11 +27,11 @@ function renderTabs() {
       const eye = document.createElement('span');
       eye.className = 'tab-eye';
       eye.dataset.id = c.id;
-      eye.textContent = c.present === false ? '\u25CB' : '\u25CF';
-      eye.title = c.present === false ? 'Вернуть в историю' : 'Убрать из истории';
+      eye.textContent = near ? '\u25CF' : '\u25CB';
+      eye.title = near ? 'Рядом с героем — убрать из сцены' : 'Присоединить к герою: он окажется рядом, история станет общей';
       eye.addEventListener('click', (ev) => {
         ev.stopPropagation();   // не переключаться на героя при клике по глазку
-        togglePresence(c.id, c.present === false);
+        togglePresence(c.id, !near);
       });
       tab.appendChild(eye);
     }

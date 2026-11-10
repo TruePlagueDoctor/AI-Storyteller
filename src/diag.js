@@ -87,6 +87,7 @@ export function recordRequest(rec) {
     httpStatus: rec.httpStatus || undefined,
     finish: ch ? (ch.finish_reason || ch.native_finish_reason || '') : undefined,
     in: Number.isFinite(u.prompt_tokens) ? u.prompt_tokens : undefined,
+    cached: Number.isFinite(u.prompt_tokens_details?.cached_tokens) ? u.prompt_tokens_details.cached_tokens : undefined, // сколько входа взято из кэша провайдера
     out: Number.isFinite(u.completion_tokens) ? u.completion_tokens : undefined,
     reasoning: Number.isFinite(u.completion_tokens_details?.reasoning_tokens) ? u.completion_tokens_details.reasoning_tokens : undefined,
     cost: Number.isFinite(u.cost) ? u.cost : undefined,

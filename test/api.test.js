@@ -127,8 +127,16 @@ test('два хода одновременно — второй получает
   assert.equal((await api('POST', '/api/log/0/truncate')).status, 409);
   assert.equal((await api('POST', '/api/slots', { name: 'x' })).status, 409, 'партию во время хода не сменить');
   assert.equal((await api('POST', '/api/reset')).status, 409);
+  // Второе сообщение (другая вкладка) не должно попасть в ленту идущего хода.
+  assert.equal((await api('POST', '/api/action', { text: 'ВТОРАЯ ВКЛАДКА' })).status, 409);
+  assert.equal((await api('POST', '/api/ooc', { text: 'ВНЕ ИСТОРИИ' })).status, 409);
+  assert.equal((await api('POST', '/api/retry')).status, 409);
   release();
-  assert.equal((await first).status, 200);
+  const done = await first;
+  assert.equal(done.status, 200);
+  const tail = done.data.log.slice(-2).map((e) => `${e.role}: ${e.text}`);
+  assert.deepEqual(tail, ['player: Жду', 'narrator: Долгий ответ закончился, и наступила тишина над площадью.']);
+  assert.ok(!done.data.log.some((e) => /ВТОРАЯ ВКЛАДКА|ВНЕ ИСТОРИИ/.test(e.text)));
 });
 
 test('сжатие истории идёт в фоне и сворачивает старые ходы', async () => {
@@ -371,4 +379,83 @@ test('имя и раса героя: учётчик меняет, переген
   ({ data } = await api('PUT', `/api/characters/${h.id}`, { name: name0, locked: ['name', 'race', 'social', 'bogus'] }));
   assert.deepEqual((await api('GET', '/api/state')).data.characters[0].locked, ['name', 'race', 'social']);
   await api('PUT', `/api/characters/${h.id}`, { locked: [] });
+});
+
+test('персонаж «играет сам»: отметка сохраняется, решение видно под ответом, перегенерация переигрывает', async () => {
+  handlers.narrator = () => reply('Ты стоишь у ворот. Ольт смотрит на тебя.');
+  handlers.sync = () => reply('', [call('npc', { name: 'Ольт', description: 'Стражник', secret: 'берёт взятки' }), call('scene', { location: 'Ворота', present: ['Ольт'] })]);
+  let { data } = await api('POST', '/api/action', { text: 'Иду к воротам' });
+  const olt = data.npcs.find((n) => n.name === 'Ольт');
+  ({ data } = await api('PUT', `/api/npcs/${olt.id}`, { self: true }));
+  assert.equal(data.npcs.find((n) => n.id === olt.id).self, true);
+
+  handlers.sync = () => reply('', [call('nothing', {})]);
+  handlers.voice = () => reply('РЕШЕНИЕ: не пускать\nРЕПЛИКА: Назад.\nВЫДАЁТ: —');
+  const from = seen.length;
+  ({ data } = await api('POST', '/api/action', { text: 'Ольт, пропусти' }));
+  assert.deepEqual(lastNarr(data).voices, [{ name: 'Ольт', decision: 'не пускать', line: 'Назад.', tell: '' }]);
+  const kinds = seen.slice(from).map((x) => x.kind);
+  assert.deepEqual(kinds.slice(0, 2), ['voice', 'narrator']);
+  const narr = seen.slice(from).find((x) => x.kind === 'narrator').body.messages.map((m) => m.content).join('\n');
+  assert.ok(narr.includes('говорит: «Назад.»') && !narr.includes('берёт взятки'));
+
+  handlers.voice = () => reply('РЕШЕНИЕ: пустить за монету\nРЕПЛИКА: Монету давай.\nВЫДАЁТ: —');
+  ({ data } = await api('POST', '/api/regenerate'));
+  assert.equal(lastNarr(data).voices[0].decision, 'пустить за монету');
+
+  ({ data } = await api('PUT', `/api/npcs/${olt.id}`, { self: false }));
+  assert.equal(data.npcs.find((n) => n.id === olt.id).self, undefined);
+});
+
+test('линии героев: своя лента и история, вступление для нового героя, чужой последний ход не переиграть', async () => {
+  await api('POST', '/api/reset');
+  handlers.sync = () => reply('', [call('nothing', {})]);
+  handlers.narrator = () => reply('Ян стоит у ворот. Стражи нет.');
+  await api('POST', '/api/action', { text: 'Ян идёт к воротам' });
+  await api('PUT', '/api/scene', { location: 'Ворота' });
+  const first = (await api('GET', '/api/state')).data.characters[0];
+
+  let { data } = await api('POST', '/api/characters', { name: 'Мира', race: 'эльф', separate: true });
+  const mira = data.characters.find((c) => c.name === 'Мира');
+  assert.equal(mira.race, 'эльф', 'поля формы нового героя сохраняются');
+  assert.equal(data.scene.location, '', 'отдельная история начинается не в месте прежнего героя');
+  // Переиграть последний ход Яна, играя за Миру, нельзя.
+  const regen = await api('POST', '/api/regenerate');
+  assert.equal(regen.status, 400);
+  assert.match(regen.data.error, /Последний ход сделан за героя/);
+
+  // «Начать» у новой героини: вступительная сцена, истории Яна в запросе нет.
+  assert.deepEqual(data.companions, [], 'у Миры своя история — Ян не рядом');
+  assert.ok(data.soloHeroes.includes(mira.id));
+  handlers.narrator = () => reply('Мира сходит с корабля в порту. Чайки кричат.');
+  let from = seen.length;
+  ({ data } = await api('POST', '/api/action', { text: '' }));
+  let narr = seen.slice(from).find((x) => x.kind === 'narrator').body.messages;
+  assert.match(narr.at(-1).content, /Начни игру: задай вступительную сцену/);
+  assert.ok(!narr.some((m) => m.content.includes('Ян стоит у ворот')));
+  const mine = data.log.filter((e) => e.hero === mira.id);
+  assert.equal(mine.length, 1);
+  assert.deepEqual(mine[0].with, []);
+
+  // Возвращаемся к Яну: его история на месте, истории Миры нет; место — его.
+  ({ data } = await api('POST', `/api/characters/${first.id}/activate`));
+  assert.equal(data.scene.location, 'Ворота');
+  handlers.narrator = () => reply('Ян ждёт. Никого.');
+  handlers.sync = () => reply('', [call('nothing', {})]);
+  from = seen.length;
+  ({ data } = await api('POST', '/api/action', { text: 'Ян ждёт' }));
+  narr = seen.slice(from).find((x) => x.kind === 'narrator').body.messages.map((m) => m.content).join('\n');
+  assert.ok(narr.includes('Ян стоит у ворот') && !narr.includes('Чайки кричат'));
+  assert.ok(!narr.includes('[Ход за героя'), 'пометки «чей ход» не нужны: в окне только свои ходы');
+  assert.equal(data.log.length, 5, 'общая лента хранит все ходы по порядку');
+  // Присоединяем Миру к Яну: теперь она рядом, и новые ходы общие.
+  ({ data } = await api('POST', `/api/characters/${mira.id}/presence`, { present: true }));
+  assert.deepEqual(data.companions, [mira.id]);
+  assert.deepEqual(data.soloHeroes, []);
+  ({ data } = await api('POST', '/api/action', { text: 'Ян здоровается с Мирой' }));
+  assert.deepEqual(data.log.at(-1).with, [mira.id]);
+  // И снова отделяем — через редактор героя.
+  ({ data } = await api('PUT', `/api/characters/${mira.id}`, { separate: true }));
+  assert.deepEqual(data.companions, []);
+  await api('DELETE', `/api/characters/${mira.id}`);
 });

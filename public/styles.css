@@ -1138,6 +1138,12 @@ body {
 .turn-fx { margin-top: 8px; display: flex; flex-direction: column; gap: 3px; }
 .fx-tick, .fx-growth { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
 .fx-tick { color: var(--status); }
+.fx-voice { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); }
+.fx-voice summary { cursor: pointer; color: var(--brass-dim); list-style: none; }
+.fx-voice summary::-webkit-details-marker { display: none; }
+.fx-voice summary:hover, .fx-voice[open] summary { color: var(--brass); }
+.fx-voice-row { margin: 4px 0 0 18px; font-family: 'Spectral', serif; font-size: 13.5px; line-height: 1.45; color: var(--text); }
+.fx-voice-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
 .fx-growth { color: var(--item); }
 .status-fx { color: var(--text-faint); font-size: 10.5px; }
 
@@ -1321,11 +1327,17 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 .composer-row .send { align-self: stretch; padding-left: 18px; padding-right: 18px; }
 
 /* ---- Уведомления: сверху, не поверх поля ввода ---- */
+/* На компьютере — в правом нижнем углу, над панелью листа: текст истории не закрывают.
+   На телефоне панели нет — сверху, поверх строки сцены. Щелчок убирает. */
 .toast {
-  top: 74px; bottom: auto;
+  top: auto; bottom: 20px; left: auto; right: 20px; transform: none;
   border-left-color: var(--brass);
   z-index: 80;
-  max-width: min(560px, calc(100vw - 32px));
+  max-width: min(340px, calc(100vw - 32px));
+  cursor: pointer;
+}
+@media (max-width: 900px) {
+  .toast { top: 58px; bottom: auto; left: 12px; right: 12px; max-width: none; }
 }
 .toast.error { border-left-color: var(--danger); }
 
@@ -1532,6 +1544,27 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
   user-select: none;
 }
 .sync-log > summary::-webkit-details-marker { display: none; }
+/* Служебная строка учёта у старых ответов не мешает читать: видна при наведении на ответ,
+   у последнего ответа, в раскрытом виде и когда есть предупреждение или сбой. */
+@media (hover: hover) {
+  .entry.narrator:not(:last-child) .sync-log:not([open]):not(.has-warn):not(.failed) > summary { opacity: 0; transition: opacity 0.15s; }
+  .entry.narrator:not(:last-child):hover .sync-log > summary,
+  .entry.narrator:not(:last-child) .sync-log > summary:focus-visible { opacity: 0.75; }
+  .entry.narrator:not(:last-child) .turn-timing { opacity: 0; transition: opacity 0.15s; }
+  .entry.narrator:not(:last-child):hover .turn-timing { opacity: 1; }
+}
+
+/* Строка сцены над лентой — только там, где панель листа спрятана в шторку. */
+.scene-strip { display: none; }
+@media (max-width: 900px) {
+  .scene-strip {
+    display: block; flex: 0 0 auto; width: 100%; text-align: left;
+    padding: 7px 16px; border: 0; border-bottom: 1px solid var(--edge-soft);
+    background: var(--ink-2, var(--ink)); color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.4;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+  }
+}
 .sync-log > summary:hover { opacity: 1; color: var(--text-dim); border-color: var(--edge); }
 .sync-log[open] > summary { opacity: 1; color: var(--text-dim); margin-bottom: 8px; }
 .sync-log.has-warn > summary { border-color: color-mix(in srgb, var(--brass) 45%, transparent); }
@@ -2033,3 +2066,12 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 .lock-btn:hover { opacity: 0.8; }
 .lock-btn.on { opacity: 1; filter: none; }
 .field-col > .field-label:has(.lock-btn) { display: flex; align-items: center; gap: 0; }
+
+/* ---- Общая лента всех героев: чужие ходы подписаны именем ---- */
+.entry[data-who]::before {
+  content: attr(data-who);
+  display: block; margin-bottom: 4px;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--brass-dim);
+}
+.entry[data-who] { opacity: 0.82; }

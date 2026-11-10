@@ -63,7 +63,9 @@ function runSearch() {
 
 function jumpToEntry(index) {
   closeSearch();
-  const el = logEl.querySelector(`.entry[data-index="${index}"]`);
+  let el = logEl.querySelector(`.entry[data-index="${index}"]`);
+  // Реплика из линии другого героя — показываем общую ленту.
+  if (!el && feedScope === 'hero') { toggleFeedScope(); el = logEl.querySelector(`.entry[data-index="${index}"]`); }
   if (!el) { toast('Эта реплика не показана в ленте.'); return; }
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   el.classList.remove('found');

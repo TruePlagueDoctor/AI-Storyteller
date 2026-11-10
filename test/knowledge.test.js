@@ -22,7 +22,7 @@ const world = () => {
 test('после хода присутствующие НПС отмечаются как видевшие героя', () => {
   const st = world();
   markSeen(st);
-  assert.deepEqual(st.npcs[1].lastSeen, { turn: 40, day: 9 });
+  assert.deepEqual(st.npcs[1].lastSeen, { turn: 40, day: 9, since: 40 });
   assert.deepEqual(st.npcs[0].lastSeen, { turn: 12, day: 2 }, 'отсутствующий — без изменений');
 });
 

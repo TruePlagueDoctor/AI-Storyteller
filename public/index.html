@@ -23,7 +23,6 @@
         <button class="btn ghost" id="searchBtn" title="Поиск по истории (Ctrl+K)"><span class="btn-ico">🔍</span><span class="btn-label">Поиск</span></button>
         <button class="btn ghost diag-btn" id="diagBtn" title="Диагностика: запросы к модели и ошибки"><span class="btn-ico">🩺</span><span class="btn-label">Диагностика</span><span class="diag-dot" id="diagDot" hidden></span></button>
         <button class="btn ghost" id="settingsBtn" title="Настройки"><span class="btn-ico">⚙</span><span class="btn-label">Настройки</span></button>
-        <button class="btn ghost danger" id="resetBtn" title="Начать историю заново"><span class="btn-ico">↺</span><span class="btn-label">Заново</span></button>
         <button class="btn ghost sheet-toggle" id="sheetToggle" title="Лист героя, НПС, мир"><span class="btn-ico">☰</span><span class="btn-label">Лист</span></button>
       </div>
     </header>
@@ -31,6 +30,8 @@
     <main class="stage">
       <!-- Лента повествования -->
       <section class="chronicle" aria-label="Повествование">
+        <!-- Телефон: место и время сцены всегда на виду (на компьютере они в карточке сцены справа) -->
+        <button class="scene-strip" id="sceneStrip" type="button" title="Сцена: место, время, кто рядом. Нажми, чтобы открыть лист."><span id="sceneStripText"></span></button>
         <div class="log" id="log">
           <div class="empty-log" id="emptyLog">
             <p class="empty-title">Лист пуст, история ещё не начата.</p>
@@ -43,6 +44,7 @@
             <div class="composer-tools">
               <button type="button" class="ooc-toggle" id="oocToggle" title="Писать рассказчику вне истории (не как персонаж)">вне истории</button>
               <button type="button" class="ooc-toggle" id="directorBtn" title="Куда вести историю — постоянное указание рассказчику">направление</button>
+              <button type="button" class="ooc-toggle" id="scopeBtn" hidden title="У каждого героя своя лента. Нажми, чтобы показать ходы всех героев по порядку или вернуться к ленте этого героя."></button>
               <span class="composer-hint">Enter — отправить · Shift+Enter — новая строка</span>
             </div>
             <div class="composer-row">
@@ -255,6 +257,14 @@
           </span>
         </label>
         <label class="field">
+          <span class="field-label">Раскладка запроса рассказчику</span>
+          <select id="promptLayoutInput" class="trait-cat" style="width:100%">
+            <option value="cache">Экономная — правила и мир в начале, состояние мира в конце (история берётся из кэша)</option>
+            <option value="classic">Прежняя — всё одним блоком перед историей</option>
+          </select>
+          <span class="field-hint">Экономная дешевле: начало запроса и история не меняются от хода к ходу, и провайдер считает их по цене кэша. Сколько взято из кэша — видно в «Диагностике» у каждого запроса. Если рассказчик стал вести себя хуже — верни прежнюю.</span>
+        </label>
+        <label class="field">
           <span class="field-label">Инструкция учётчика</span>
           <select id="syncPromptStyleInput" class="trait-cat" style="width:100%">
             <option value="technical">Техническая — алгоритм, карта «событие → инструмент», связки последствий</option>
@@ -300,7 +310,7 @@
           <span class="field-hint">Сколько последних сообщений держать дословно (6–200). Старшие уходят в предысторию пачкой — когда сверх этого наберётся ещё половина; сжатие идёт в фоне и ход не задерживает.</span>
         </label>
         <label class="field">
-          <span class="field-label">Предыстория</span>
+          <span class="field-label" id="summaryLabel">Предыстория</span>
           <textarea id="summaryInput" rows="7" placeholder="Заполняется автоматически по мере игры…"></textarea>
           <span class="field-hint">Конспект уже произошедшего, который всегда в контексте. Можно править вручную.</span>
         </label>
@@ -454,8 +464,15 @@
         <label class="field toggle-field">
           <input type="checkbox" id="charPresent" />
           <span class="toggle-text">
-            <span class="field-label">В истории</span>
+            <span class="field-label">Рядом с героем</span>
             <span class="field-hint" id="charPresentHint">Выключи, если этого героя сейчас нет в сцене.</span>
+          </span>
+        </label>
+        <label class="field toggle-field" id="charSeparateField" hidden>
+          <input type="checkbox" id="charSeparate" />
+          <span class="toggle-text">
+            <span class="field-label">Своя отдельная история</span>
+            <span class="field-hint">Герой живёт отдельно от остальных: в своём месте, со своей лентой и своей предысторией. Мир, время и персонажи общие. Выключено — он спутник: рядом с героем, и история у них общая.</span>
           </span>
         </label>
         <div class="field field-row">
@@ -617,6 +634,10 @@
             <label class="bound-toggle">
               <input type="checkbox" id="npcBound" />
               <span><b>Всегда с героем</b>Спутник, голос в голове, дух — участвует в каждой сцене</span>
+            </label>
+            <label class="bound-toggle">
+              <input type="checkbox" id="npcSelf" />
+              <span><b>Играет сам</b>Когда он рядом, решает и говорит за себя отдельным коротким запросом: видит только свою карточку и то, что знает сам. Рассказчик его тайну не видит. +1 запрос за ход, не больше двух таких персонажей за ход</span>
             </label>
             <p class="lock-hint">🔓 у поля — закрепить: учётчик его не тронет. ✨ — заполнить по истории.</p>
           </aside>

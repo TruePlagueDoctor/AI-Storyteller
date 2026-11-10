@@ -25,6 +25,8 @@ function renderSlots(data) {
     const acts = document.createElement('div');
     acts.className = 'slot-acts';
     for (const [act, glyph, title, cls] of [
+      // «Начать заново» — только у текущей истории; раньше кнопка стояла в шапке рядом с настройками.
+      ...(sl.active ? [['reset', '↺', 'Начать эту историю заново: лента и листы сотрутся, герои и настройки останутся', 'danger']] : []),
       ['rename', '✎', 'Переименовать', ''],
       ['duplicate', '⧉', 'Сделать копию', ''],
       ['delete', '✕', 'Удалить', 'danger'],
@@ -95,6 +97,8 @@ function closeSlots() { $('slotsModal').hidden = true; }
 // Переключение партии перерисовывает всё: история, герои, НПС, мир.
 function applyFullState(data) {
   blockSignatures = {}; npcSigs = {}; charSigs = {}; changedChars.clear();
+  if (data.activeCharacterId) app.activeCharacterId = data.activeCharacterId; // до ленты: она рисуется глазами активного героя
+  if (Array.isArray(data.characters)) app.characters = data.characters;
   // Другая история — свой черновик хода.
   if (data.activeSlotId && data.activeSlotId !== app.activeSlotId) {
     app.activeSlotId = data.activeSlotId;
@@ -110,6 +114,7 @@ function applyFullState(data) {
 
 async function slotAction(id, act) {
   try {
+    if (act === 'reset') { await resetGame(); if (!app.log.length) $('slotsModal').hidden = true; return; }
     if (act === 'rename') {
       const cur = (await api('/api/slots')).slots.find((x) => x.id === id);
       const name = prompt('Название истории:', cur ? cur.name : '');
@@ -150,6 +155,7 @@ async function openSettings() {
     $('stateSyncInput').checked = s.stateSync !== false;
     $('loreAutoWriteInput').checked = s.loreAutoWrite === true;
     $('syncPromptStyleInput').value = s.syncPromptStyle === 'legacy' ? 'legacy' : 'technical';
+    $('promptLayoutInput').value = s.promptLayout === 'classic' ? 'classic' : 'cache';
     $('diceEnabledInput').checked = s.diceEnabled !== false;
     $('autoSummarizeInput').checked = s.autoSummarize !== false;
     $('sdUrlInput').value = s.sdUrl || 'http://127.0.0.1:7860';
@@ -173,6 +179,7 @@ async function openSettings() {
     $('hiresUpscalerInput').value = s.hiresUpscaler || 'R-ESRGAN 4x+';
     $('historyKeepInput').value = s.historyKeep || 20;
     $('summaryInput').value = s.summary || '';
+    $('summaryLabel').textContent = app.characters.length > 1 && activeChar() ? `Предыстория героя «${activeChar().name}»` : 'Предыстория';
     const note = $('keyNote');
     if (s.hasKey) {
       note.className = 'field-note';
@@ -225,6 +232,7 @@ async function saveSettings() {
         stateSync: $('stateSyncInput').checked,
         loreAutoWrite: $('loreAutoWriteInput').checked,
         syncPromptStyle: $('syncPromptStyleInput').value,
+        promptLayout: $('promptLayoutInput').value,
         diceEnabled: $('diceEnabledInput').checked,
         autoSummarize: $('autoSummarizeInput').checked,
         historyKeep: $('historyKeepInput').value,
@@ -272,11 +280,15 @@ function openCharModal(char) {
   };
   $('charDelete').style.display = char && app.characters.length > 1 ? '' : 'none';
   const isActive = char && char.id === app.activeCharacterId;
-  $('charPresent').checked = char ? char.present !== false : true;
+  $('charPresent').checked = char ? heroNear(char) : true;
   $('charPresent').disabled = !char || isActive;
+  // Новый герой в идущей партии: спутник нынешнего или своя отдельная история.
+  $('charSeparateField').hidden = char ? app.characters.length < 2 : !app.log.length;
+  $('charSeparate').checked = Boolean(char && (app.soloHeroes || []).includes(char.id));
+  $('charSeparate').dataset.was = $('charSeparate').checked ? '1' : '';
   $('charPresentHint').textContent = isActive
-    ? 'Ты играешь за этого героя, поэтому он в истории. Чтобы убрать другого — нажми кружок на его вкладке.'
-    : 'Выключи, если этого героя сейчас нет в сцене — рассказчик перестанет его упоминать.';
+    ? 'Ты играешь за этого героя. Чтобы убрать или присоединить другого — нажми кружок на его вкладке.'
+    : 'Включено — он спутник: в сцене рядом с героем, история у них общая. Выключи, если его сейчас нет в сцене.';
   setAvatarPreview(char ? char.avatar : null);
   $('charPortraitTags').value = (char && char.portraitTags) || '';
   // Портрет можно грузить только существующему герою.
@@ -345,6 +357,14 @@ async function clearAvatar() {
     $('charAvatarClear').disabled = true;
   } catch (err) { toast(err.message); }
 }
+// Что изменилось в «рядом / отдельно»: шлём только перемену, иначе сохранение героя заново «присоединяло» бы его.
+function charGroupChange(char, present) {
+  const out = {};
+  const sep = $('charSeparate').checked;
+  if (sep !== Boolean($('charSeparate').dataset.was)) out.separate = sep;
+  if (char && char.id !== app.activeCharacterId && present !== heroNear(char) && !(sep && present)) out.present = present;
+  return out;
+}
 function closeCharModal() { $('charModal').hidden = true; }
 async function saveChar() {
   const name = $('charName').value.trim();
@@ -359,8 +379,8 @@ async function saveChar() {
   if (!name) { toast('У героя должно быть имя.'); return; }
   try {
     const data = editingCharId
-      ? await api(`/api/characters/${editingCharId}`, { method: 'PUT', body: JSON.stringify({ name, persona, race, social, appearance, present, locked: [...locked] }) })
-      : await api('/api/characters', { method: 'POST', body: JSON.stringify({ name, persona, race, social, appearance }) });
+      ? await api(`/api/characters/${editingCharId}`, { method: 'PUT', body: JSON.stringify({ name, persona, race, social, appearance, locked: [...locked], ...charGroupChange(editing, present) }) })
+      : await api('/api/characters', { method: 'POST', body: JSON.stringify({ name, persona, race, social, appearance, separate: $('charSeparate').checked }) });
     closeCharModal();
     blockSignatures = {};
     applyState(data, { animate: false });
@@ -392,10 +412,7 @@ async function resetGame() {
     npcSigs = {};
     app.log = [];
     $('tabNpcs').classList.remove('changed');
-    logEl.innerHTML = '<div class="empty-log" id="emptyLog">'
-      + '<p class="empty-title">Лист пуст, история ещё не начата.</p>'
-      + '<p class="empty-hint">Настрой мир, сценарий и героев — или просто нажми «Начать», и рассказчик задаст сцену сам.</p>'
-      + '<button class="btn primary" id="startBtn">Начать</button></div>';
+    logEl.innerHTML = emptyLogHtml();
     applyState(data, { animate: false });
     snapshotCharSigs();
   } catch (err) { toast(err.message); }

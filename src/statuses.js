@@ -1,3 +1,4 @@
+import { partyOf } from './relations.js';
 // Статусы с механикой. Каталог задаёт, что делает статус:
 //   rollMod  — модификатор ко всем броскам, пока статус висит;
 //   tick     — изменение показателя каждый ход ({ stat, delta });
@@ -55,8 +56,8 @@ export function statusRollMod(catalog, character) {
 export function advanceStatuses(state) {
   const catalog = state.statusCatalog || [];
   const report = [];
-  for (const c of state.characters || []) {
-    if (c.present === false && c.id !== state.activeCharacterId) continue;
+  // Время идёт для тех, кто в сцене: герой со своей отдельной историей «стоит на паузе», пока играют не за него.
+  for (const c of partyOf(state)) {
     const keep = [];
     for (const b of c.blocks || []) {
       if (b.type !== 'status') { keep.push(b); continue; }

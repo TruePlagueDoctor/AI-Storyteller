@@ -1,5 +1,6 @@
 // Сжатие истории: старые ходы сворачиваются в «Предысторию».
 
+import { viewMessages, summaryOf, setSummaryOf, foldMessages } from './lines.js';
 import { callOpenRouter, stripToolMarkup } from './llm.js';
 
 // ---- Сжатие истории ----
@@ -41,14 +42,17 @@ export function summaryStep(keep) { return Math.max(4, Math.round(keep / 4)); }
 export function planSummary(state, { force = false } = {}) {
   if (state.autoSummarize === false) return null;
   const keep = state.historyKeep || 20;
-  if (state.messages.length <= keep + (force ? 0 : summaryStep(keep))) return null;
-  const cut = findCutIndex(state.messages, keep);
+  // Сворачивается история активного героя: только то, что видит он. Чужие ходы ждут своего героя.
+  const heroId = state.activeCharacterId;
+  const view = viewMessages(state, heroId);
+  if (view.length <= keep + (force ? 0 : summaryStep(keep))) return null;
+  const cut = findCutIndex(view, keep);
   if (cut <= 0) return null;
+  const items = view.slice(0, cut);
   return {
-    state, cut,
-    first: state.messages[0], last: state.messages[cut - 1],
-    prevSummary: state.summary || '',
-    transcript: renderTranscript(state.messages.slice(0, cut), state),
+    state, cut, heroId, items,
+    prevSummary: summaryOf(state, heroId),
+    transcript: renderTranscript(items, state),
   };
 }
 
@@ -98,9 +102,13 @@ export async function computeSummary(plan, apiKey, timer = null) {
 export function applySummary(plan, text, currentState) {
   const st = plan.state;
   if (currentState !== st) return false;
-  if (st.messages[0] !== plan.first || st.messages[plan.cut - 1] !== plan.last) return false;
-  if ((st.summary || '') !== plan.prevSummary) return false;
-  if (text) st.summary = text;
-  st.messages = st.messages.slice(plan.cut);
+  // Все свёрнутые сообщения на месте (те же объекты: после отката или обрезки это уже копии) и героя не удалили.
+  if (!st.characters.some((c) => c.id === plan.heroId)) return false;
+  const have = new Set(st.messages);
+  if (!plan.items.every((m) => have.has(m))) return false;
+  if (summaryOf(st, plan.heroId) !== plan.prevSummary) return false;
+  // Пока шло сжатие, игрок мог переключиться на другого героя — предыстория всё равно ложится своему.
+  if (text) setSummaryOf(st, plan.heroId, text);
+  foldMessages(st, plan.items, plan.heroId);
   return true;
 }

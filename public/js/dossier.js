@@ -76,6 +76,7 @@ function renderNpcView(n) {
   if (n.competence && n.competence !== 'обычный') tags.appendChild(dEl('span', 'dossier-tag', n.competence + ((n.skills || []).length ? ' · ' + n.skills.join(', ') : '')));
   else if ((n.skills || []).length) tags.appendChild(dEl('span', 'dossier-tag', n.skills.join(', ')));
   if (n.bound) tags.appendChild(dEl('span', 'dossier-tag', 'всегда с героем'));
+  if (n.self) tags.appendChild(dEl('span', 'dossier-tag', '🎭 играет сам'));
   if (n.archived) tags.appendChild(dEl('span', 'dossier-tag muted', 'в архиве'));
   if (tags.children.length) ident.appendChild(tags);
   const sample = (n.voiceSamples || []).slice(-1)[0];
@@ -89,6 +90,13 @@ function renderNpcView(n) {
   if (n.status) now.push(['Где и как', n.status]);
   if (n.mood) now.push(['Настроение', n.mood + (n.moodReason ? ` — ${n.moodReason}` : '')]);
   now.push(['С героем', here ? 'сейчас рядом' : n.lastSeen ? `последняя встреча: день ${n.lastSeen.day} (ход ${n.lastSeen.turn})` : 'давно не виделись']);
+  // Несколько героев: у каждого свои отношения с персонажем — остальные показываем справочно.
+  for (const [hid, rel] of Object.entries(n.perHero || {})) {
+    const h = (app.characters || []).find((c) => c.id === hid);
+    if (!h) continue;
+    const bits = [rel.attitude || 'отношение не записано', rel.lastSeen ? `последняя встреча: день ${rel.lastSeen.day}` : 'не встречались'];
+    now.push([`С героем ${h.name}`, bits.join(' · ')]);
+  }
   const sNow = dSection(body, 'Сейчас');
   for (const [k, v] of now) sNow.appendChild(dRow(k, null, v));
 

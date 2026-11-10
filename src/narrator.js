@@ -1,6 +1,8 @@
 // Шаг рассказа: системный промт рассказчика (мир, сцена, герои, НПС, хроника,
 // лорбук) и сам запрос — с броском кубика, если он включён.
 
+import { partyOf } from './relations.js';
+import { viewMessages, stamp } from './lines.js';
 import { ROLL_TOOL, toolsFor, executeTool, resolveCharacterFor } from './tools.js';
 import { rollCheck, describeRoll } from './dice.js';
 import { traitModifier } from './traits.js';
@@ -119,7 +121,7 @@ function heroesBlock(state) {
   const active = state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0];
   // В контекст идёт только тот, кем играют, и спутники, отмеченные как
   // присутствующие. Остальные заведены «про запас» и в истории их нет.
-  const inScene = state.characters.filter((c) => c.present !== false || c.id === active?.id);
+  const inScene = partyOf(state);
   const companions = inScene.filter((c) => c.id !== active?.id);
 
   let s = '=== ГЕРОЙ ===\n';
@@ -182,7 +184,7 @@ function npcBlock(state) {
 
   // Полная карточка — только тем, кто в недавних ходах; остальным одна строка.
   // Иначе с богатыми карточками контекст пухнет на каждом персонаже.
-  const recent = (state.messages || []).slice(-6)
+  const recent = viewMessages(state).slice(-6)
     .filter((m) => typeof m.content === 'string')
     .map((m) => m.content.toLowerCase()).join('\n');
   const present = (state.scene && state.scene.present || []).map((x) => x.toLowerCase());
@@ -232,7 +234,10 @@ function npcBlock(state) {
     if (n.status) meta.push(`статус: ${n.status}`);
     // Давно не виделись — значит, не знает, что с героем было потом.
     const here = (state.scene && state.scene.present || []).some((p) => p.toLowerCase().split(/\s+/)[0] === n.name.toLowerCase().split(/\s+/)[0]);
-    if (n.lastSeen && !here && !n.bound) meta.push(`последняя встреча с героем: день ${n.lastSeen.day} (ход ${n.lastSeen.turn})`);
+    // Несколько героев: отношения у каждого свои — с этим героем персонаж мог и не встречаться.
+    const stranger = state.characters.length > 1 && !here && !n.bound && !n.lastSeen && !n.attitude && !n.history;
+    if (stranger) meta.push('с этим героем не встречался — не знает его в лицо и ничего ему не должен');
+    else if (n.lastSeen && !here && !n.bound) meta.push(`последняя встреча с героем: день ${n.lastSeen.day} (ход ${n.lastSeen.turn})`);
     // Старые партии: встреч ещё не отмечали — хотя бы когда персонаж последний раз был в деле.
     else if (!n.lastSeen && !here && !n.bound && n.updatedTurn && (state.turn || 0) - n.updatedTurn >= 5) meta.push(`последний раз в истории: ход ${n.updatedTurn}`);
     if (meta.length) line += ` — ${meta.join('; ')}`;
@@ -249,7 +254,9 @@ function npcBlock(state) {
     if (n.personality) line += `\n  Характер и речь: ${n.personality}`;
     if (n.quirk) line += `\n  Изюминка: ${n.quirk}`;
     if (n.wants) line += `\n  ХОЧЕТ: ${n.wants}`;
-    if (n.secret) line += `\n  СКРЫВАЕТ (герой не знает): ${n.secret}`;
+    // «Играет сам»: тайну знает только он — рассказчику её не показываем, проболтаться нечем.
+    if (n.secret && n.self) line += '\n  СКРЫВАЕТ: что-то своё — что именно, знает только он сам. Не выдумывай и не раскрывай за него.';
+    else if (n.secret) line += `\n  СКРЫВАЕТ (герой не знает): ${n.secret}`;
     if (n.links) line += `\n  Связи: ${n.links}`;
     if (n.history) line += `\n  Было с героем: ${tailItems(n.history, 4, 500)}`;
     const voice = [n.voiceStyle ? `манера: ${n.voiceStyle}` : '', n.voiceHumor ? `юмор: ${n.voiceHumor}` : '', n.voiceHabits ? `привычки: ${n.voiceHabits}` : ''].filter(Boolean);
@@ -269,6 +276,25 @@ function npcBlock(state) {
 }
 
 
+// Решения персонажей, которые «играют сами» (src/voices.js), — на один ход, в конце запроса.
+function voicesBlock(state) {
+  const voices = state._voices || [];
+  if (!voices.length) return '';
+  let s = '=== ПЕРСОНАЖИ, КОТОРЫЕ РЕШИЛИ САМИ ===\n' +
+    'Этих персонажей в этот ход сыграл отдельный исполнитель — у него их память и тайны. Впиши их решение в сцену как есть: ' +
+    'намерение не меняй, реплику приведи близко к тексту (можно разбить ремарками и продолжить в том же духе, если разговор идёт дальше). ' +
+    'Что персонаж скрывает, ты не знаешь — покажи только то, что заметно снаружи. Исход действий героя и проверок по-прежнему решаешь ты; ' +
+    'если действие героя до персонажа не дошло — реплику опусти.\n';
+  s += voices.map((v) => {
+    const bits = [];
+    if (v.decision) bits.push(`намерение: ${v.decision}`);
+    if (v.line) bits.push(`говорит: «${v.line}»`);
+    if (v.tell) bits.push(`снаружи заметно: ${v.tell}`);
+    return `• ${v.name} — ${bits.join('; ')}`;
+  }).join('\n');
+  return s;
+}
+
 // Системный контекст для ШАГА РАССКАЗА.
 // В двухпроходном режиме рассказчику инструменты недоступны — раздел базового
 // промта про управление листами тогда только противоречит хвосту. Убираем его.
@@ -283,31 +309,71 @@ export function composeStorySystem(state, opts = {}) {
   return storyPromptSections(state, opts).map((s) => s.text).join('\n\n');
 }
 
+// Раскладка запроса. «cache» (по умолчанию): неизменное (правила, мир, сценарий, предыстория) —
+// системным сообщением в начале, изменчивое (кодекс, сцена, листы, НПС) — в конце, перед ходом игрока.
+// Тогда начало запроса и вся история совпадают от хода к ходу, и провайдер берёт их из кэша.
+// «classic» — как было: всё одним системным сообщением (оно менялось каждый ход, и кэш не работал).
+export const promptLayoutOf = (state) => (state.promptLayout === 'classic' ? 'classic' : 'cache');
+
+const LATE_OPEN = '[СОСТОЯНИЕ МИРА НА ЭТОТ ХОД — служебные данные для рассказчика. Игрок этого не писал; не пересказывай и не цитируй их, а опирайся на них.]';
+const LATE_CLOSE = '[КОНЕЦ СЛУЖЕБНЫХ ДАННЫХ]';
+
+// Запрос по частям: system — постоянная часть, late — блок состояния для конца запроса ('' в прежней раскладке).
+export function storyRequestParts(state, opts = {}) {
+  const layout = promptLayoutOf(state);
+  const sections = storyPromptSections(state, { ...opts, layout });
+  if (layout === 'classic') return { system: sections.map((s) => s.text).join('\n\n'), late: '' };
+  const system = sections.filter((s) => !s.late).map((s) => s.text).join('\n\n');
+  const late = sections.filter((s) => s.late).map((s) => s.text).join('\n\n');
+  return { system, late: late ? `${LATE_OPEN}\n\n${late}\n\n${LATE_CLOSE}` : '' };
+}
+
+// Сообщения запроса рассказчику: система + история + (в раскладке «cache») состояние мира и заметки
+// в последней реплике игрока. В сохранённую историю блок состояния не попадает.
+export function storyMessages(state, opts = {}, notes = []) {
+  const { system, late } = storyRequestParts(state, opts);
+  const messages = [{ role: 'system', content: system }, ...labelHeroes(state, viewMessages(state))];
+  const last = messages[messages.length - 1];
+  const extra = notes.filter(Boolean).join('\n');
+  if (last && last.role === 'user' && typeof last.content === 'string') {
+    let content = last.content;
+    if (late) content = `${late}\n\nХОД ИГРОКА:\n${content}`;
+    if (extra) content += `\n\n${extra}`;
+    messages[messages.length - 1] = { ...last, content };
+  } else if (late) {
+    messages.push({ role: 'user', content: late + (extra ? `\n\n${extra}` : '') });
+  }
+  return messages;
+}
+
 // Промт рассказчика по разделам — для сборки и для разбора размера в «Диагностике».
-export function storyPromptSections(state, { withTools = false } = {}) {
+// layout 'cache' — постоянные разделы первыми, изменчивые помечены late (уйдут в конец запроса).
+export function storyPromptSections(state, { withTools = false, layout = 'classic' } = {}) {
   const parts = [];
-  const add = (label, text) => { if (text) parts.push({ label, text }); };
+  const cache = layout === 'cache';
+  const add = (label, text, late = false) => { if (text) parts.push(cache ? { label, text, late } : { label, text }); };
   add('Промт рассказчика (настройки)', narratorPrompt(state, withTools));
   if (state.worldPrompt && state.worldPrompt.trim()) add('Мир', '=== МИР ===\n' + state.worldPrompt.trim());
   if (state.scenarioPrompt && state.scenarioPrompt.trim()) add('Сценарий', '=== СЦЕНАРИЙ ===\n' + state.scenarioPrompt.trim());
   if (state.summary && state.summary.trim()) {
     add('Предыстория', '=== ПРЕДЫСТОРИЯ (что уже произошло) ===\n' + state.summary.trim());
   }
-  add('Кодекс мира', codexBlock(state));
-  add('Нити', threadsBlock(state));
+  add('Кодекс мира', codexBlock(state), true);
+  add('Нити', threadsBlock(state), true);
   const chron = chronicleBlock(state.events || [], {
     sceneNames: [
-      ...state.characters.filter((c) => c.present !== false || c.id === state.activeCharacterId).map((c) => c.name),
+      ...partyOf(state).map((c) => c.name),
       ...((state.scene && state.scene.present) || []),
       ...(state.npcs || []).filter((n) => n.bound && !n.archived).map((n) => n.name),
     ],
-    recentText: (state.messages || []).slice(-4).map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n'),
+    recentText: viewMessages(state).slice(-4).map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n'),
     scene: state.scene,
   });
-  add('Хроника (выборка)', chron);
-  add('Сцена', sceneBlock(state.scene, state));
-  add('Герои', heroesBlock(state));
-  add('НПС', npcBlock(state));
+  add('Хроника (выборка)', chron, true);
+  add('Сцена', sceneBlock(state.scene, state), true);
+  add('Герои', heroesBlock(state), true);
+  add('НПС', npcBlock(state), true);
+  add('Решения персонажей', voicesBlock(state), true);
 
   // Финальный блок — самый весомый: он ближе всего к генерации.
   const directive = DIFFICULTY_DIRECTIVES[state.difficulty] || DIFFICULTY_DIRECTIVES.normal;
@@ -319,7 +385,7 @@ export function storyPromptSections(state, { withTools = false } = {}) {
       'Лучше вызвать инструмент лишний раз, чем оставить лист неактуальным.';
   } else {
     tail +=
-      'Веди только повествование. Опирайся на состояние выше, но не описывай игровую механику ' +
+      `Веди только повествование. Опирайся на состояние ${cache ? 'мира (служебный блок перед ходом игрока)' : 'выше'}, но не описывай игровую механику ` +
       'и не пиши служебных пометок — учёт инвентаря, статусов и характеристик ведёт отдельная система. ' +
       'На этом шаге инструменты недоступны: НЕ выводи никаких вызовов инструментов, тегов invoke/function/tool_call ' +
       'и любой служебной разметки — только художественный текст истории.';
@@ -351,9 +417,22 @@ export function storyPromptSections(state, { withTools = false } = {}) {
     'Не придумывай новых чисел и сроков там, где они уже названы, и следи, чтобы они не противоречили друг другу ' +
     '(например, кто здесь дольше, кто старше, сколько времени прошло). ' +
     'Если точное ЧИСЛО или СРОК неизвестны — лучше выразиться неопределённо («давно», «несколько лет»), чем назвать новое число.\n\n' +
+    'ИМЕНА — исключение из этой осторожности: имена придумывай смело и сразу. Каждый новый персонаж, место, ' +
+    'заведение или цель задания получают конкретное имя в тот момент, когда по сюжету оно должно быть известно: ' +
+    'заказчик называет цель по имени, вывеска читается, стражник представляется, в письме стоит подпись. ' +
+    'Не прячься за «тот человек», «некто», «цель» и не заставляй героя выпрашивать имя, если у говорящего нет ' +
+    'причины его скрывать. Раз придумав имя — держись его. Скрывать имя можно только когда это сознательный ход ' +
+    'персонажа или условие сюжета, и тогда покажи, что он скрывает его нарочно.\n\n' +
     'ПОСЛЕДСТВИЯ ДЛЯ ЛИСТА (обязательно): когда с героем что-то происходит телесно или в кармане — называй это так, чтобы было что записать. ' +
     'Рана — какая и насколько серьёзна; трата — сколько заплачено; предмет — израсходован, сломан, отдан или подобран; ' +
     'отдых и лечение — что именно восстановило силы. Не цифрами из листа, а ясными словами в тексте сцены.\n\n' +
+    'ГЕРОЙ ПРИНАДЛЕЖИТ ИГРОКУ:\n' +
+    '• Решения, слова, мысли и чувства героя задаёт игрок. Заявленное действие разыгрывай — заявленную реплику можно развернуть в прямую речь, — ' +
+    'но не добавляй герою новых решений, обещаний, признаний и поступков, которых игрок не заявлял.\n' +
+    '• Не проматывай за игрока выбор: дошёл до развилки или опасности — остановись там, а не решай за него и не описывай, чем всё кончилось.\n' +
+    '• Игрок вправе заняться своим: зацепки по нитям предлагай, но не тяни его к ним силой и не наказывай за отказ.\n\n' +
+    'ОФОРМЛЕНИЕ: только проза и реплики. Без заголовков, списков, жирного шрифта и пояснений от себя. ' +
+    'Не предлагай в конце варианты действий («1. … 2. …», «Что ты будешь делать?») — игрок решит сам.\n\n' +
     'ЖИВАЯ СЦЕНА (обязательно):\n' +
     '• Игрок заявляет НАМЕРЕНИЕ, исход решаешь ты. Если игрок пишет «это было несложно», «мне поверили», «провёл вечер как положено» — ' +
     'это заявка, а не факт: разыграй её, а где исход не предрешён — запроси проверку. Перевоплощение, обман, убеждение среди ' +
@@ -368,17 +447,13 @@ export function storyPromptSections(state, { withTools = false } = {}) {
     '• В реплике через тире называй говорящего авторской ремаркой в той же строке («— …, — сказала Рита») — ' +
     'при первой реплике и при каждой смене говорящего. Безымянные «— сказал он» на три абзаца запрещены.\n' +
     '• Исключение — тишина по делу: слежка, скрытность, одиночество, подготовка. Там речь не нужна, но событие или наблюдение, ' +
-    'меняющее положение героя, — всё равно нужно.\n\n' +
-    'ИМЕНА: это правило НЕ касается имён. Имена придумывай смело и сразу. Каждый новый персонаж, место, ' +
-    'заведение или цель задания получают конкретное имя в тот момент, когда по сюжету оно должно быть известно: ' +
-    'заказчик называет цель по имени, вывеска читается, стражник представляется, в письме стоит подпись. ' +
-    'Не прячься за «тот человек», «некто», «цель» и не заставляй героя выпрашивать имя, если у говорящего нет ' +
-    'причины его скрывать. Раз придумав имя — держись его. Скрывать имя можно только когда это сознательный ход ' +
-    'персонажа или условие сюжета, и тогда покажи, что он скрывает его нарочно.';
-  if (state.directorNote && state.directorNote.trim()) {
-    tail += '\n\nНАПРАВЛЕНИЕ ОТ ИГРОКА (приоритет выше сценария — это то, куда он хочет вести историю; ' +
-      'веди к этому через события и персонажей, не объявляя вслух): ' + state.directorNote.trim();
-  }
+    'меняющее положение героя, — всё равно нужно.';
+  const direction = state.directorNote && state.directorNote.trim()
+    ? 'НАПРАВЛЕНИЕ ОТ ИГРОКА (приоритет выше сценария — это то, куда он хочет вести историю; ' +
+      'веди к этому через события и персонажей, не объявляя вслух): ' + state.directorNote.trim()
+    : '';
+  // Направление игрок меняет на ходу — в экономной раскладке оно идёт в конце, с состоянием мира.
+  if (direction && !cache) tail += '\n\n' + direction;
   tail += '\n\nЗНАНИЕ ПЕРСОНАЖЕЙ: НПС знает о героях только то, что видел сам или услышал в сцене. Перемены во внешности, раны и события ' +
     'после его последней встречи с героем ему неизвестны — он не может о них говорить, пока не увидит или ему не расскажут (и тогда это слух с источником). ' +
     'Мотив из прошлых ходов (сон, ночь, примета) не повод для реплик сейчас: персонажи говорят о том, что происходит в этой сцене.';
@@ -391,7 +466,11 @@ export function storyPromptSections(state, { withTools = false } = {}) {
       'Не вставляй их нарочно и не вкладывай в уста персонажей, которым неоткуда о них знать.';
   }
   add('Правила хода', tail);
-  return parts;
+  if (!cache) return parts;
+  add('Направление от игрока', direction, true);
+  // Постоянное — в порядке «реже меняется → чаще»: предыстория меняется при сжатии (тогда меняется и история).
+  const rank = (p) => (p.late ? 2 : p.label === 'Предыстория' ? 1 : 0);
+  return parts.map((p, i) => ({ p, i })).sort((a, b) => rank(a.p) - rank(b.p) || a.i - b.i).map((x) => x.p);
 }
 
 // Строки сценария вида «Жанр: …», «Тон: …», «Темы: …» дублируются в самый конец
@@ -415,7 +494,8 @@ export function lastPlayerAction(state) {
 // идёт на «ты», и без пометок модель после переключения считает «ты» из чужих
 // эпизодов новым героем — путает раны, знакомства, обещания и знания.
 export function heroMultiplayer(state) {
-  const ids = new Set((state.messages || []).map((m) => m.hero).filter(Boolean));
+  // Смотрим на историю глазами активного героя: у героя со своей отдельной линией чужих эпизодов нет.
+  const ids = new Set(viewMessages(state).map((m) => m.hero).filter(Boolean));
   return state.characters.length > 1 && (ids.size > 1 || [...ids].some((h) => h !== state.activeCharacterId));
 }
 export function labelHeroes(state, msgs) {
@@ -439,7 +519,7 @@ const stripHeroLabel = (t) => String(t || '').replace(/^\s*\[(?:Эпизод г�
 // Описание броска со списком умений героев: модель выбирает из них, а не придумывает
 // формулировку, которая потом не найдётся.
 function rollToolFor(state) {
-  const heroes = state.characters.filter((c) => c.present !== false || c.id === state.activeCharacterId);
+  const heroes = partyOf(state);
   const lines = heroes.map((c) => {
     const ab = (c.blocks || []).filter((b) => b.type === 'ability').map((b) => `${b.name}${b.value ? ` (${b.value})` : ''}`);
     return ab.length ? `${c.name}: ${ab.join(', ')}` : '';
@@ -453,15 +533,7 @@ function rollToolFor(state) {
 }
 
 export async function narrate(state, apiKey, withTools, { allowDice = true, journal = null, timer = null } = {}) {
-  const messages = [{ role: 'system', content: composeStorySystem(state, { withTools }) }, ...labelHeroes(state, state.messages)];
-
-  const notes = [DIFFICULTY_REMINDER[state.difficulty], state.correctionNote, state.tickNote].filter(Boolean);
-  if (notes.length && messages.length) {
-    const last = messages[messages.length - 1];
-    if (last && last.role === 'user') {
-      messages[messages.length - 1] = { ...last, content: `${last.content}\n\n${notes.join('\n')}` };
-    }
-  }
+  const messages = storyMessages(state, { withTools }, [DIFFICULTY_REMINDER[state.difficulty], state.correctionNote, state.tickNote]);
 
   const dice = allowDice && state.diceEnabled !== false;
   const narrationParts = [];
@@ -499,7 +571,7 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
     }
 
     messages.push(msg);
-    if (withTools) state.messages.push({ ...msg, hero: state.activeCharacterId });
+    if (withTools) state.messages.push({ ...msg, ...stamp(state) });
 
     if (msg.content && msg.content.trim()) {
       const clean = stripToolMarkup(msg.content);
@@ -588,6 +660,6 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
   // В сохранённую историю кладём только чистый текст: служебные вызовы броска
   // не должны засорять контекст следующих ходов.
   const narration = stripHeroLabel(narrationParts.join('\n\n')).trim();
-  if (!withTools && narration) state.messages.push({ role: 'assistant', content: narration, hero: state.activeCharacterId });
+  if (!withTools && narration) state.messages.push({ role: 'assistant', content: narration, ...stamp(state) });
   return { narration, rolls, truncated: finishReason === 'length', codexSeen, lookups };
 }
