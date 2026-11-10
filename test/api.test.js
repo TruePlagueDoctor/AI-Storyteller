@@ -406,3 +406,56 @@ test('персонаж «играет сам»: отметка сохраняе�
   ({ data } = await api('PUT', `/api/npcs/${olt.id}`, { self: false }));
   assert.equal(data.npcs.find((n) => n.id === olt.id).self, undefined);
 });
+
+test('линии героев: своя лента и история, вступление для нового героя, чужой последний ход не переиграть', async () => {
+  await api('POST', '/api/reset');
+  handlers.sync = () => reply('', [call('nothing', {})]);
+  handlers.narrator = () => reply('Ян стоит у ворот. Стражи нет.');
+  await api('POST', '/api/action', { text: 'Ян идёт к воротам' });
+  await api('PUT', '/api/scene', { location: 'Ворота' });
+  const first = (await api('GET', '/api/state')).data.characters[0];
+
+  let { data } = await api('POST', '/api/characters', { name: 'Мира', race: 'эльф', separate: true });
+  const mira = data.characters.find((c) => c.name === 'Мира');
+  assert.equal(mira.race, 'эльф', 'поля формы нового героя сохраняются');
+  assert.equal(data.scene.location, '', 'отдельная история начинается не в месте прежнего героя');
+  // Переиграть последний ход Яна, играя за Миру, нельзя.
+  const regen = await api('POST', '/api/regenerate');
+  assert.equal(regen.status, 400);
+  assert.match(regen.data.error, /Последний ход сделан за героя/);
+
+  // «Начать» у новой героини: вступительная сцена, истории Яна в запросе нет.
+  assert.deepEqual(data.companions, [], 'у Миры своя история — Ян не рядом');
+  assert.ok(data.soloHeroes.includes(mira.id));
+  handlers.narrator = () => reply('Мира сходит с корабля в порту. Чайки кричат.');
+  let from = seen.length;
+  ({ data } = await api('POST', '/api/action', { text: '' }));
+  let narr = seen.slice(from).find((x) => x.kind === 'narrator').body.messages;
+  assert.match(narr.at(-1).content, /Начни игру: задай вступительную сцену/);
+  assert.ok(!narr.some((m) => m.content.includes('Ян стоит у ворот')));
+  const mine = data.log.filter((e) => e.hero === mira.id);
+  assert.equal(mine.length, 1);
+  assert.deepEqual(mine[0].with, []);
+
+  // Возвращаемся к Яну: его история на месте, истории Миры нет; место — его.
+  ({ data } = await api('POST', `/api/characters/${first.id}/activate`));
+  assert.equal(data.scene.location, 'Ворота');
+  handlers.narrator = () => reply('Ян ждёт. Никого.');
+  handlers.sync = () => reply('', [call('nothing', {})]);
+  from = seen.length;
+  ({ data } = await api('POST', '/api/action', { text: 'Ян ждёт' }));
+  narr = seen.slice(from).find((x) => x.kind === 'narrator').body.messages.map((m) => m.content).join('\n');
+  assert.ok(narr.includes('Ян стоит у ворот') && !narr.includes('Чайки кричат'));
+  assert.ok(!narr.includes('[Ход за героя'), 'пометки «чей ход» не нужны: в окне только свои ходы');
+  assert.equal(data.log.length, 5, 'общая лента хранит все ходы по порядку');
+  // Присоединяем Миру к Яну: теперь она рядом, и новые ходы общие.
+  ({ data } = await api('POST', `/api/characters/${mira.id}/presence`, { present: true }));
+  assert.deepEqual(data.companions, [mira.id]);
+  assert.deepEqual(data.soloHeroes, []);
+  ({ data } = await api('POST', '/api/action', { text: 'Ян здоровается с Мирой' }));
+  assert.deepEqual(data.log.at(-1).with, [mira.id]);
+  // И снова отделяем — через редактор героя.
+  ({ data } = await api('PUT', `/api/characters/${mira.id}`, { separate: true }));
+  assert.deepEqual(data.companions, []);
+  await api('DELETE', `/api/characters/${mira.id}`);
+});

@@ -2066,3 +2066,12 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 .lock-btn:hover { opacity: 0.8; }
 .lock-btn.on { opacity: 1; filter: none; }
 .field-col > .field-label:has(.lock-btn) { display: flex; align-items: center; gap: 0; }
+
+/* ---- Общая лента всех героев: чужие ходы подписаны именем ---- */
+.entry[data-who]::before {
+  content: attr(data-who);
+  display: block; margin-bottom: 4px;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--brass-dim);
+}
+.entry[data-who] { opacity: 0.82; }

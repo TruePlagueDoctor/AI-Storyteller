@@ -13,16 +13,27 @@ function put(n, rel) {
   if (rel && rel.lastSeen) n.lastSeen = copySeen(rel.lastSeen); else delete n.lastSeen;
 }
 
+// Спутники героя: из той же компании (group) и отмечены «в истории». Компания — явная отметка на герое:
+// у героя «со своей отдельной историей» она своя. Пока её нет, все герои — одна компания (как было раньше).
+// Одно правило на всё: кто рядом для рассказчика, кто знаком с встреченными, чьи ходы общие.
+export const groupOf = (c) => (c && c.group) || 'main';
+export function companionIds(state, heroId = state.activeCharacterId) {
+  const me = (state.characters || []).find((c) => c.id === heroId);
+  return (state.characters || []).filter((c) => c.id !== heroId && c.present !== false && groupOf(c) === groupOf(me)).map((c) => c.id);
+}
+// Герои в сцене: активный и его спутники.
+export function partyOf(state) {
+  const ids = new Set([state.activeCharacterId, ...companionIds(state)]);
+  return (state.characters || []).filter((c) => ids.has(c.id));
+}
+
 // Смена героя: прежний запоминает своё, новому возвращается его (или пусто — они не знакомы).
 // Вызывать ДО смены сцены: «кто рядом» считается по сцене уходящего героя.
 export function switchRelations(state, fromId, toId) {
   if (!toId || fromId === toId) return;
   const near = ((state.scene && state.scene.present) || []).map(first);
   // Спутники уходящего героя (отмечены «в истории») — те, кого встреченные рядом персонажи тоже видели.
-  // Герой, оставленный в другом месте (у него своя запомненная сцена), спутником не считается.
-  const place = String((state.scene && state.scene.location) || '').trim().toLowerCase();
-  const together = (c) => c.present !== false && (!c.scene || !c.scene.location || c.scene.location.trim().toLowerCase() === place);
-  const companions = fromId ? state.characters.filter((c) => c.id !== fromId && together(c)).map((c) => c.id) : [];
+  const companions = fromId ? companionIds(state, fromId) : [];
   for (const n of state.npcs || []) {
     const per = n.perHero && typeof n.perHero === 'object' ? n.perHero : {};
     if (fromId) {

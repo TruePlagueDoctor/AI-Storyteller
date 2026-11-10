@@ -1,6 +1,8 @@
 // Шаг учёта: отдельный запрос, который приводит листы, НПС, сцену, хронику
 // и нити в соответствие с только что написанным фрагментом истории.
 
+import { partyOf } from './relations.js';
+import { viewMessages } from './lines.js';
 import { toolsFor, NOTHING_TOOL, executeTool, isUnnamedName } from './tools.js';
 import { TRAIT_CATEGORIES } from './traits.js';
 import { sceneForSync, dayPart, clockLabel, advanceClock } from './scene.js';
@@ -229,7 +231,7 @@ export function composeSyncSystem(state, narration = '') {
   if (anyLocked) extra.push('- Закреплённое игроком (🔒, «закреплено») не меняй.');
   const manyStatuses = (state.characters || []).some((c) => c.blocks.filter((b) => b.type === 'status').length > 4);
   if (manyStatuses) extra.push('- Состояний много: прошедшие убирай, взаимоисключающие не держи вместе, похожие объединяй.');
-  const emptyHeroes = (state.characters || []).filter((c) => (c.present !== false || c.id === state.activeCharacterId) && !(c.blocks || []).length);
+  const emptyHeroes = partyOf(state).filter((c) => !(c.blocks || []).length);
   if (emptyHeroes.length) {
     extra.push(`- ЛИСТ ПУСТ у: ${emptyHeroes.map((c) => c.name).join(', ')}. Заведи лист сейчас — здесь можно опираться на ОПИСАНИЕ ГЕРОЯ из данных, ` +
       'не только на фрагмент: 1–3 показателя по жанру (Здоровье и то, что важно в этом мире), умения из его ремесла и прошлого (с уровнем), ' +
@@ -405,7 +407,7 @@ export function heroLostPlace(narration, hero) {
 
 export async function syncState(state, apiKey, narration, journal = [], { model = null, timer = null } = {}) {
   const active = state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0];
-  const sheets = state.characters.filter((c) => c.present !== false || c.id === state.activeCharacterId).map(sheetForSync).join('\n');
+  const sheets = partyOf(state).map(sheetForSync).join('\n');
 
   // Подсказки по гигиене — только когда есть повод.
   const hints = state.characters
@@ -492,7 +494,7 @@ export async function syncState(state, apiKey, narration, journal = [], { model 
       ].filter(Boolean).join('; ')).join('\n');
     // Предыдущий фрагмент рассказа — только для опознания, не для повторного учёта.
     const narrNorm = String(narration || '').trim();
-    const prev = [...(state.messages || [])].reverse().find((m) => m.role === 'assistant' && !m.ooc &&
+    const prev = [...viewMessages(state)].reverse().find((m) => m.role === 'assistant' && !m.ooc &&
       typeof m.content === 'string' && m.content.trim() && !narrNorm.includes(m.content.trim().slice(0, 80)) && !m.content.includes(narrNorm.slice(0, 80)));
     if (prev) {
       const t = prev.content.trim();

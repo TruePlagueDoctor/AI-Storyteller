@@ -23,7 +23,7 @@ test('смена героя: новому — чистый лист, при во
   assert.equal(st.npcs[0].history, '');
   assert.equal(st.npcs[0].lastSeen, undefined);
   assert.equal(st.npcs[1].perHero, undefined, 'пустое не храним');
-  st.characters[0].scene = { location: 'Порт' }; st.scene.location = 'Ворота'; // Ян остался в другом месте
+  st.characters[0].present = false; // Ян с Мирой не идёт
   st.npcs[0].attitude = 'подозрителен'; st.npcs[0].history = 'Мира нагрубила'; st.npcs[0].lastSeen = { turn: 21, day: 3, since: 21 };
   switchRelations(st, 'h2', 'h1'); st.activeCharacterId = 'h1';
   assert.equal(st.npcs[0].attitude, 'дружелюбен');

@@ -1,7 +1,8 @@
 // Хранилище игрового состояния. Один слот сохранения в data/save.json.
 // Одна история, несколько героев; у каждого героя свой лист блоков.
 
-import { switchRelations, dropRelations, migrateRelations, reconcileRelations } from './relations.js';
+import { switchRelations, dropRelations, migrateRelations, reconcileRelations, groupOf, companionIds } from './relations.js';
+import { switchLine, dropLine, migrateLines, reconcileLines } from './lines.js';
 import { emptyScene, normalizeScene } from './scene.js';
 import { normalizeEvents, EVENT_TYPES } from './chronicle.js';
 import { DEFAULT_IMAGE_SETTINGS } from './images.js';
@@ -130,6 +131,7 @@ function migrate(s) {
   if (typeof out.scenarioPrompt !== 'string') out.scenarioPrompt = '';
   out.scene = normalizeScene(out.scene);
   out.events = normalizeEvents(out.events);
+  migrateLines(out); // предыстория — по героям (прежняя общая остаётся у всех прежних героев)
   if (Array.isArray(out.npcs)) migrateRelations(out); // отношения НПС — по героям (старое значение остаётся у всех прежних героев)
   for (const f of IMAGE_FIELDS) if (out[f] === undefined) out[f] = DEFAULT_IMAGE_SETTINGS[f];
   if (typeof out.directorNote !== 'string') out.directorNote = '';
@@ -463,6 +465,7 @@ function captureFullSnapshot() {
     correctionNote: state.correctionNote,
     messages: deepCopy(state.messages),
     summary: state.summary || '',
+    summaries: deepCopy(state.summaries || {}), // предыстории остальных героев
     activeCharacterId: state.activeCharacterId,
     relFor: state.activeCharacterId, // чьи отношения лежат в полях НПС этого снимка
   };
@@ -474,6 +477,7 @@ function applyFullSnapshot(snap) {
   if (typeof snap.summary === 'string') state.summary = snap.summary;
   if (snap.activeCharacterId && state.characters.some((c) => c.id === snap.activeCharacterId)) state.activeCharacterId = snap.activeCharacterId;
   reconcileRelations(state, snap);
+  reconcileLines(state, snap);
 }
 
 // Номер варианта и их число — свойства ленты, в файл хода не пишем.
@@ -587,9 +591,9 @@ function rebuildMessagesFromLog() {
   const keep = state.historyKeep || 20;
   const tail = state.log.slice(-keep);
   state.messages = tail.map((e) =>
-    e.role === 'narrator' ? { role: 'assistant', content: e.text, hero: e.hero }
-      : e.role === 'ooc' ? { role: 'user', content: oocWrap(e.text), ooc: true }
-      : { role: 'user', content: e.text, hero: e.hero });
+    e.role === 'narrator' ? { role: 'assistant', content: e.text, hero: e.hero, with: e.with }
+      : e.role === 'ooc' ? { role: 'user', content: oocWrap(e.text), ooc: true, hero: e.hero, with: e.with }
+      : { role: 'user', content: e.text, hero: e.hero, with: e.with });
 }
 
 // Обрезать историю: всё после index исчезает. Если index — реплика
@@ -607,12 +611,12 @@ export async function truncateLog(index) {
     : await readJson(join(turnsDir(activeSlotId), 'base.json'), null);
   const v = file && file.variants[file.current];
   if (v) { applyFullSnapshot(v.snap); restored = true; }
-  else if (entry.role !== 'narrator' && anchor < 0) { state.messages = []; state.summary = ''; restored = true; }
+  else if (entry.role !== 'narrator' && anchor < 0) { state.messages = []; state.summary = ''; state.summaries = {}; restored = true; }
   state.log = state.log.slice(0, index + 1);
   if (!restored) rebuildMessagesFromLog();
   if (entry.role !== 'narrator') {
     // Реплика игрока остаётся ждать ответа.
-    state.messages.push(entry.role === 'ooc' ? { role: 'user', content: oocWrap(entry.text), ooc: true } : { role: 'user', content: entry.text, hero: entry.hero });
+    state.messages.push(entry.role === 'ooc' ? { role: 'user', content: oocWrap(entry.text), ooc: true, hero: entry.hero, with: entry.with } : { role: 'user', content: entry.text, hero: entry.hero, with: entry.with });
     entry.failed = true; entry.error = 'Ответа ещё нет — отправь заново.';
     delete entry.variants; delete entry.variant;
   }
@@ -673,21 +677,31 @@ export function getState() {
 
 
 // ---- Управление героями ----
-export async function addCharacter({ name, persona } = {}) {
+export async function addCharacter({ name, persona, separate, race, social, appearance } = {}) {
   const c = newCharacter((name || 'Новый герой').trim(), (persona || '').trim());
+  // Раньше народ, положение и внешность из формы нового героя терялись — сохранялись только при правке.
+  if (typeof race === 'string') c.race = race;
+  if (typeof social === 'string') c.social = social;
+  if (typeof appearance === 'string') c.appearance = appearance;
   // Новый герой сразу становится активным — прежний запоминает, где остался,
   // иначе после переключения обратно он оказался бы там, где ходил новый.
   const prev = state.characters.find((x) => x.id === state.activeCharacterId);
   switchRelations(state, state.activeCharacterId, c.id); // новый герой ни с кем не знаком
+  switchLine(state, state.activeCharacterId, c.id);      // и предыстория у него своя — пока пустая
   if (prev && state.scene) prev.scene = deepCopy(state.scene);
   state.characters.push(c);
   state.activeCharacterId = c.id;
+  // «Своя отдельная история»: герой начинает не рядом с прежним — место ещё не задано, часы общие.
+  if (separate) {
+    c.group = c.id; // своя компания: ни с кем не рядом, своя лента и предыстория
+    if (state.scene) state.scene = { ...emptyScene(), day: state.scene.day, minute: state.scene.minute };
+  } else if (prev) c.group = prev.group; // спутник нынешнего героя
   await saveState();
   return c;
 }
 
 export const HERO_LOCKS = ['appearance', 'social', 'name', 'race'];
-export async function updateCharacter(id, { name, persona, race, social, appearance, present, locked } = {}) {
+export async function updateCharacter(id, { name, persona, race, social, appearance, present, locked, separate } = {}) {
   const c = state.characters.find((x) => x.id === id);
   if (!c) throw new Error('Герой не найден.');
   const before = { appearance: c.appearance, social: c.social, name: c.name, race: c.race };
@@ -696,20 +710,39 @@ export async function updateCharacter(id, { name, persona, race, social, appeara
   if (typeof race === 'string') c.race = race;
   if (typeof social === 'string') c.social = social;
   if (typeof appearance === 'string') { if (appearance.trim() !== (c.appearance || '')) delete c.portraitTags; c.appearance = appearance; }
-  if (typeof present === 'boolean') c.present = present;
+  if (typeof present === 'boolean') { if (present && c.id !== state.activeCharacterId) joinActive(c); else c.present = present; }
+  // «Своя отдельная история»: отделить героя от остальных или вернуть к активному.
+  if (typeof separate === 'boolean') {
+    const alone = !state.characters.some((x) => x.id !== c.id && groupOf(x) === groupOf(c));
+    if (separate && !alone) c.group = c.id;
+    else if (!separate && alone && c.id !== state.activeCharacterId) joinActive(c);
+  }
   if (Array.isArray(locked)) c.locked = locked.filter((f) => HERO_LOCKS.includes(f));
   noteManual('char', c.id, before, { appearance: c.appearance, social: c.social, name: c.name, race: c.race }); // откатываемые поля героя
   await saveState();
   return c;
 }
 
+// Герой присоединяется к активному: та же компания, и он здесь, а не там, где его оставили.
+function joinActive(c) {
+  const active = state.characters.find((x) => x.id === state.activeCharacterId);
+  if (!active || active.id === c.id) return;
+  if (groupOf(active) === 'main') delete c.group; else c.group = active.group;
+  c.present = true;
+  delete c.scene;
+}
+
 // Переключить присутствие героя в истории.
 export async function toggleCharacterPresence(id, present) {
   const c = state.characters.find((x) => x.id === id);
   if (!c) throw new Error('Герой не найден.');
-  c.present = present === undefined ? !c.present : Boolean(present);
+  // «Рядом» — значит спутник активного героя; герой из другой компании для активного «не рядом».
+  const withActive = companionIds(state).includes(c.id);
+  c.present = present === undefined ? !withActive : Boolean(present);
   // Активный герой всегда присутствует — иначе играть будет некем.
   if (c.id === state.activeCharacterId) c.present = true;
+  // Вернули «в историю» — значит, он теперь здесь, рядом с активным: та же компания, то же место.
+  if (c.present && c.id !== state.activeCharacterId) joinActive(c);
   await saveState();
   return c;
 }
@@ -729,8 +762,10 @@ export async function deleteCharacter(id) {
   if (state.activeCharacterId === id) {
     state.activeCharacterId = state.characters[0].id;
     switchRelations(state, null, state.activeCharacterId); // отношения удалённого уходят, оставшемуся возвращаются его
+    switchLine(state, null, state.activeCharacterId);
   }
   dropRelations(state, id);
+  dropLine(state, id);
   await saveState();
 }
 
@@ -742,6 +777,7 @@ export async function setActiveCharacter(id) {
     // возвращаем новому его место, если он был в другом. Часы общие — время идёт для всех.
     // Отношения НПС — тоже у каждого свои (до смены сцены: «кто рядом» — по сцене уходящего).
     switchRelations(state, state.activeCharacterId, id);
+    switchLine(state, state.activeCharacterId, id);
     if (prev && state.scene) prev.scene = deepCopy(state.scene);
     const own = next.scene;
     if (own && state.scene && own.location && own.location !== state.scene.location) {
@@ -767,6 +803,7 @@ export async function resetGame() {
   state.events = [];
   state.turn = 0;
   state.summary = '';
+  state.summaries = {};
   state.lastSnapshot = null;
   state.manual = {};
   try { await rm(turnsDir(activeSlotId), { recursive: true, force: true }); } catch { /* пусто */ }

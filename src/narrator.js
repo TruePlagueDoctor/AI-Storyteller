@@ -1,6 +1,8 @@
 // Шаг рассказа: системный промт рассказчика (мир, сцена, герои, НПС, хроника,
 // лорбук) и сам запрос — с броском кубика, если он включён.
 
+import { partyOf } from './relations.js';
+import { viewMessages, stamp } from './lines.js';
 import { ROLL_TOOL, toolsFor, executeTool, resolveCharacterFor } from './tools.js';
 import { rollCheck, describeRoll } from './dice.js';
 import { traitModifier } from './traits.js';
@@ -119,7 +121,7 @@ function heroesBlock(state) {
   const active = state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0];
   // В контекст идёт только тот, кем играют, и спутники, отмеченные как
   // присутствующие. Остальные заведены «про запас» и в истории их нет.
-  const inScene = state.characters.filter((c) => c.present !== false || c.id === active?.id);
+  const inScene = partyOf(state);
   const companions = inScene.filter((c) => c.id !== active?.id);
 
   let s = '=== ГЕРОЙ ===\n';
@@ -182,7 +184,7 @@ function npcBlock(state) {
 
   // Полная карточка — только тем, кто в недавних ходах; остальным одна строка.
   // Иначе с богатыми карточками контекст пухнет на каждом персонаже.
-  const recent = (state.messages || []).slice(-6)
+  const recent = viewMessages(state).slice(-6)
     .filter((m) => typeof m.content === 'string')
     .map((m) => m.content.toLowerCase()).join('\n');
   const present = (state.scene && state.scene.present || []).map((x) => x.toLowerCase());
@@ -330,7 +332,7 @@ export function storyRequestParts(state, opts = {}) {
 // в последней реплике игрока. В сохранённую историю блок состояния не попадает.
 export function storyMessages(state, opts = {}, notes = []) {
   const { system, late } = storyRequestParts(state, opts);
-  const messages = [{ role: 'system', content: system }, ...labelHeroes(state, state.messages)];
+  const messages = [{ role: 'system', content: system }, ...labelHeroes(state, viewMessages(state))];
   const last = messages[messages.length - 1];
   const extra = notes.filter(Boolean).join('\n');
   if (last && last.role === 'user' && typeof last.content === 'string') {
@@ -360,11 +362,11 @@ export function storyPromptSections(state, { withTools = false, layout = 'classi
   add('Нити', threadsBlock(state), true);
   const chron = chronicleBlock(state.events || [], {
     sceneNames: [
-      ...state.characters.filter((c) => c.present !== false || c.id === state.activeCharacterId).map((c) => c.name),
+      ...partyOf(state).map((c) => c.name),
       ...((state.scene && state.scene.present) || []),
       ...(state.npcs || []).filter((n) => n.bound && !n.archived).map((n) => n.name),
     ],
-    recentText: (state.messages || []).slice(-4).map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n'),
+    recentText: viewMessages(state).slice(-4).map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n'),
     scene: state.scene,
   });
   add('Хроника (выборка)', chron, true);
@@ -492,7 +494,8 @@ export function lastPlayerAction(state) {
 // идёт на «ты», и без пометок модель после переключения считает «ты» из чужих
 // эпизодов новым героем — путает раны, знакомства, обещания и знания.
 export function heroMultiplayer(state) {
-  const ids = new Set((state.messages || []).map((m) => m.hero).filter(Boolean));
+  // Смотрим на историю глазами активного героя: у героя со своей отдельной линией чужих эпизодов нет.
+  const ids = new Set(viewMessages(state).map((m) => m.hero).filter(Boolean));
   return state.characters.length > 1 && (ids.size > 1 || [...ids].some((h) => h !== state.activeCharacterId));
 }
 export function labelHeroes(state, msgs) {
@@ -516,7 +519,7 @@ const stripHeroLabel = (t) => String(t || '').replace(/^\s*\[(?:Эпизод г�
 // Описание броска со списком умений героев: модель выбирает из них, а не придумывает
 // формулировку, которая потом не найдётся.
 function rollToolFor(state) {
-  const heroes = state.characters.filter((c) => c.present !== false || c.id === state.activeCharacterId);
+  const heroes = partyOf(state);
   const lines = heroes.map((c) => {
     const ab = (c.blocks || []).filter((b) => b.type === 'ability').map((b) => `${b.name}${b.value ? ` (${b.value})` : ''}`);
     return ab.length ? `${c.name}: ${ab.join(', ')}` : '';
@@ -568,7 +571,7 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
     }
 
     messages.push(msg);
-    if (withTools) state.messages.push({ ...msg, hero: state.activeCharacterId });
+    if (withTools) state.messages.push({ ...msg, ...stamp(state) });
 
     if (msg.content && msg.content.trim()) {
       const clean = stripToolMarkup(msg.content);
@@ -657,6 +660,6 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
   // В сохранённую историю кладём только чистый текст: служебные вызовы броска
   // не должны засорять контекст следующих ходов.
   const narration = stripHeroLabel(narrationParts.join('\n\n')).trim();
-  if (!withTools && narration) state.messages.push({ role: 'assistant', content: narration, hero: state.activeCharacterId });
+  if (!withTools && narration) state.messages.push({ role: 'assistant', content: narration, ...stamp(state) });
   return { narration, rolls, truncated: finishReason === 'length', codexSeen, lookups };
 }

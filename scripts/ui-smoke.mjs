@@ -220,6 +220,37 @@ try {
     await stack.api('PUT', `/api/npcs/${npcId}`, { self: false });
     step('персонаж «играет сам»: отметка и решение под ответом');
 
+    // Линии героев: новый герой «со своей историей» видит пустую ленту, прежние ходы — по кнопке «лента».
+    const heroBefore = (await stack.api('GET', '/api/state')).data.activeCharacterId;
+    await page.click('#addCharBtn').catch(() => page.evaluate(() => openCharModal(null)));
+    await page.waitForSelector('#charModal:not([hidden])');
+    await page.fill('#charName', 'Мира');
+    if (await page.isHidden('#charSeparateField')) errors.push(`[${viewport.name}] у нового героя нет выбора «своя отдельная история»`);
+    await page.check('#charSeparate');
+    await page.click('#charSave');
+    await page.waitForSelector('#charModal', { state: 'hidden' });
+    await page.waitForSelector('#emptyLog');
+    if (!/У этого героя история ещё не начата/.test(await page.textContent('#emptyLog'))) errors.push(`[${viewport.name}] у новой героини не пустая лента`);
+    if (!/лента: Мира/.test(await page.textContent('#scopeBtn'))) errors.push(`[${viewport.name}] нет кнопки ленты героя`);
+    stack.handlers.narrator = () => reply('Мира сходит с корабля в порту. Над водой кричат чайки.');
+    await page.click('#startBtn');
+    await page.waitForFunction(() => document.querySelectorAll('.entry.narrator').length === 1 && !document.getElementById('thinkingEntry'));
+    if (!(await page.$('.regen-bar'))) errors.push(`[${viewport.name}] у последнего ответа героини нет перегенерации`);
+    await page.click('#scopeBtn');
+    const all = await page.evaluate(() => ({ n: document.querySelectorAll('.entry.narrator').length, who: document.querySelectorAll('.entry[data-who]').length }));
+    if (all.n < 3 || !all.who) errors.push(`[${viewport.name}] общая лента: ответов ${all.n}, подписанных чужих ${all.who}`);
+    if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-lines.png`), fullPage: false });
+    // Назад к первому герою: его лента, без ходов Миры, и переиграть чужой последний ход нельзя.
+    await page.evaluate((id) => switchChar(id), heroBefore);
+    await page.waitForFunction(() => /лента: Герой/.test(document.getElementById('scopeBtn').textContent));
+    const back = await page.evaluate(() => ({ text: document.getElementById('log').textContent, regen: Boolean(document.querySelector('.regen-bar')) }));
+    if (/чайки/.test(back.text)) errors.push(`[${viewport.name}] в ленте первого героя видны ходы Миры`);
+    if (back.regen) errors.push(`[${viewport.name}] предлагается переиграть ход другого героя`);
+    const miraId = (await stack.api('GET', '/api/state')).data.characters.find((c) => c.name === 'Мира').id;
+    await stack.api('DELETE', `/api/characters/${miraId}`);
+    stack.handlers.narrator = () => reply('Ты стоишь у ворот. Стражник Ольт смотрит на тебя: «Чего надо?»'); // как по умолчанию — для следующего экрана
+    step('линии героев: своя лента, общая по кнопке, чужой ход не переиграть');
+
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     if (overflow > 1) errors.push(`[${viewport.name}] горизонтальная прокрутка: лишние ${overflow}px`);
     await page.click('#toast').catch(() => {}); // щелчок убирает уведомление

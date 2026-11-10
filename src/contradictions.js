@@ -1,3 +1,4 @@
+import { viewMessages } from './lines.js';
 import { VITAL_STAT } from './dice.js';
 
 // Сверка текста рассказчика с состоянием, которым владеет код.
@@ -139,7 +140,7 @@ export function findQuestionIssues(state, narration) {
     });
   }
   // Сколько ответов подряд (с текущим) кончаются вопросом к герою.
-  const prev = (state.messages || []).filter((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string').map((m) => m.content);
+  const prev = viewMessages(state).filter((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string').map((m) => m.content);
   if (prev.length && prev[prev.length - 1] === text) prev.pop(); // текущий ответ уже лежит в истории
   const lastThree = [...prev.slice(-2), text];
   if (lastThree.length === 3 && lastThree.every(endsWithQuestion)) {

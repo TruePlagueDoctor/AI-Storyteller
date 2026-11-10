@@ -2,6 +2,7 @@
 // Он видит только свою карточку и то, что знает сам, и возвращает решение, реплику и то, чем себя выдаёт.
 // Рассказчик вплетает это в сцену, а тайну такого персонажа не видит вовсе — проболтаться нечем.
 
+import { viewMessages } from './lines.js';
 import { callOpenRouter, stripToolMarkup } from './llm.js';
 import { sameName } from './tools.js';
 import { tailItems, lastPlayerAction } from './narrator.js';
@@ -23,7 +24,7 @@ export function voiceCandidates(state) {
   const own = (state.npcs || []).filter((n) => n.self && !n.archived && (n.bound || near.some((p) => isNpc(n, p))));
   if (!own.length) return [];
   const action = String(lastPlayerAction(state) || '').toLowerCase();
-  const prev = [...(state.messages || [])].reverse().find((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string');
+  const prev = [...viewMessages(state)].reverse().find((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string');
   const prevText = prev ? prev.content.toLowerCase() : '';
   const score = (n) => (namedIn(n, action) ? 2 : 0) + (namedIn(n, prevText) ? 1 : 0);
   return own.map((n, i) => ({ n, i, s: score(n) })).sort((a, b) => b.s - a.s || a.i - b.i).slice(0, MAX_VOICES).map((x) => x.n);
@@ -36,7 +37,7 @@ function witnessed(state, npc) {
   const sinceTurn = npc.bound ? 0 : (seen && seen.turn >= turn - 1 ? (Number.isFinite(seen.since) ? seen.since : seen.turn) : turn);
   const count = Math.min(WITNESSED_MESSAGES, Math.max(0, (turn - sinceTurn) * 2));
   if (!count) return [];
-  const msgs = (state.messages || []).filter((m) => !m.ooc && typeof m.content === 'string' && (m.role === 'user' || m.role === 'assistant'));
+  const msgs = viewMessages(state).filter((m) => !m.ooc && typeof m.content === 'string' && (m.role === 'user' || m.role === 'assistant'));
   return msgs.slice(0, -1).slice(-count); // без текущего хода игрока — он идёт отдельно
 }
 

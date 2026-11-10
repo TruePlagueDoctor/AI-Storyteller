@@ -290,10 +290,10 @@ function renderDossier() {
   if (others.length) {
     const os = section('Другие герои');
     for (const o of others) {
-      const r = row(o.name + (o.present === false ? ' · не в истории' : ''), null, o.persona);
-      const btn = el('button', 'btn ghost small', o.present === false ? 'Вернуть' : 'Убрать из истории');
+      const r = row(o.name + (heroNear(o) ? '' : ' · не рядом'), null, o.persona);
+      const btn = el('button', 'btn ghost small', heroNear(o) ? 'Убрать из сцены' : 'Присоединить');
       btn.addEventListener('click', async () => {
-        await togglePresence(o.id, o.present === false);
+        await togglePresence(o.id, !heroNear(o));
         renderDossier();
       });
       r.firstChild.appendChild(btn);

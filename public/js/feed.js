@@ -144,7 +144,10 @@ async function cutAt(index) {
   const e = app.log[index];
   if (!e) return;
   const below = app.log.length - 1 - index;
-  if (below > 0 && !confirm(`Обрезать историю? Исчезнет сообщений: ${below}. Мир откатится к этому моменту.`)) return;
+  // Мир и время общие: обрезка убирает и ходы других героев, сыгранные позже, — в ленте этого героя их не видно.
+  const foreign = app.log.slice(index + 1).filter((x) => !heroSees(x)).length;
+  const note = foreign ? ` Из них ходов других героев: ${foreign} — они сыграны позже и тоже исчезнут.` : '';
+  if (below > 0 && !confirm(`Обрезать историю? Исчезнет сообщений: ${below}.${note} Мир откатится к этому моменту.`)) return;
   try {
     const data = await api(`/api/log/${index}/truncate`, { method: 'POST' });
     applyFullState(data);
@@ -167,13 +170,42 @@ async function swipe(index, dir) {
   } catch (err) { toast(err.message); }
 }
 
+// Пустая лента: партия не начата — или у этого героя ещё нет своих ходов.
+function emptyLogHtml() {
+  const fresh = !app.log.length;
+  return '<div class="empty-log" id="emptyLog">'
+    + `<p class="empty-title">${fresh ? 'Лист пуст, история ещё не начата.' : 'У этого героя история ещё не начата.'}</p>`
+    + `<p class="empty-hint">${fresh ? 'Настрой мир, сценарий и героев — или просто нажми «Начать», и рассказчик задаст сцену сам.' : 'Напиши первый ход — или нажми «Начать», и рассказчик задаст сцену для него. Мир, время и персонажи общие с остальными героями.'}</p>`
+    + '<button class="btn primary" id="startBtn">Начать</button></div>';
+}
+function renderScopeBtn() {
+  const btn = $('scopeBtn');
+  const hidden = app.log.some((e) => !heroSees(e));
+  btn.hidden = !hidden && feedScope === 'hero';
+  const me = (app.characters || []).find((c) => c.id === app.activeCharacterId);
+  btn.textContent = feedScope === 'all' ? 'лента: все герои' : `лента: ${me ? me.name : 'герой'}`;
+  btn.classList.toggle('lit', feedScope === 'all');
+}
+function toggleFeedScope() {
+  feedScope = feedScope === 'all' ? 'hero' : 'all';
+  renderLog(app.log);
+  decorateLastNarrator();
+}
 function renderLog(log) {
   app.log = log || [];
-  const empty = $('emptyLog');
-  if (!app.log.length) { if (empty) empty.style.display = ''; return; }
-  if (empty) empty.remove();
+  renderScopeBtn();
+  const shown = app.log.map((entry, i) => [entry, i]).filter(([entry]) => entryVisible(entry));
+  if (!shown.length) { logEl.innerHTML = emptyLogHtml(); return; }
   logEl.innerHTML = '';
-  app.log.forEach((entry, i) => logEl.appendChild(makeEntryEl(entry.role, entry.text, i, entry)));
+  for (const [entry, i] of shown) {
+    const el = makeEntryEl(entry.role, entry.text, i, entry);
+    // В общей ленте подписываем чужие ходы именем героя.
+    if (feedScope === 'all' && entry.hero && entry.hero !== app.activeCharacterId) {
+      const who = (app.characters || []).find((c) => c.id === entry.hero);
+      if (who) el.dataset.who = who.name;
+    }
+    logEl.appendChild(el);
+  }
   scrollLog();
 }
 
@@ -271,6 +303,7 @@ function captureBefore() {
 }
 function applyTurnResult(data, before) {
   hideThinking();
+  if (data.activeCharacterId) app.activeCharacterId = data.activeCharacterId; // лента рисуется глазами активного героя
   renderLog(data.log);
   applyState(data, { animate: true });
   for (const c of app.characters) {
@@ -379,6 +412,8 @@ function decorateLastNarrator() {
   // Если последнее слово осталось за игроком — ответа не было.
   // Показываем кнопку повтора всегда, не полагаясь на пометку о сбое.
   const lastEntry = app.log[app.log.length - 1];
+  // Последний ход в общей истории сделан другим героем — отсюда его не повторить и не переиграть.
+  if (lastEntry && !heroSees(lastEntry)) return;
   if (lastEntry && (lastEntry.role === 'player' || lastEntry.role === 'ooc')) {
     const entries = logEl.querySelectorAll('.entry');
     const el = entries[entries.length - 1];

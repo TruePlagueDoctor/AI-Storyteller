@@ -4,6 +4,8 @@
 //   выжимкой   — народ того, кто рядом, народ героя, место сцены, недавние упоминания;
 //   предубеждения народов — только между теми, кто сейчас в сцене;
 //   всё — в пределах бюджета (CODEX_BUDGET_TOKENS): полное сжимается до выжимки, лишнее отбрасывается.
+import { partyOf } from './relations.js';
+import { viewMessages } from './lines.js';
 import { randomUUID } from 'node:crypto';
 import { keyMatches } from './narrator-keys.js';
 
@@ -98,7 +100,7 @@ function mentioned(e, hay) {
 
 // Кто из героев в истории (активный и присутствующие) и НПС рядом с героем.
 function sceneParty(state) {
-  const heroes = (state.characters || []).filter((c) => c.present !== false || c.id === state.activeCharacterId);
+  const heroes = partyOf(state);
   const present = ((state.scene && state.scene.present) || []).map(norm);
   const first = (s) => norm(s).split(/\s+/)[0];
   const near = (state.npcs || []).filter((n) => !n.archived && (n.bound || present.some((p) => p === norm(n.name) || first(p) === first(n.name))));
@@ -107,7 +109,7 @@ function sceneParty(state) {
 
 // Начало игры: ни одного ответа рассказчика (служебные OOC не в счёт).
 export function isOpening(state) {
-  return !(state.messages || []).some((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string' && m.content.trim());
+  return !viewMessages(state).some((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string' && m.content.trim());
 }
 export const OPENING_BUDGET_TOKENS = 2400;
 
@@ -120,7 +122,7 @@ export function selectCodex(state) {
     if (!was || prio > was.prio) picked.set(e.id, { entry: e, level: was && was.level === 'full' ? 'full' : level, prio, why });
     else if (level === 'full') was.level = 'full';
   };
-  const msgs = (state.messages || []).filter((m) => typeof m.content === 'string' && (m.role === 'user' || m.role === 'assistant') && !m.ooc);
+  const msgs = viewMessages(state).filter((m) => typeof m.content === 'string' && (m.role === 'user' || m.role === 'assistant') && !m.ooc);
   const lastPlayer = norm([...msgs].reverse().find((m) => m.role === 'user')?.content);
   const last2 = norm(msgs.slice(-2).map((m) => m.content).join('\n'));
   const older = norm(msgs.slice(-6, -2).map((m) => m.content).join('\n'));

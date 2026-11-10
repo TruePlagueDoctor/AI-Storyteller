@@ -44,6 +44,7 @@
             <div class="composer-tools">
               <button type="button" class="ooc-toggle" id="oocToggle" title="Писать рассказчику вне истории (не как персонаж)">вне истории</button>
               <button type="button" class="ooc-toggle" id="directorBtn" title="Куда вести историю — постоянное указание рассказчику">направление</button>
+              <button type="button" class="ooc-toggle" id="scopeBtn" hidden title="У каждого героя своя лента. Нажми, чтобы показать ходы всех героев по порядку или вернуться к ленте этого героя."></button>
               <span class="composer-hint">Enter — отправить · Shift+Enter — новая строка</span>
             </div>
             <div class="composer-row">
@@ -309,7 +310,7 @@
           <span class="field-hint">Сколько последних сообщений держать дословно (6–200). Старшие уходят в предысторию пачкой — когда сверх этого наберётся ещё половина; сжатие идёт в фоне и ход не задерживает.</span>
         </label>
         <label class="field">
-          <span class="field-label">Предыстория</span>
+          <span class="field-label" id="summaryLabel">Предыстория</span>
           <textarea id="summaryInput" rows="7" placeholder="Заполняется автоматически по мере игры…"></textarea>
           <span class="field-hint">Конспект уже произошедшего, который всегда в контексте. Можно править вручную.</span>
         </label>
@@ -463,8 +464,15 @@
         <label class="field toggle-field">
           <input type="checkbox" id="charPresent" />
           <span class="toggle-text">
-            <span class="field-label">В истории</span>
+            <span class="field-label">Рядом с героем</span>
             <span class="field-hint" id="charPresentHint">Выключи, если этого героя сейчас нет в сцене.</span>
+          </span>
+        </label>
+        <label class="field toggle-field" id="charSeparateField" hidden>
+          <input type="checkbox" id="charSeparate" />
+          <span class="toggle-text">
+            <span class="field-label">Своя отдельная история</span>
+            <span class="field-hint">Герой живёт отдельно от остальных: в своём месте, со своей лентой и своей предысторией. Мир, время и персонажи общие. Выключено — он спутник: рядом с героем, и история у них общая.</span>
           </span>
         </label>
         <div class="field field-row">

@@ -1,5 +1,6 @@
 // Ход целиком: рассказ → учёт → сверка текста с состоянием.
 
+import { viewMessages } from './lines.js';
 import { findContradictions, findSceneIssues, findQuestionIssues, findClicheIssues, findFormatIssues, autoFix, correctionNote } from './contradictions.js';
 import { toolModelOf } from './llm.js';
 import { narrate, lastPlayerAction } from './narrator.js';
@@ -35,7 +36,7 @@ export function afterSync(state, narration, rolls = [], { codexSeen = null } = {
   const issues = findContradictions(state, narration);
   const fixed = autoFix(issues);
   const scene = findSceneIssues(state, narration, lastPlayerAction(state), rolls);
-  const prevReplies = (state.messages || []).filter((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string').map((m) => m.content);
+  const prevReplies = viewMessages(state).filter((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string').map((m) => m.content);
   if (prevReplies.length && prevReplies[prevReplies.length - 1] === narration) prevReplies.pop(); // текущий ответ уже в истории
   const questions = [...findQuestionIssues(state, narration), ...findClicheIssues(narration, prevReplies), ...findFormatIssues(narration)];
   const missed = codexMisses(state, narration, codexSeen);
