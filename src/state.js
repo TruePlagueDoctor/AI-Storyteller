@@ -9,7 +9,7 @@ import { readFile, writeFile, mkdir, unlink, rm, readdir, cp, rename } from 'nod
 import { dirname, join } from 'node:path';
 import { DATA_DIR } from './paths.js';
 import { randomUUID } from 'node:crypto';
-import { DEFAULT_SYSTEM_PROMPT } from './prompt.js';
+import { DEFAULT_SYSTEM_PROMPT, LEGACY_SYSTEM_PROMPTS } from './prompt.js';
 import { DEFAULT_TRAITS } from './traits.js';
 import { DEFAULT_SEEDS, normalizeSeeds } from './seeds.js';
 import { normalizeStatusCatalog } from './statuses.js';
@@ -124,6 +124,8 @@ function migrate(s) {
   }
 
   if (typeof out.systemPrompt !== 'string' || !out.systemPrompt) out.systemPrompt = DEFAULT_SYSTEM_PROMPT;
+  // Промт, который игрок не правил, обновляется вместе с программой; свой — не трогаем.
+  if (LEGACY_SYSTEM_PROMPTS.some((p) => p.trim() === out.systemPrompt.trim())) out.systemPrompt = DEFAULT_SYSTEM_PROMPT;
   if (typeof out.worldPrompt !== 'string') out.worldPrompt = '';
   if (typeof out.scenarioPrompt !== 'string') out.scenarioPrompt = '';
   out.scene = normalizeScene(out.scene);

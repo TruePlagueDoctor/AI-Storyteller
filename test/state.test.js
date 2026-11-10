@@ -211,3 +211,15 @@ test('отношения НПС — у каждого героя свои; ст�
   assert.equal(S.getState().npcs[0].perHero, undefined);
   assert.equal(S.getState().npcs[0].attitude, 'дружелюбен');
 });
+
+test('промт рассказчика: нетронутый прежний обновляется, свой — остаётся', async () => {
+  const { DEFAULT_SYSTEM_PROMPT, LEGACY_SYSTEM_PROMPTS } = await import('../src/prompt.js');
+  const settings = join(DATA_DIR, 'settings.json');
+  const raw = JSON.parse(await readFile(settings, 'utf8'));
+  await writeFile(settings, JSON.stringify({ ...raw, systemPrompt: LEGACY_SYSTEM_PROMPTS[0] }));
+  assert.equal((await S.loadState()).systemPrompt, DEFAULT_SYSTEM_PROMPT);
+  await writeFile(settings, JSON.stringify({ ...raw, systemPrompt: LEGACY_SYSTEM_PROMPTS[0] + '\nМоё правило.' }));
+  assert.match((await S.loadState()).systemPrompt, /Моё правило\.$/);
+  await writeFile(settings, JSON.stringify(raw));
+  await S.loadState();
+});
