@@ -127,8 +127,16 @@ test('два хода одновременно — второй получает
   assert.equal((await api('POST', '/api/log/0/truncate')).status, 409);
   assert.equal((await api('POST', '/api/slots', { name: 'x' })).status, 409, 'партию во время хода не сменить');
   assert.equal((await api('POST', '/api/reset')).status, 409);
+  // Второе сообщение (другая вкладка) не должно попасть в ленту идущего хода.
+  assert.equal((await api('POST', '/api/action', { text: 'ВТОРАЯ ВКЛАДКА' })).status, 409);
+  assert.equal((await api('POST', '/api/ooc', { text: 'ВНЕ ИСТОРИИ' })).status, 409);
+  assert.equal((await api('POST', '/api/retry')).status, 409);
   release();
-  assert.equal((await first).status, 200);
+  const done = await first;
+  assert.equal(done.status, 200);
+  const tail = done.data.log.slice(-2).map((e) => `${e.role}: ${e.text}`);
+  assert.deepEqual(tail, ['player: Жду', 'narrator: Долгий ответ закончился, и наступила тишина над площадью.']);
+  assert.ok(!done.data.log.some((e) => /ВТОРАЯ ВКЛАДКА|ВНЕ ИСТОРИИ/.test(e.text)));
 });
 
 test('сжатие истории идёт в фоне и сворачивает старые ходы', async () => {

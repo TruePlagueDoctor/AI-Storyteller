@@ -559,7 +559,8 @@ app.delete('/api/characters/:id/avatar', async (req, res) => {
 });
 
 // ---- Ход игры ----
-app.post('/api/action', async (req, res) => {
+// whileIdle — до любых правок истории: иначе реплика второго запроса попадала в ленту идущего хода.
+app.post('/api/action', whileIdle, async (req, res) => {
   if (!apiKey()) {
     return res.status(400).json({ error: 'Не задан OPENROUTER_API_KEY. Скопируй .env.example в .env и впиши ключ.' });
   }
@@ -686,7 +687,7 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
 }
 
 // Повторить сорвавшийся ход.
-app.post('/api/retry', async (_req, res) => {
+app.post('/api/retry', whileIdle, async (_req, res) => {
   if (!apiKey()) return res.status(400).json({ error: 'Не задан OPENROUTER_API_KEY.' });
   const state = getState();
   if (!hasPendingTurn()) return res.status(400).json({ error: 'Нечего повторять.' });
@@ -697,7 +698,7 @@ app.post('/api/retry', async (_req, res) => {
 });
 
 // ---- Сообщение рассказчику вне истории (OOC) ----
-app.post('/api/ooc', async (req, res) => {
+app.post('/api/ooc', whileIdle, async (req, res) => {
   if (!apiKey()) {
     return res.status(400).json({ error: 'Не задан OPENROUTER_API_KEY.' });
   }
