@@ -232,7 +232,10 @@ function npcBlock(state) {
     if (n.status) meta.push(`статус: ${n.status}`);
     // Давно не виделись — значит, не знает, что с героем было потом.
     const here = (state.scene && state.scene.present || []).some((p) => p.toLowerCase().split(/\s+/)[0] === n.name.toLowerCase().split(/\s+/)[0]);
-    if (n.lastSeen && !here && !n.bound) meta.push(`последняя встреча с героем: день ${n.lastSeen.day} (ход ${n.lastSeen.turn})`);
+    // Несколько героев: отношения у каждого свои — с этим героем персонаж мог и не встречаться.
+    const stranger = state.characters.length > 1 && !here && !n.bound && !n.lastSeen && !n.attitude && !n.history;
+    if (stranger) meta.push('с этим героем не встречался — не знает его в лицо и ничего ему не должен');
+    else if (n.lastSeen && !here && !n.bound) meta.push(`последняя встреча с героем: день ${n.lastSeen.day} (ход ${n.lastSeen.turn})`);
     // Старые партии: встреч ещё не отмечали — хотя бы когда персонаж последний раз был в деле.
     else if (!n.lastSeen && !here && !n.bound && n.updatedTurn && (state.turn || 0) - n.updatedTurn >= 5) meta.push(`последний раз в истории: ход ${n.updatedTurn}`);
     if (meta.length) line += ` — ${meta.join('; ')}`;

@@ -177,3 +177,37 @@ test('ручные правки: блоки, сцена, хроника, пер�
   await S.deleteCharacter(rita.id);
   await assert.rejects(S.deleteCharacter(h.id), /последнего героя/);
 });
+
+test('отношения НПС — у каждого героя свои; старая партия с двумя героями никого не «забывает»', async () => {
+  await S.resetGame();
+  const h = hero();
+  const olt = await S.addNpc({ name: 'Ольт', attitude: 'дружелюбен', history: 'вместе пили' });
+  const mira = await S.addCharacter({ name: 'Мира' });
+  assert.equal(olt.attitude, '', 'новая героиня с Ольтом не знакома');
+  await S.updateNpcManual(olt.id, { attitude: 'насторожен' });
+  await S.setActiveCharacter(h.id);
+  assert.equal(olt.attitude, 'дружелюбен');
+  assert.equal(olt.history, 'вместе пили');
+  assert.equal(olt.perHero[mira.id].attitude, 'насторожен');
+  // Сохранение и загрузка ничего не путают.
+  await S.saveState();
+  let st = await S.loadState();
+  assert.equal(st.npcs[0].attitude, 'дружелюбен');
+  assert.equal(st.npcs[0].perHero[mira.id].attitude, 'насторожен');
+
+  // Файл партии «до обновления»: отношение одно на всех, отметки нет.
+  const id = S.listSlots().activeSlotId;
+  const path = join(DATA_DIR, 'slots', `${id}.json`);
+  const raw = JSON.parse(await readFile(path, 'utf8'));
+  delete raw.relationsPerHero; delete raw.npcs[0].perHero;
+  await writeFile(path, JSON.stringify(raw));
+  st = await S.loadState();
+  assert.equal(st.npcs[0].attitude, 'дружелюбен');
+  assert.equal(st.npcs[0].perHero[mira.id].attitude, 'дружелюбен', 'прежнее отношение осталось и у второй героини');
+  await S.setActiveCharacter(mira.id);
+  assert.equal(S.getState().npcs[0].attitude, 'дружелюбен');
+  await S.setActiveCharacter(h.id);
+  await S.deleteCharacter(mira.id);
+  assert.equal(S.getState().npcs[0].perHero, undefined);
+  assert.equal(S.getState().npcs[0].attitude, 'дружелюбен');
+});

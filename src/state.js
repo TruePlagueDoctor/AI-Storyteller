@@ -1,6 +1,7 @@
 // Хранилище игрового состояния. Один слот сохранения в data/save.json.
 // Одна история, несколько героев; у каждого героя свой лист блоков.
 
+import { switchRelations, dropRelations, migrateRelations, reconcileRelations } from './relations.js';
 import { emptyScene, normalizeScene } from './scene.js';
 import { normalizeEvents, EVENT_TYPES } from './chronicle.js';
 import { DEFAULT_IMAGE_SETTINGS } from './images.js';
@@ -127,6 +128,7 @@ function migrate(s) {
   if (typeof out.scenarioPrompt !== 'string') out.scenarioPrompt = '';
   out.scene = normalizeScene(out.scene);
   out.events = normalizeEvents(out.events);
+  if (Array.isArray(out.npcs)) migrateRelations(out); // отношения НПС — по героям (старое значение остаётся у всех прежних героев)
   for (const f of IMAGE_FIELDS) if (out[f] === undefined) out[f] = DEFAULT_IMAGE_SETTINGS[f];
   if (typeof out.directorNote !== 'string') out.directorNote = '';
   if (!DIFFICULTIES.includes(out.difficulty)) out.difficulty = 'normal';
@@ -460,14 +462,16 @@ function captureFullSnapshot() {
     messages: deepCopy(state.messages),
     summary: state.summary || '',
     activeCharacterId: state.activeCharacterId,
+    relFor: state.activeCharacterId, // чьи отношения лежат в полях НПС этого снимка
   };
 }
 
 function applyFullSnapshot(snap) {
-  applySnapshot(snap);
+  applySnapshot(snap, { reconcile: false });
   if (Array.isArray(snap.messages)) state.messages = deepCopy(snap.messages);
   if (typeof snap.summary === 'string') state.summary = snap.summary;
   if (snap.activeCharacterId && state.characters.some((c) => c.id === snap.activeCharacterId)) state.activeCharacterId = snap.activeCharacterId;
+  reconcileRelations(state, snap);
 }
 
 // Номер варианта и их число — свойства ленты, в файл хода не пишем.
@@ -672,6 +676,7 @@ export async function addCharacter({ name, persona } = {}) {
   // Новый герой сразу становится активным — прежний запоминает, где остался,
   // иначе после переключения обратно он оказался бы там, где ходил новый.
   const prev = state.characters.find((x) => x.id === state.activeCharacterId);
+  switchRelations(state, state.activeCharacterId, c.id); // новый герой ни с кем не знаком
   if (prev && state.scene) prev.scene = deepCopy(state.scene);
   state.characters.push(c);
   state.activeCharacterId = c.id;
@@ -719,7 +724,11 @@ export async function setCharacterAvatar(id, filename) {
 export async function deleteCharacter(id) {
   if (state.characters.length <= 1) throw new Error('Нельзя удалить последнего героя.');
   state.characters = state.characters.filter((c) => c.id !== id);
-  if (state.activeCharacterId === id) state.activeCharacterId = state.characters[0].id;
+  if (state.activeCharacterId === id) {
+    state.activeCharacterId = state.characters[0].id;
+    switchRelations(state, null, state.activeCharacterId); // отношения удалённого уходят, оставшемуся возвращаются его
+  }
+  dropRelations(state, id);
   await saveState();
 }
 
@@ -729,6 +738,8 @@ export async function setActiveCharacter(id) {
     const prev = state.characters.find((c) => c.id === state.activeCharacterId);
     // У каждого героя своя сцена: уходя, запоминаем, где был прежний; приходя —
     // возвращаем новому его место, если он был в другом. Часы общие — время идёт для всех.
+    // Отношения НПС — тоже у каждого свои (до смены сцены: «кто рядом» — по сцене уходящего).
+    switchRelations(state, state.activeCharacterId, id);
     if (prev && state.scene) prev.scene = deepCopy(state.scene);
     const own = next.scene;
     if (own && state.scene && own.location && own.location !== state.scene.location) {
@@ -773,7 +784,7 @@ export function captureTurnSnapshot() {
 }
 
 // Общий откат мира к снимку: блоки, опыт, внешность, НПС, нити, лорбук, номер хода.
-function applySnapshot(snap) {
+function applySnapshot(snap, { reconcile = true } = {}) {
   for (const c of state.characters) {
     c.blocks = deepCopy(snap.blocksByChar[c.id] || []);
     const extra = snap.charsByid && snap.charsByid[c.id];
@@ -795,6 +806,7 @@ function applySnapshot(snap) {
   if (snap.lorebook) state.lorebook = deepCopy(snap.lorebook);
   if (typeof snap.turn === 'number') state.turn = snap.turn;
   if ('correctionNote' in snap) state.correctionNote = snap.correctionNote;
+  if (reconcile) reconcileRelations(state, snap);
   applyManualOverlay(Number(snap.at) || 0);
 }
 
