@@ -96,3 +96,12 @@ test('имя и раса: замки игрока, занятое имя — о�
   assert.match(executeTool('update_hero', { name: 'Лира' }, st), /уже занято/);
   assert.equal(hero(st).name, 'Эйра');
 });
+
+test('обе инструкции учётчика знают про смену расы и имени героя', async () => {
+  const { composeSyncSystem } = await import('../src/sync.js');
+  for (const style of ['technical', 'legacy']) {
+    const p = composeSyncSystem(makeState({ syncPromptStyle: style }));
+    assert.match(p, /race/, style);
+    assert.match(p, /навсегда сменил имя → name|навсегда сменил имя — name/, style);
+  }
+});
