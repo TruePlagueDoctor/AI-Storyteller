@@ -238,7 +238,7 @@ export const TOOL_DEFINITIONS = [
           character: { type: 'string', description: 'Имя героя. Без него берётся активный.' },
           appearance_change: { type: 'string', description: 'Что изменилось или добавилось — одна-две фразы: "на щеке свежий шрам".' },
           appearance: { type: 'string', description: 'Полное новое описание внешности (заменяет прежнее целиком).' },
-          social: { type: 'string', description: 'Общественное положение.' },
+          social: { type: 'string', description: 'Общественное положение — коротко, 2–5 слов: кто он в обществе («беглый каторжник», «капитан городской стражи»). Без истории и объяснений.' },
           race: { type: 'string', description: 'Новая раса — только при превращении. Название народа из КОДЕКСА, если подходит.' },
           name: { type: 'string', description: 'Новое постоянное имя. Прежнее сохранится как «известен также как».' },
         },
@@ -571,6 +571,7 @@ function executePracticeTool(args, state) {
     (next ? `; до «${next.level}»: ${next.xp} из ${next.need}.` : '.');
 }
 
+const SOCIAL_MAX_WORDS = 7;
 function executeHeroTool(args, state) {
   const { character, appearance, appearance_change: change, social, race, name: newName } = args || {};
   const c = resolveCharacter(state, character);
@@ -643,7 +644,11 @@ function executeHeroTool(args, state) {
     }
   }
   if (typeof social === 'string' && social.trim() && social.trim() !== (c.social || '')) {
+    const words = social.trim().split(/\s+/).length;
     if (locked.includes('social')) notes.push('положение закреплено игроком — не изменено');
+    else if (words > SOCIAL_MAX_WORDS || social.trim().length > 70) {
+      notes.push(`ВНИМАНИЕ: положение — коротко, 2–5 слов («капитан стражи», «беглая послушница»), а не ${words} слов. Не изменено — передай social заново, короче`);
+    }
     else { c.social = social.trim(); changed.push('положение'); }
   }
   if (!changed.length) return notes.length ? `У героя «${c.name}»: ${notes.join('; ')}.` : 'Нечего обновлять у героя.';

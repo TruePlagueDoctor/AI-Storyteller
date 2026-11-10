@@ -105,3 +105,15 @@ test('обе инструкции учётчика знают про смену 
     assert.match(p, /навсегда сменил имя → name|навсегда сменил имя — name/, style);
   }
 });
+
+test('положение героя — коротко: длинное не записывается и просит второй раунд', async () => {
+  const { FIX_SIGNAL } = await import('../src/journal.js');
+  const st = world();
+  hero(st).social = 'странница';
+  const r = executeTool('update_hero', { social: 'бывшая послушница ордена, сбежавшая после пожара в храме и теперь скрывающаяся от инквизиции' }, st);
+  assert.match(r, /2–5 слов/);
+  assert.ok(FIX_SIGNAL.test(r), 'учётчик получит второй раунд');
+  assert.equal(hero(st).social, 'странница');
+  assert.match(executeTool('update_hero', { social: 'беглая послушница' }, st), /положение/);
+  assert.equal(hero(st).social, 'беглая послушница');
+});
