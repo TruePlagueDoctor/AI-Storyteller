@@ -109,7 +109,7 @@ test('проверка полноты: признаки событий без в
   const text = 'Ты отсчитываешь Ольту двадцать золотых. Он кивает и уходит. Через час стемнело.';
   const hints = completenessHints(st, text, [{ name: 'npc' }]);
   assert.ok(hints.some((h) => /платят/.test(h) && /Кошель: 35 золотых/.test(h)));
-  assert.ok(hints.some((h) => /прошло заметное время/.test(h)));
+  assert.ok(hints.some((h) => /прошло заметное время|время не сдвинуто/.test(h)));
   assert.ok(hints.some((h) => /Похоже, кто-то ушёл \(Ольт\)/.test(h)));
   assert.ok(hints.some((h) => /ХРОНИКА #1/.test(h)));
   assert.deepEqual(completenessHints(st, text, [{ name: 'block' }, { name: 'scene' }, { name: 'event' }]), []);
@@ -228,4 +228,48 @@ test('пересказ для сжатия подписывает героя, д
   const t = renderTranscript([{ role: 'user', content: 'сплю', hero: 'h1' }, { role: 'assistant', content: 'тебе снится лес', hero: 'h1' }], st);
   assert.match(t, /Игрок \(за Эйра\): сплю/);
   assert.match(t, /«ты» = Эйра/);
+});
+
+test('проверка полноты: утро в тексте, вечер на часах — сдвинуть время', () => {
+  const st = makeState();
+  st.scene.day = 3; st.scene.minute = 19 * 60;
+  const text = 'Наутро ты просыпаешься от криков петуха, голова тяжёлая.';
+  const hints = completenessHints(st, text, [{ name: 'npc', args: { name: 'X' } }]);
+  assert.ok(hints.some((h) => /В тексте утро, а на часах вечер/.test(h) && /день 3/.test(h)), hints.join(' | '));
+  assert.deepEqual(completenessHints(st, text, [{ name: 'scene', args: { elapsed_minutes: 660 } }]).filter((h) => /часы|на часах/.test(h)), []);
+  assert.deepEqual(completenessHints(st, text, [{ name: 'scene', args: { time: 'утро' } }]).filter((h) => /часы|на часах/.test(h)), []);
+  // Сцена вызвана, но только с present — время всё равно не сдвинуто.
+  assert.ok(completenessHints(st, text, [{ name: 'scene', args: { present: [] } }]).some((h) => /на часах вечер/.test(h)));
+});
+
+test('проверка полноты: известный НПС действует, а его нет среди присутствующих', () => {
+  const st = makeState();
+  st.npcs = [{ name: 'Мара', locked: [] }, { name: 'Торин', locked: [] }];
+  st.scene.present = ['Торин'];
+  const text = '— Опять ты, — Мара ставит кружку на стойку. Мара усмехается и кивает на дверь.';
+  const hints = completenessHints(st, text, [{ name: 'block', args: { type: 'item' } }]);
+  assert.ok(hints.some((h) => /действуют Мара/.test(h) && /Present сейчас: Торин/.test(h)), hints.join(' | '));
+  assert.ok(!completenessHints(st, 'Торин вспоминает, что Мара когда-то держала здесь лавку.', []).some((h) => /действуют/.test(h)), 'упомянута один раз — не повод');
+  assert.ok(!completenessHints(st, text, [{ name: 'scene', args: { present: ['Торин', 'Мара'] } }]).some((h) => /действуют/.test(h)));
+});
+
+test('проверка полноты: герой сменил место, а сцена прежняя', () => {
+  const st = makeState();
+  st.scene.location = 'Таверна'; st.scene.present = ['Торин'];
+  const hints = completenessHints(st, 'Ты выходишь на улицу. Дождь стих, фонари горят тускло.', []);
+  assert.ok(hints.some((h) => /сменил место/.test(h) && /Таверна/.test(h)), hints.join(' | '));
+  assert.ok(!completenessHints(st, 'Ты выходишь на улицу.', [{ name: 'scene', args: { location: 'Улица', present: [] } }]).some((h) => /сменил место/.test(h)));
+});
+
+test('сцена: новое место без present — учётчика просят обновить, кто рядом', async () => {
+  const { executeTool } = await import('../src/tools.js');
+  const { FIX_SIGNAL } = await import('../src/journal.js');
+  const st = makeState();
+  st.npcs = [{ name: 'Торин', locked: [] }];
+  st.scene.location = 'Таверна'; st.scene.present = ['Торин'];
+  const r = executeTool('scene', { location: 'Рыночная площадь' }, st);
+  assert.match(r, /место сменилось, а present прежний \(Торин\)/);
+  assert.ok(FIX_SIGNAL.test(r));
+  assert.ok(!/ВНИМАНИЕ/.test(executeTool('scene', { location: 'Порт', present: [] }, st)));
+  assert.ok(!/ВНИМАНИЕ/.test(executeTool('scene', { location: 'Порт' }, st)), 'то же место и никого рядом — не повод');
 });

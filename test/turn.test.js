@@ -135,7 +135,7 @@ test('учётчик: герой уехал насовсем или его об�
       assert.match(p, /проверь инвентарь: Меч, Фляга, Верёвка, Факел/, narration);
       assert.ok(!p.match(/проверь инвентарь[^\n]*Лютня/), 'вещи других героев не при чём');
       return reply('', [call('nothing', {})]);
-    }]);
+    }, reply('', [call('nothing', {})])]); // второй раунд — если проверка полноты спросит про сцену
     const r = await syncNarration({ state: st, apiKey: 'k', narration });
     assert.equal(r.status, 'done', r.error);
     fake.restore();

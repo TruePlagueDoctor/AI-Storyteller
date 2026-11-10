@@ -3,7 +3,7 @@
 
 import { toolsFor, NOTHING_TOOL, executeTool, isUnnamedName } from './tools.js';
 import { TRAIT_CATEGORIES } from './traits.js';
-import { sceneForSync } from './scene.js';
+import { sceneForSync, dayPart, clockLabel, advanceClock } from './scene.js';
 import { chronicleForSync, isOverdue } from './chronicle.js';
 import { codexIndex } from './codex.js';
 import { callOpenRouter, parseLeakedToolCalls, toolModelOf } from './llm.js';
@@ -298,7 +298,16 @@ export function syncWorthwhile(state, narration) {
 // Конец слова — (?!\p{L}) с флагом u: обычный \b в JS кириллицу не видит («рана\b» не находилось никогда).
 const RE_PAY = /(заплат|(?<!\p{L})плат(ишь|ит|ил|ила|ят|и)(?!\p{L})|расплат|выплат|отсчит|отда(л|ёшь|ешь|ю|ла)(?!\p{L})|верну(л|ла|ть|ёшь)|возвраща(ет|ешь|ют|ю)(?!ся)(?!\p{L})|отдаёт|купи(л|ла|шь)|прода(л|ла|ёшь)|подобра(л|ла)|потеря(л|ла)|выпи(л|ла|ваешь)|съе(л|ла|даешь)|израсход|сломал|разби(л|лась)|получи(л|ла|шь)|вручи)/iu;
 const RE_HURT = /(ранен|ранил|кровь|кровоточ|порез|ожог|удар(ил|ом)|сломал.{0,10}(рук|ног|рёбр)|теряешь сознани|отрав|яд(?!\p{L})|исцел|залечи|перевяз|(?<!\p{L})ран(а|у|ы|е|ой|ами|ах)(?!\p{L})|вылечи|лечени|зашива|зашил)/iu;
-const RE_TIME = /(через (час|полчаса|несколько|пару|минут|день)|прошл[оа] |проходит (час|полчаса|время|несколько|четверть)|спустя|к (утру|вечеру|ночи|полудню|рассвету)(?!\s+(будет|обещ|прояснит|распогодит))|наступ(ил|ает) (вечер|ночь|утро|рассвет)|до (утра|рассвета|вечера)|всю ночь|выспал|засыпаешь)/i;
+const RE_TIME = /(через (час|полчаса|несколько|пару|минут|день|два|три|четыре|пять|\d+)|прошл[оа] |проходит (час|полчаса|время|несколько|четверть)|спустя|к (утру|вечеру|ночи|полудню|рассвету|обеду)(?!\s+(будет|обещ|прояснит|распогодит))|наступ(ил|ила|ило|ает) (вечер|ночь|утро|рассвет|полдень)|до (утра|рассвета|вечера|темноты)|всю ночь|весь день|целый день|полдня|выспал|засыпаешь|просыпаешься|проснул|наутро|назавтра|на (следующий|другой) день|следующим утром|на рассвете|рассвета?ет|светает|стемнело|темнеет|вечереет|смеркается|сумерки (сгущ|опуст)|солнце (встаёт|встало|поднимается|поднялось|садится|село|зашло|клонится)|(часа|часов) (пути|дороги|ходьбы|езды))/iu;
+// Что за время суток названо в тексте как «сейчас» — для сверки с часами сцены.
+const PART_NOW = [
+  ['утро', /(наутро|следующим утром|на рассвете|светает|рассвета?ет|солнце (встаёт|встало|поднимается|поднялось)|наступ\p{L}* утро|утреннее солнце)/iu],
+  ['вечер', /(вечереет|смеркается|солнце (садится|село|зашло|клонится)|наступ\p{L}* вечер|сумерки (сгущ|опуст))/iu],
+  ['ночь', /(стемнело|наступ\p{L}* ночь|ночь (опустилась|накрыла)|глубокой ночью|в полночь)/iu],
+];
+const PART_OF = { 'глубокая ночь': 'ночь', 'раннее утро': 'утро', утро: 'утро', день: 'день', вечер: 'вечер', ночь: 'ночь' };
+// Герой сам сменил место: вышел, вошёл, добрался. Тогда меняются и место, и кто рядом.
+const RE_HERO_MOVES = /(?<!\p{L})(выходишь|выходите|уходишь|уходите|покидаешь|покидаете|входишь|входите|заходишь|заходите|добираешься|добираетесь|возвращаешься|возвращаетесь|переступаешь порог|спускаешься|поднимаешься по|направляешься|отправляешься|приходишь|приходите|оказываешься)(?!\p{L})/iu;
 const RE_LEAVE = /(уход(ит|ят)|уш(ёл|ла|ли)|выход(ит|ят)|вышл?(а|и)?(?!\p{L})|покида(ет|ют)|покинул|скрыл(ся|ась|ись)|исчез|удалил(ся|ась)|прощается)/iu;
 const RE_REST = /(отдыха|отдохну|передохну|спишь|уснул|засыпа|выспал|ночлег|поел|поешь|ужина|завтрака|обеда|согрел|измотан|выбил(ся|ась) из сил|задыха|устал|изнем|пот гр|еле стоишь)/i;
 const RE_USE = /(выстрел|стреля|пускаешь стрел|зажига|факел (гаснет|догорел)|выпиваешь зелье|пьёшь зелье|глотаешь зелье|бинт|перевязыва|последн(юю|ий|ее) (стрел|патрон|зарядк|монет)|кончил(ись|ся)|израсход|сломал(ся|ась|ось)|разбил(ся|ась|ось))/i;
@@ -341,11 +350,32 @@ export function completenessHints(state, narration, calls) {
   if (heroSkills.length && !used.has('practice') && aboutHero(RE_TRAIN)) {
     hints.push(`Во фрагменте герой тренировался или учился — опыт умению не начислен (practice). Умения: ${heroSkills.map((b) => b.name).join(', ')}.`);
   }
-  if (!has('scene') && RE_TIME.test(text)) hints.push('Во фрагменте прошло заметное время — scene не вызван (elapsed_minutes).');
-  const present = (state.scene && state.scene.present) || [];
-  if (!has('scene') && RE_LEAVE.test(text)) {
-    const gone = present.filter((p) => { const st = stemOf(p); return st.length >= 3 && low.includes(st); });
+  const sceneCalls = calls.filter((c) => c.name === 'scene');
+  const clockMoved = sceneCalls.some((c) => !c.args || Number(c.args.elapsed_minutes) > 0 || (typeof c.args.time === 'string' && c.args.time.trim()));
+  const presentSet = sceneCalls.some((c) => !c.args || Array.isArray(c.args.present));
+  const sc = state.scene || {};
+  const now = Number.isFinite(sc.minute) ? `Сейчас на часах: ${clockLabel(sc)}.` : '';
+  if (!clockMoved) {
+    const said = PART_NOW.find(([, re]) => re.test(text));
+    const onClock = Number.isFinite(sc.minute) ? PART_OF[dayPart(sc.minute)] : '';
+    if (said && onClock && said[0] !== onClock) {
+      hints.push(`В тексте ${said[0]}, а на часах ${onClock} — время не сдвинуто (scene elapsed_minutes или time; ночь прошла — новый день). ${now}`);
+    } else if (RE_TIME.test(text)) hints.push(`Во фрагменте прошло заметное время — часы не сдвинуты (scene elapsed_minutes). ${now}`);
+  }
+  const present = sc.present || [];
+  if (!presentSet) {
+    const gone = RE_LEAVE.test(text) ? present.filter((p) => { const st = stemOf(p); return st.length >= 3 && low.includes(st); }) : [];
     if (gone.length) hints.push(`Похоже, кто-то ушёл (${gone.join(', ')}) — scene.present не обновлён.`);
+    // Пришёл кто-то из известных: назван во фрагменте не мимоходом (дважды или новым заведён сейчас), а в present его нет.
+    const inPresent = (name) => present.some((p) => p.toLowerCase() === name.toLowerCase() || p.toLowerCase().split(/\s+/)[0] === name.toLowerCase().split(/\s+/)[0]);
+    const count = (name) => { const st = stemOf(name); return st.length >= 3 ? low.split(st).length - 1 : 0; };
+    const touchedNow = new Set(calls.filter((c) => ['npc', 'create_npc', 'update_npc'].includes(c.name) && c.args && c.args.name).map((c) => String(c.args.name).toLowerCase()));
+    const came = (state.npcs || []).filter((n) => !n.archived && !n.bound && !inPresent(n.name) && !gone.includes(n.name)
+      && (count(n.name) >= 2 || (touchedNow.has(n.name.toLowerCase()) && count(n.name) >= 1)));
+    if (came.length) hints.push(`Во фрагменте действуют ${came.slice(0, 4).map((n) => n.name).join(', ')}, а в present их нет. Present сейчас: ${present.join(', ') || 'никого'}. Если они рядом с героем — scene present полным списком.`);
+    if (!gone.length && !came.length && RE_HERO_MOVES.test(text) && !sceneCalls.some((c) => c.args && c.args.location)) {
+      hints.push(`Герой, похоже, сменил место — scene не обновлён (location, present — кто рядом теперь). Сейчас: ${sc.location || 'место не записано'}; рядом: ${present.join(', ') || 'никого'}.`);
+    }
   }
   if (!has('event')) {
     const ev = state.events || [];

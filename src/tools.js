@@ -490,6 +490,7 @@ const PLACEHOLDER_PLACE = /^[(\[]?\s*(место\s+)?(не\s+(записано|�
 
 function executeSceneTool(args, state) {
   const s = state.scene = normalizeScene(state.scene);
+  const prevLocation = String(s.location || '').trim().toLowerCase();
   const locked = s.locked || [];
   const changed = [];
   const skipped = [];
@@ -523,6 +524,10 @@ function executeSceneTool(args, state) {
     if (locked.includes('note')) skipped.push('обстановка'); else { s.note = a.note.trim(); changed.push('обстановка'); }
   }
   let out = `Сцена: ${s.location || '—'}; ${clockLabel(s)}; рядом: ${s.present.length ? s.present.join(', ') : 'никого'}.`;
+  // Новое место, а кто рядом — прежние: почти всегда забыли обновить present.
+  if (changed.includes('место') && String(s.location || '').trim().toLowerCase() !== prevLocation && prevLocation && !Array.isArray(a.present) && s.present.length && !locked.includes('present')) {
+    out += ` ВНИМАНИЕ: место сменилось, а present прежний (${s.present.join(', ')}). Кто из них пошёл с героем? Передай present заново — полным списком тех, кто рядом в новом месте (никого — []).`;
+  }
   if (Array.isArray(a.present)) {
     const known = [...(state.npcs || []).map((n) => n.name), ...(state.characters || []).map((c) => c.name)];
     const unknown = s.present.filter((p) => !known.some((k) => k.toLowerCase() === p.toLowerCase() || sameName(k, p) || k.toLowerCase().split(/\s+/)[0] === p.toLowerCase().split(/\s+/)[0]));
