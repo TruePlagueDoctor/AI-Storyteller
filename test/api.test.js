@@ -397,7 +397,7 @@ test('персонаж «играет сам»: отметка сохраняе�
   const kinds = seen.slice(from).map((x) => x.kind);
   assert.deepEqual(kinds.slice(0, 2), ['voice', 'narrator']);
   const narr = seen.slice(from).find((x) => x.kind === 'narrator').body.messages.map((m) => m.content).join('\n');
-  assert.ok(narr.includes('говорит: «Назад.»') && !narr.includes('берёт взятки'));
+  assert.ok(narr.includes('его слова: «Назад.»') && !narr.includes('берёт взятки'));
 
   handlers.voice = () => reply('РЕШЕНИЕ: пустить за монету\nРЕПЛИКА: Монету давай.\nВЫДАЁТ: —');
   ({ data } = await api('POST', '/api/regenerate'));
