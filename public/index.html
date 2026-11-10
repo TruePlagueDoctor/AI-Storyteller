@@ -255,6 +255,14 @@
           </span>
         </label>
         <label class="field">
+          <span class="field-label">Раскладка запроса рассказчику</span>
+          <select id="promptLayoutInput" class="trait-cat" style="width:100%">
+            <option value="cache">Экономная — правила и мир в начале, состояние мира в конце (история берётся из кэша)</option>
+            <option value="classic">Прежняя — всё одним блоком перед историей</option>
+          </select>
+          <span class="field-hint">Экономная дешевле: начало запроса и история не меняются от хода к ходу, и провайдер считает их по цене кэша. Сколько взято из кэша — видно в «Диагностике» у каждого запроса. Если рассказчик стал вести себя хуже — верни прежнюю.</span>
+        </label>
+        <label class="field">
           <span class="field-label">Инструкция учётчика</span>
           <select id="syncPromptStyleInput" class="trait-cat" style="width:100%">
             <option value="technical">Техническая — алгоритм, карта «событие → инструмент», связки последствий</option>

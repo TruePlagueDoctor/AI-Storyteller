@@ -17,7 +17,7 @@ import {
 } from './src/state.js';
 import { runTurn, afterSync } from './src/turn.js';
 import { planSummary, computeSummary, applySummary } from './src/summary.js';
-import { composeStorySystem, storyPromptSections } from './src/narrator.js';
+import { storyPromptSections, storyRequestParts, promptLayoutOf } from './src/narrator.js';
 import { syncNarration, resyncNarration } from './src/sync.js';
 import { replayRequest } from './src/llm.js';
 import { portraitTags, sceneTags, codexTags, codexStyle, cleanTags } from './src/art.js';
@@ -86,6 +86,7 @@ function publicState() {
     stateSync: s.stateSync,
     loreAutoWrite: s.loreAutoWrite,
     syncPromptStyle: s.syncPromptStyle || 'technical',
+    promptLayout: promptLayoutOf(s),
     diceEnabled: s.diceEnabled,
     summary: s.summary,
     compressing: compression.running,
@@ -114,15 +115,16 @@ app.get('/api/state', (_req, res) => ok(res));
 // Собранный системный промт рассказчика — как его видит модель на следующем ходу.
 app.get('/api/prompt', (_req, res) => {
   const state = getState();
-  res.type('text/plain; charset=utf-8').send(composeStorySystem(state, { withTools: state.stateSync === false }));
+  const { system, late } = storyRequestParts(state, { withTools: state.stateSync === false });
+  res.type('text/plain; charset=utf-8').send(late ? `${system}\n\n––––– дальше идёт история, а в конце запроса, перед ходом игрока: –––––\n\n${late}` : system);
 });
 
 // Из чего состоит запрос рассказчику и сколько весит каждая часть — чтобы видеть, что разрастается.
 app.get('/api/prompt/breakdown', (_req, res) => {
   const state = getState();
   const tok = (n) => Math.round(n / 3.2); // русский текст: ~3 символа на токен у DeepSeek/GLM
-  const sections = storyPromptSections(state, { withTools: state.stateSync === false })
-    .map((s) => ({ label: s.label, chars: s.text.length, tokens: tok(s.text.length) }));
+  const sections = storyPromptSections(state, { withTools: state.stateSync === false, layout: promptLayoutOf(state) })
+    .map((s) => ({ label: s.label, chars: s.text.length, tokens: tok(s.text.length), late: s.late || undefined }));
   const msgs = (state.messages || []).filter((m) => typeof m.content === 'string');
   const histChars = msgs.reduce((a, m) => a + m.content.length, 0);
   sections.push({ label: `История дословно (${msgs.length} сообщ.)`, chars: histChars, tokens: tok(histChars), history: true });

@@ -79,6 +79,7 @@ export async function callOpenRouter(opts) {
       ms: Date.now() - t0,
       model: o.model,
       in: u && Number.isFinite(u.prompt_tokens) ? u.prompt_tokens : undefined,
+      cached: u && Number.isFinite(u.prompt_tokens_details?.cached_tokens) ? u.prompt_tokens_details.cached_tokens : undefined,
       out: u && Number.isFinite(u.completion_tokens) ? u.completion_tokens : undefined,
       cost: u && Number.isFinite(u.cost) ? u.cost : undefined,
       error: error ? true : undefined,

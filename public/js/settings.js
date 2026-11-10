@@ -150,6 +150,7 @@ async function openSettings() {
     $('stateSyncInput').checked = s.stateSync !== false;
     $('loreAutoWriteInput').checked = s.loreAutoWrite === true;
     $('syncPromptStyleInput').value = s.syncPromptStyle === 'legacy' ? 'legacy' : 'technical';
+    $('promptLayoutInput').value = s.promptLayout === 'classic' ? 'classic' : 'cache';
     $('diceEnabledInput').checked = s.diceEnabled !== false;
     $('autoSummarizeInput').checked = s.autoSummarize !== false;
     $('sdUrlInput').value = s.sdUrl || 'http://127.0.0.1:7860';
@@ -225,6 +226,7 @@ async function saveSettings() {
         stateSync: $('stateSyncInput').checked,
         loreAutoWrite: $('loreAutoWriteInput').checked,
         syncPromptStyle: $('syncPromptStyleInput').value,
+        promptLayout: $('promptLayoutInput').value,
         diceEnabled: $('diceEnabledInput').checked,
         autoSummarize: $('autoSummarizeInput').checked,
         historyKeep: $('historyKeepInput').value,

@@ -283,18 +283,57 @@ export function composeStorySystem(state, opts = {}) {
   return storyPromptSections(state, opts).map((s) => s.text).join('\n\n');
 }
 
+// Раскладка запроса. «cache» (по умолчанию): неизменное (правила, мир, сценарий, предыстория) —
+// системным сообщением в начале, изменчивое (кодекс, сцена, листы, НПС) — в конце, перед ходом игрока.
+// Тогда начало запроса и вся история совпадают от хода к ходу, и провайдер берёт их из кэша.
+// «classic» — как было: всё одним системным сообщением (оно менялось каждый ход, и кэш не работал).
+export const promptLayoutOf = (state) => (state.promptLayout === 'classic' ? 'classic' : 'cache');
+
+const LATE_OPEN = '[СОСТОЯНИЕ МИРА НА ЭТОТ ХОД — служебные данные для рассказчика. Игрок этого не писал; не пересказывай и не цитируй их, а опирайся на них.]';
+const LATE_CLOSE = '[КОНЕЦ СЛУЖЕБНЫХ ДАННЫХ]';
+
+// Запрос по частям: system — постоянная часть, late — блок состояния для конца запроса ('' в прежней раскладке).
+export function storyRequestParts(state, opts = {}) {
+  const layout = promptLayoutOf(state);
+  const sections = storyPromptSections(state, { ...opts, layout });
+  if (layout === 'classic') return { system: sections.map((s) => s.text).join('\n\n'), late: '' };
+  const system = sections.filter((s) => !s.late).map((s) => s.text).join('\n\n');
+  const late = sections.filter((s) => s.late).map((s) => s.text).join('\n\n');
+  return { system, late: late ? `${LATE_OPEN}\n\n${late}\n\n${LATE_CLOSE}` : '' };
+}
+
+// Сообщения запроса рассказчику: система + история + (в раскладке «cache») состояние мира и заметки
+// в последней реплике игрока. В сохранённую историю блок состояния не попадает.
+export function storyMessages(state, opts = {}, notes = []) {
+  const { system, late } = storyRequestParts(state, opts);
+  const messages = [{ role: 'system', content: system }, ...labelHeroes(state, state.messages)];
+  const last = messages[messages.length - 1];
+  const extra = notes.filter(Boolean).join('\n');
+  if (last && last.role === 'user' && typeof last.content === 'string') {
+    let content = last.content;
+    if (late) content = `${late}\n\nХОД ИГРОКА:\n${content}`;
+    if (extra) content += `\n\n${extra}`;
+    messages[messages.length - 1] = { ...last, content };
+  } else if (late) {
+    messages.push({ role: 'user', content: late + (extra ? `\n\n${extra}` : '') });
+  }
+  return messages;
+}
+
 // Промт рассказчика по разделам — для сборки и для разбора размера в «Диагностике».
-export function storyPromptSections(state, { withTools = false } = {}) {
+// layout 'cache' — постоянные разделы первыми, изменчивые помечены late (уйдут в конец запроса).
+export function storyPromptSections(state, { withTools = false, layout = 'classic' } = {}) {
   const parts = [];
-  const add = (label, text) => { if (text) parts.push({ label, text }); };
+  const cache = layout === 'cache';
+  const add = (label, text, late = false) => { if (text) parts.push(cache ? { label, text, late } : { label, text }); };
   add('Промт рассказчика (настройки)', narratorPrompt(state, withTools));
   if (state.worldPrompt && state.worldPrompt.trim()) add('Мир', '=== МИР ===\n' + state.worldPrompt.trim());
   if (state.scenarioPrompt && state.scenarioPrompt.trim()) add('Сценарий', '=== СЦЕНАРИЙ ===\n' + state.scenarioPrompt.trim());
   if (state.summary && state.summary.trim()) {
     add('Предыстория', '=== ПРЕДЫСТОРИЯ (что уже произошло) ===\n' + state.summary.trim());
   }
-  add('Кодекс мира', codexBlock(state));
-  add('Нити', threadsBlock(state));
+  add('Кодекс мира', codexBlock(state), true);
+  add('Нити', threadsBlock(state), true);
   const chron = chronicleBlock(state.events || [], {
     sceneNames: [
       ...state.characters.filter((c) => c.present !== false || c.id === state.activeCharacterId).map((c) => c.name),
@@ -304,10 +343,10 @@ export function storyPromptSections(state, { withTools = false } = {}) {
     recentText: (state.messages || []).slice(-4).map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n'),
     scene: state.scene,
   });
-  add('Хроника (выборка)', chron);
-  add('Сцена', sceneBlock(state.scene, state));
-  add('Герои', heroesBlock(state));
-  add('НПС', npcBlock(state));
+  add('Хроника (выборка)', chron, true);
+  add('Сцена', sceneBlock(state.scene, state), true);
+  add('Герои', heroesBlock(state), true);
+  add('НПС', npcBlock(state), true);
 
   // Финальный блок — самый весомый: он ближе всего к генерации.
   const directive = DIFFICULTY_DIRECTIVES[state.difficulty] || DIFFICULTY_DIRECTIVES.normal;
@@ -319,7 +358,7 @@ export function storyPromptSections(state, { withTools = false } = {}) {
       'Лучше вызвать инструмент лишний раз, чем оставить лист неактуальным.';
   } else {
     tail +=
-      'Веди только повествование. Опирайся на состояние выше, но не описывай игровую механику ' +
+      `Веди только повествование. Опирайся на состояние ${cache ? 'мира (служебный блок перед ходом игрока)' : 'выше'}, но не описывай игровую механику ` +
       'и не пиши служебных пометок — учёт инвентаря, статусов и характеристик ведёт отдельная система. ' +
       'На этом шаге инструменты недоступны: НЕ выводи никаких вызовов инструментов, тегов invoke/function/tool_call ' +
       'и любой служебной разметки — только художественный текст истории.';
@@ -375,10 +414,12 @@ export function storyPromptSections(state, { withTools = false } = {}) {
     'Не прячься за «тот человек», «некто», «цель» и не заставляй героя выпрашивать имя, если у говорящего нет ' +
     'причины его скрывать. Раз придумав имя — держись его. Скрывать имя можно только когда это сознательный ход ' +
     'персонажа или условие сюжета, и тогда покажи, что он скрывает его нарочно.';
-  if (state.directorNote && state.directorNote.trim()) {
-    tail += '\n\nНАПРАВЛЕНИЕ ОТ ИГРОКА (приоритет выше сценария — это то, куда он хочет вести историю; ' +
-      'веди к этому через события и персонажей, не объявляя вслух): ' + state.directorNote.trim();
-  }
+  const direction = state.directorNote && state.directorNote.trim()
+    ? 'НАПРАВЛЕНИЕ ОТ ИГРОКА (приоритет выше сценария — это то, куда он хочет вести историю; ' +
+      'веди к этому через события и персонажей, не объявляя вслух): ' + state.directorNote.trim()
+    : '';
+  // Направление игрок меняет на ходу — в экономной раскладке оно идёт в конце, с состоянием мира.
+  if (direction && !cache) tail += '\n\n' + direction;
   tail += '\n\nЗНАНИЕ ПЕРСОНАЖЕЙ: НПС знает о героях только то, что видел сам или услышал в сцене. Перемены во внешности, раны и события ' +
     'после его последней встречи с героем ему неизвестны — он не может о них говорить, пока не увидит или ему не расскажут (и тогда это слух с источником). ' +
     'Мотив из прошлых ходов (сон, ночь, примета) не повод для реплик сейчас: персонажи говорят о том, что происходит в этой сцене.';
@@ -391,7 +432,11 @@ export function storyPromptSections(state, { withTools = false } = {}) {
       'Не вставляй их нарочно и не вкладывай в уста персонажей, которым неоткуда о них знать.';
   }
   add('Правила хода', tail);
-  return parts;
+  if (!cache) return parts;
+  add('Направление от игрока', direction, true);
+  // Постоянное — в порядке «реже меняется → чаще»: предыстория меняется при сжатии (тогда меняется и история).
+  const rank = (p) => (p.late ? 2 : p.label === 'Предыстория' ? 1 : 0);
+  return parts.map((p, i) => ({ p, i })).sort((a, b) => rank(a.p) - rank(b.p) || a.i - b.i).map((x) => x.p);
 }
 
 // Строки сценария вида «Жанр: …», «Тон: …», «Темы: …» дублируются в самый конец
@@ -453,15 +498,7 @@ function rollToolFor(state) {
 }
 
 export async function narrate(state, apiKey, withTools, { allowDice = true, journal = null, timer = null } = {}) {
-  const messages = [{ role: 'system', content: composeStorySystem(state, { withTools }) }, ...labelHeroes(state, state.messages)];
-
-  const notes = [DIFFICULTY_REMINDER[state.difficulty], state.correctionNote, state.tickNote].filter(Boolean);
-  if (notes.length && messages.length) {
-    const last = messages[messages.length - 1];
-    if (last && last.role === 'user') {
-      messages[messages.length - 1] = { ...last, content: `${last.content}\n\n${notes.join('\n')}` };
-    }
-  }
+  const messages = storyMessages(state, { withTools }, [DIFFICULTY_REMINDER[state.difficulty], state.correctionNote, state.tickNote]);
 
   const dice = allowDice && state.diceEnabled !== false;
   const narrationParts = [];
