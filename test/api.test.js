@@ -380,3 +380,29 @@ test('имя и раса героя: учётчик меняет, переген
   assert.deepEqual((await api('GET', '/api/state')).data.characters[0].locked, ['name', 'race', 'social']);
   await api('PUT', `/api/characters/${h.id}`, { locked: [] });
 });
+
+test('персонаж «играет сам»: отметка сохраняется, решение видно под ответом, перегенерация переигрывает', async () => {
+  handlers.narrator = () => reply('Ты стоишь у ворот. Ольт смотрит на тебя.');
+  handlers.sync = () => reply('', [call('npc', { name: 'Ольт', description: 'Стражник', secret: 'берёт взятки' }), call('scene', { location: 'Ворота', present: ['Ольт'] })]);
+  let { data } = await api('POST', '/api/action', { text: 'Иду к воротам' });
+  const olt = data.npcs.find((n) => n.name === 'Ольт');
+  ({ data } = await api('PUT', `/api/npcs/${olt.id}`, { self: true }));
+  assert.equal(data.npcs.find((n) => n.id === olt.id).self, true);
+
+  handlers.sync = () => reply('', [call('nothing', {})]);
+  handlers.voice = () => reply('РЕШЕНИЕ: не пускать\nРЕПЛИКА: Назад.\nВЫДАЁТ: —');
+  const from = seen.length;
+  ({ data } = await api('POST', '/api/action', { text: 'Ольт, пропусти' }));
+  assert.deepEqual(lastNarr(data).voices, [{ name: 'Ольт', decision: 'не пускать', line: 'Назад.', tell: '' }]);
+  const kinds = seen.slice(from).map((x) => x.kind);
+  assert.deepEqual(kinds.slice(0, 2), ['voice', 'narrator']);
+  const narr = seen.slice(from).find((x) => x.kind === 'narrator').body.messages.map((m) => m.content).join('\n');
+  assert.ok(narr.includes('говорит: «Назад.»') && !narr.includes('берёт взятки'));
+
+  handlers.voice = () => reply('РЕШЕНИЕ: пустить за монету\nРЕПЛИКА: Монету давай.\nВЫДАЁТ: —');
+  ({ data } = await api('POST', '/api/regenerate'));
+  assert.equal(lastNarr(data).voices[0].decision, 'пустить за монету');
+
+  ({ data } = await api('PUT', `/api/npcs/${olt.id}`, { self: false }));
+  assert.equal(data.npcs.find((n) => n.id === olt.id).self, undefined);
+});

@@ -15,6 +15,7 @@ export const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAA
 // Какой это запрос — по началу системного промта.
 export function kindOf(body) {
   const sys = String(body.messages?.[0]?.content || '');
+  if (sys.startsWith('Ты играешь одного персонажа')) return 'voice';
   if (sys.startsWith('РОЛЬ: учётчик') || sys.startsWith('Ты — учётчик состояния')) return 'sync';
   if (sys.includes('архивариус')) return 'summary';
   if (sys.includes('=== КАК ВЕСТИ ЭТОТ ХОД')) return 'narrator';
@@ -26,6 +27,7 @@ export function defaultHandlers() {
     narrator: () => reply('Ты стоишь у ворот. Стражник Ольт смотрит на тебя: «Чего надо?»'),
     sync: () => reply('', [call('nothing', {})]),
     summary: () => reply('Ян пришёл к воротам.'),
+    voice: () => reply('РЕШЕНИЕ: не пускать без бумаг\nРЕПЛИКА: Бумаги покажи.\nВЫДАЁТ: косится на караульную'),
     other: () => reply('1boy, mature male, adult'),
   };
 }

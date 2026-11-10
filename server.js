@@ -649,7 +649,7 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
   state._growth = [];
   try {
     clearPreSync();
-    const { narration, rolls, issues, truncated, sync, timing, lookups } = await runTurn({ state, apiKey: apiKey(), skipSync: ooc, beforeSync: capturePreSync });
+    const { narration, rolls, issues, truncated, sync, timing, lookups, voices } = await runTurn({ state, apiKey: apiKey(), skipSync: ooc, beforeSync: capturePreSync });
     const growth = state._growth || [];
     if (ooc) {
       // Ответ на реплику вне истории не должен попасть в предысторию.
@@ -659,7 +659,7 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
     }
     const entry = {
       role: 'narrator', text: narration, hero: state.activeCharacterId,
-      timing: { narrate: (timing && timing.narrate) || [] },
+      timing: { narrate: (timing && timing.narrate) || [], voices: (timing && timing.voices) || undefined },
       sync: sync || undefined,
       rolls: rolls && rolls.length ? rolls : undefined,
       issues: issues && issues.length ? issues : undefined,
@@ -667,6 +667,7 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
       ticks: ticks.length ? ticks : undefined,
       growth: growth.length ? growth : undefined,
       lookups: lookups || undefined,
+      voices: voices || undefined,
     };
     state.log.push(entry);
     bindPreSync(state.log.length - 1);

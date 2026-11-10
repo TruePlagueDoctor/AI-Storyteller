@@ -6,6 +6,7 @@ import { narrate, lastPlayerAction } from './narrator.js';
 import { syncState, syncWorthwhile } from './sync.js';
 import { sameName } from './tools.js';
 import { codexMisses } from './codex.js';
+import { npcVoices } from './voices.js';
 
 // После хода: кто был рядом с героем — тот его видел. Последняя встреча нужна рассказчику,
 // чтобы давно не видевшие героя НПС не знали того, что с ним случилось потом.
@@ -15,7 +16,13 @@ export function markSeen(state) {
   const first = (s) => s.toLowerCase().split(/\s+/)[0];
   const isNear = (name) => near.some((p) => p.toLowerCase() === name.toLowerCase() || sameName(p, name) || first(p) === first(name));
   const seen = (state.npcs || []).filter((n) => !n.archived && (n.bound || isNear(n.name)));
-  for (const n of seen) n.lastSeen = { turn: state.turn || 0, day: sc.day || 1 };
+  // since — с какого хода он рядом без перерыва: по этому «играющий сам» персонаж знает, что слышал.
+  const turn = state.turn || 0;
+  for (const n of seen) {
+    const prev = n.lastSeen;
+    const since = prev && prev.turn >= turn - 1 ? (Number.isFinite(prev.since) ? prev.since : prev.turn) : turn;
+    n.lastSeen = { turn, day: sc.day || 1, since };
+  }
   const hero = state.characters.find((c) => c.id === state.activeCharacterId);
   for (const e of (hero && hero.appearanceLog) || []) {
     for (const n of seen) if (!e.seenBy.some((x) => x.toLowerCase() === n.name.toLowerCase() || sameName(x, n.name))) e.seenBy.push(n.name);
@@ -49,7 +56,14 @@ export async function runTurn({ state, apiKey, skipSync = false, beforeSync = nu
   const journal = [];
   const syncTimer = [];
   const sync = state.stateSync !== false; // по умолчанию включён
-  const { narration, rolls, truncated, codexSeen, lookups } = await narrate(state, apiKey, !sync, { journal, timer: narrTimer });
+  // Персонажи, которые «играют сами», решают до рассказа; рассказчик получает их решение на этот ход.
+  const voiceTimer = [];
+  const voices = await npcVoices(state, apiKey, voiceTimer);
+  let told;
+  state._voices = voices.length ? voices : undefined;
+  try { told = await narrate(state, apiKey, !sync, { journal, timer: narrTimer }); }
+  finally { delete state._voices; }
+  const { narration, rolls, truncated, codexSeen, lookups } = told;
   let syncInfo;
   // Снимок мира «после текста, до учёта» — для кнопки «переучесть».
   if (sync && beforeSync) { try { beforeSync(); } catch { /* не критично */ } }
@@ -76,6 +90,7 @@ export async function runTurn({ state, apiKey, skipSync = false, beforeSync = nu
     fixed,
     sync: syncInfo,
     lookups: lookups && lookups.length ? lookups : undefined,
-    timing: { narrate: narrTimer },
+    voices: voices.length ? voices : undefined,
+    timing: { narrate: narrTimer, voices: voiceTimer.length ? voiceTimer : undefined },
   };
 }

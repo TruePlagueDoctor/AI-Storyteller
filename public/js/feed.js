@@ -46,13 +46,27 @@ function makeEntryEl(role, text, index, entry) {
     bar.append(msg, btn);
     div.appendChild(bar);
   }
-  if (entry && ((entry.ticks && entry.ticks.length) || (entry.growth && entry.growth.length) || (entry.lookups && entry.lookups.length))) {
+  if (entry && ((entry.ticks && entry.ticks.length) || (entry.growth && entry.growth.length) || (entry.lookups && entry.lookups.length) || (entry.voices && entry.voices.length))) {
     const fx = document.createElement('div');
     fx.className = 'turn-fx';
     if (entry.lookups && entry.lookups.length) {
       const l = document.createElement('div'); l.className = 'fx-tick';
       l.textContent = '📖 Рассказчик заглянул в кодекс: ' + entry.lookups.join(', ');
       fx.appendChild(l);
+    }
+    // Что персонаж решил сам — под спойлером: там его намерения.
+    for (const v of entry.voices || []) {
+      const d = document.createElement('details'); d.className = 'fx-voice';
+      const sum = document.createElement('summary'); sum.textContent = `🎭 ${v.name} решил сам`;
+      d.appendChild(sum);
+      for (const [label, text] of [['Намерение', v.decision], ['Реплика', v.line ? `«${v.line}»` : ''], ['Заметно снаружи', v.tell]]) {
+        if (!text) continue;
+        const row = document.createElement('div'); row.className = 'fx-voice-row';
+        const b = document.createElement('span'); b.className = 'fx-voice-label'; b.textContent = label;
+        row.append(b, document.createTextNode(' ' + text));
+        d.appendChild(row);
+      }
+      fx.appendChild(d);
     }
     for (const t of entry.ticks || []) { const l = document.createElement('div'); l.className = 'fx-tick'; l.textContent = '⏳ ' + t; fx.appendChild(l); }
     for (const g of entry.growth || []) { const l = document.createElement('div'); l.className = 'fx-growth'; l.textContent = '✦ ' + g; fx.appendChild(l); }

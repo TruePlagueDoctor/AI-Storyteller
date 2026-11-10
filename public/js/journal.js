@@ -109,6 +109,7 @@ const fmtTok = (n) => (n == null ? '?' : n >= 1000 ? (n / 1000).toFixed(1).repla
 function renderTiming(entry) {
   const tm = entry.timing || {};
   const parts = [
+    ['персонажи', tm.voices || []],
     ['рассказ', tm.narrate || []],
     ['учёт', (entry.sync && entry.sync.timing) || []],
     ['сжатие', tm.summary || []],

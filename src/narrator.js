@@ -249,7 +249,9 @@ function npcBlock(state) {
     if (n.personality) line += `\n  Характер и речь: ${n.personality}`;
     if (n.quirk) line += `\n  Изюминка: ${n.quirk}`;
     if (n.wants) line += `\n  ХОЧЕТ: ${n.wants}`;
-    if (n.secret) line += `\n  СКРЫВАЕТ (герой не знает): ${n.secret}`;
+    // «Играет сам»: тайну знает только он — рассказчику её не показываем, проболтаться нечем.
+    if (n.secret && n.self) line += '\n  СКРЫВАЕТ: что-то своё — что именно, знает только он сам. Не выдумывай и не раскрывай за него.';
+    else if (n.secret) line += `\n  СКРЫВАЕТ (герой не знает): ${n.secret}`;
     if (n.links) line += `\n  Связи: ${n.links}`;
     if (n.history) line += `\n  Было с героем: ${tailItems(n.history, 4, 500)}`;
     const voice = [n.voiceStyle ? `манера: ${n.voiceStyle}` : '', n.voiceHumor ? `юмор: ${n.voiceHumor}` : '', n.voiceHabits ? `привычки: ${n.voiceHabits}` : ''].filter(Boolean);
@@ -268,6 +270,25 @@ function npcBlock(state) {
   return s;
 }
 
+
+// Решения персонажей, которые «играют сами» (src/voices.js), — на один ход, в конце запроса.
+function voicesBlock(state) {
+  const voices = state._voices || [];
+  if (!voices.length) return '';
+  let s = '=== ПЕРСОНАЖИ, КОТОРЫЕ РЕШИЛИ САМИ ===\n' +
+    'Этих персонажей в этот ход сыграл отдельный исполнитель — у него их память и тайны. Впиши их решение в сцену как есть: ' +
+    'намерение не меняй, реплику приведи близко к тексту (можно разбить ремарками и продолжить в том же духе, если разговор идёт дальше). ' +
+    'Что персонаж скрывает, ты не знаешь — покажи только то, что заметно снаружи. Исход действий героя и проверок по-прежнему решаешь ты; ' +
+    'если действие героя до персонажа не дошло — реплику опусти.\n';
+  s += voices.map((v) => {
+    const bits = [];
+    if (v.decision) bits.push(`намерение: ${v.decision}`);
+    if (v.line) bits.push(`говорит: «${v.line}»`);
+    if (v.tell) bits.push(`снаружи заметно: ${v.tell}`);
+    return `• ${v.name} — ${bits.join('; ')}`;
+  }).join('\n');
+  return s;
+}
 
 // Системный контекст для ШАГА РАССКАЗА.
 // В двухпроходном режиме рассказчику инструменты недоступны — раздел базового
@@ -347,6 +368,7 @@ export function storyPromptSections(state, { withTools = false, layout = 'classi
   add('Сцена', sceneBlock(state.scene, state), true);
   add('Герои', heroesBlock(state), true);
   add('НПС', npcBlock(state), true);
+  add('Решения персонажей', voicesBlock(state), true);
 
   // Финальный блок — самый весомый: он ближе всего к генерации.
   const directive = DIFFICULTY_DIRECTIVES[state.difficulty] || DIFFICULTY_DIRECTIVES.normal;

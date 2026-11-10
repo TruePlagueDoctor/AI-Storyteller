@@ -32,6 +32,7 @@ function openNpcModal(npc) {
   for (const [field, id] of Object.entries(NPC_FIELD_IDS)) $(id).value = npc ? (npc[field] || '') : '';
   npcLocks = new Set(npc && Array.isArray(npc.locked) ? npc.locked : []);
   $('npcBound').checked = Boolean(npc && npc.bound);
+  $('npcSelf').checked = Boolean(npc && npc.self);
   $('npcVoiceSamples').value = npc && Array.isArray(npc.voiceSamples) ? npc.voiceSamples.join('\n') : '';
   $('npcCompetence').value = (npc && npc.competence) || '';
   $('npcSkills').value = npc && Array.isArray(npc.skills) ? npc.skills.join(', ') : '';
@@ -124,7 +125,7 @@ async function clearNpcAvatar() {
 }
 
 async function saveNpc() {
-  const body = { locked: [...npcLocks], traits: [...npcTraitSel], bound: $('npcBound').checked,
+  const body = { locked: [...npcLocks], traits: [...npcTraitSel], bound: $('npcBound').checked, self: $('npcSelf').checked,
     voiceSamples: $('npcVoiceSamples').value.split('\n').map((s) => s.trim()).filter(Boolean).slice(-8),
     competence: $('npcCompetence').value, skills: $('npcSkills').value.split(/[,;]/).map((s) => s.trim()).filter(Boolean).slice(0, 3) };
   for (const [field, id] of Object.entries(NPC_FIELD_IDS)) body[field] = $(id).value;

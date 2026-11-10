@@ -185,6 +185,24 @@ try {
     await page.click('#slotsClose');
     step('настройки и список историй открываются');
 
+    // «Играет сам»: галочка в редакторе НПС, после хода под ответом — что персонаж решил.
+    await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+    const npcId = (await stack.api('GET', '/api/state')).data.npcs[0].id;
+    await page.evaluate((id) => openNpcModal(app.npcs.find((n) => n.id === id)), npcId);
+    await page.waitForSelector('#npcModal:not([hidden])');
+    await page.check('#npcSelf');
+    await page.click('#npcSave');
+    await page.waitForSelector('#npcModal', { state: 'hidden' });
+    if (!(await stack.api('GET', '/api/state')).data.npcs[0].self) errors.push(`[${viewport.name}] отметка «играет сам» не сохранилась`);
+    await page.fill('#input', 'Ольт, что там за стеной?');
+    await page.press('#input', 'Enter');
+    await page.waitForSelector('.fx-voice', { timeout: 15000 });
+    await page.click('.fx-voice summary >> nth=-1');
+    if (!/Бумаги покажи/.test(await page.textContent('.fx-voice >> nth=-1'))) errors.push(`[${viewport.name}] решение персонажа не показано под ответом`);
+    if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-voice.png`), fullPage: false });
+    await stack.api('PUT', `/api/npcs/${npcId}`, { self: false });
+    step('персонаж «играет сам»: отметка и решение под ответом');
+
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     if (overflow > 1) errors.push(`[${viewport.name}] горизонтальная прокрутка: лишние ${overflow}px`);
     if (shots) await page.screenshot({ path: join(shots, `${viewport.name}.png`), fullPage: false });

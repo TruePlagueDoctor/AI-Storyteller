@@ -76,6 +76,7 @@ function renderNpcView(n) {
   if (n.competence && n.competence !== 'обычный') tags.appendChild(dEl('span', 'dossier-tag', n.competence + ((n.skills || []).length ? ' · ' + n.skills.join(', ') : '')));
   else if ((n.skills || []).length) tags.appendChild(dEl('span', 'dossier-tag', n.skills.join(', ')));
   if (n.bound) tags.appendChild(dEl('span', 'dossier-tag', 'всегда с героем'));
+  if (n.self) tags.appendChild(dEl('span', 'dossier-tag', '🎭 играет сам'));
   if (n.archived) tags.appendChild(dEl('span', 'dossier-tag muted', 'в архиве'));
   if (tags.children.length) ident.appendChild(tags);
   const sample = (n.voiceSamples || []).slice(-1)[0];

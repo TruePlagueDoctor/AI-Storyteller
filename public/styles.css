@@ -1138,6 +1138,12 @@ body {
 .turn-fx { margin-top: 8px; display: flex; flex-direction: column; gap: 3px; }
 .fx-tick, .fx-growth { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
 .fx-tick { color: var(--status); }
+.fx-voice { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); }
+.fx-voice summary { cursor: pointer; color: var(--brass-dim); list-style: none; }
+.fx-voice summary::-webkit-details-marker { display: none; }
+.fx-voice summary:hover, .fx-voice[open] summary { color: var(--brass); }
+.fx-voice-row { margin: 4px 0 0 18px; font-family: 'Spectral', serif; font-size: 13.5px; line-height: 1.45; color: var(--text); }
+.fx-voice-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
 .fx-growth { color: var(--item); }
 .status-fx { color: var(--text-faint); font-size: 10.5px; }
 

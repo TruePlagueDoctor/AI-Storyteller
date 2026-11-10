@@ -1027,6 +1027,7 @@ export async function addNpc(data = {}) {
   for (const f of NPC_ARRAY_FIELDS) if (Array.isArray(data[f])) npc[f] = data[f].map(String);
   tidyCompetence(npc);
   if (typeof data.bound === 'boolean') npc.bound = data.bound;
+  if (data.self === true) npc.self = true;
   if (Array.isArray(data.locked)) npc.locked = data.locked.filter((x) => [...NPC_FIELDS, ...NPC_ARRAY_FIELDS].includes(x));
   state.npcs.push(npc);
   noteManual('npc', npc.id, null, npc);
@@ -1047,6 +1048,7 @@ export async function updateNpcManual(id, data = {}) {
   for (const f of NPC_ARRAY_FIELDS) if (Array.isArray(data[f])) n[f] = data[f].map(String);
   tidyCompetence(n);
   if (typeof data.bound === 'boolean') { if (data.bound) n.bound = true; else delete n.bound; }
+  if (typeof data.self === 'boolean') { if (data.self) n.self = true; else delete n.self; }
   if (Array.isArray(data.locked)) n.locked = data.locked.filter((x) => [...NPC_FIELDS, ...NPC_ARRAY_FIELDS, 'voice'].includes(x));
   if (!n.name) n.name = 'Без имени';
   noteManual('npc', n.id, before, n);
