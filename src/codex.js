@@ -141,7 +141,12 @@ export function selectCodex(state) {
   for (const e of book) {
     if (e.kind !== 'magic') continue;
     const t = norm(e.title);
-    if (heroes.some((c) => (c.blocks || []).some((b) => b.type === 'status' && norm(b.name) === t))) pick(e, 'full', 88, 'действует на героя');
+    if (heroes.some((c) => (c.blocks || []).some((b) => b.type === 'status' && norm(b.name) === t))) {
+      pick(e, 'full', 88, 'действует на героя');
+      // Вместе с действующей разновидностью — общая статья группы (базовый эффект для любого вида).
+      const parent = groupKey(e) ? book.find((x) => x.kind === 'magic' && norm(x.title) === groupKey(e)) : null;
+      if (parent && parent.id !== e.id) pick(parent, 'full', 87, 'общее для группы');
+    }
     else if (near.some((n) => mentioned(e, norm(n.status)))) pick(e, 'brief', 75, 'действует на того, кто рядом');
   }
   for (const p of [...near.map((n) => n.race), ...heroes.map((c) => c.race)]) { const e = findPeople(book, p); if (e) pick(e, 'brief', 80, 'народ в сцене'); }
@@ -209,6 +214,13 @@ function magicGroups(book) {
     if (g.parent) g.title = g.parent.title;
   }
   return groups;
+}
+// Общее для группы — к статье разновидности: базовый эффект, который действует у любого вида.
+function groupCommon(groups, e) {
+  const g = e.kind === 'magic' && groupKey(e) ? groups.get(groupKey(e)) : null;
+  if (!g || !g.parent || g.parent.id === e.id) return '';
+  const bits = [entryBrief(g.parent), str(g.parent.fields && g.parent.fields.effect) ? 'Эффект: ' + cut(str(g.parent.fields.effect), 400) : ''].filter(Boolean);
+  return bits.length ? `\n  Общее для группы «${g.parent.title}»: ${bits.join(' ')}` : '';
 }
 // Список разновидностей группы: с выжимками (по запросу) или одними названиями (в запросе рассказчику).
 function groupList(g, withBriefs) {
@@ -327,7 +339,7 @@ export function lookupCodex(state, titles) {
   for (const t of list) {
     const e = findAny(book, t);
     const group = groups.get(norm(e ? e.title : t));
-    if (e) { found.push(e.id); out.push(renderFull(e, { fieldMax: 1000, textMax: 4000 }) + (group ? '\n' + groupList(group, true) : '')); continue; }
+    if (e) { found.push(e.id); out.push(renderFull(e, { fieldMax: 1000, textMax: 4000 }) + (group ? '\n' + groupList(group, true) : '') + groupCommon(groups, e)); continue; }
     // Группа без общей статьи: название есть только в поле разновидностей.
     if (group) { out.push(`• ${group.title} [${KIND_LABEL.magic}]\n` + groupList(group, true)); continue; }
     const similar = book.filter((x) => nameMatches(x, t)).map((x) => x.title).slice(0, 6);

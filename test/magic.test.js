@@ -144,3 +144,25 @@ test('общая статья в запросе несёт названия ра
   assert.match(text, /Разновидности: Руна голода, Руна покорности/);
   assert.ok(text.length / 3.2 <= 1300, `кодекс в бюджете: ~${Math.round(text.length / 3.2)} ток.`);
 });
+
+// Случай пользователя: общая статья (описание + базовый эффект для любой руны) и отдельно — виды.
+test('общее для группы доходит вместе с разновидностью: по запросу вида и когда вид действует на героя', () => {
+  const st = world({ lorebook: bigBook() });
+  st.lorebook[0].fields = { effect: 'Любая руна греется при близости наложившего' };
+  st.lorebook[0].brief = 'Магия суккубов: знаки на теле.';
+  const one = lookupCodex(st, ['Руна пустоты']).text;
+  assert.match(one, /Общее для группы «Лоно-руны»: Магия суккубов: знаки на теле\. Эффект: Любая руна греется при близости наложившего/);
+  hero(st).blocks.push({ id: 'p', type: 'status', name: 'Руна пустоты' });
+  const sel = selectCodex(st);
+  assert.equal(sel.find((x) => x.entry.title === 'Руна пустоты').level, 'full');
+  assert.ok(sel.some((x) => x.entry.id === 'g'), 'общая статья подтянулась вместе с действующей руной');
+  assert.match(renderCodex(st).text, /Лоно-руны \[магия\]/);
+});
+
+test('общая статья группы — не состояние, даже если у неё заполнен базовый эффект', () => {
+  const st = world({ lorebook: bigBook() });
+  st.lorebook[0].fields = { effect: 'Любая руна греется при близости наложившего' };
+  const names = statusCatalogOf(st).map((d) => d.name);
+  assert.ok(!names.includes('Лоно-руны'));
+  assert.ok(names.includes('Руна голода') && names.includes('Чёрная хворь'));
+});
