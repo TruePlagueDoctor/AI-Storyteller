@@ -223,10 +223,34 @@ function groupCommon(groups, e) {
   return bits.length ? `\n  Общее для группы «${g.parent.title}»: ${bits.join(' ')}` : '';
 }
 // Список разновидностей группы: с выжимками (по запросу) или одними названиями (в запросе рассказчику).
-function groupList(g, withBriefs) {
+function groupList(g, withBriefs, briefMax = 180) {
   if (!withBriefs) return `  Разновидности: ${g.items.map((e) => e.title).join(', ')} (эффект каждой — в её статье)`;
   return `Разновидности (${g.items.length}) — выбирай из них; подробности каждой — в её статье:\n` +
-    g.items.map((e) => { const b = entryBrief(e) || str(e.fields && e.fields.effect); return `• ${e.title}${b ? ' — ' + cut(b, 180) : ''}`; }).join('\n');
+    g.items.map((e) => { const b = entryBrief(e) || str(e.fields && e.fields.effect); return `• ${e.title}${b && briefMax ? ' — ' + cut(b, briefMax) : ''}`; }).join('\n');
+}
+
+// Группа «в деле»: о ней или о её видах говорят в последних репликах, вид действует на героя или записан у НПС рядом.
+// Тогда список видов с эффектами идёт рассказчику сам — не дожидаясь, пока модель вызовет codex_lookup
+// (дешёвые модели вызывают инструмент не всегда и выдумывали эффект по одному названию).
+export const GROUP_LIST_BUDGET_TOKENS = 900;
+function activeGroups(state, groups) {
+  if (!groups.size) return [];
+  const msgs = viewMessages(state).filter((m) => typeof m.content === 'string' && (m.role === 'user' || m.role === 'assistant') && !m.ooc);
+  const last2 = norm(msgs.slice(-2).map((m) => m.content).join('\n'));
+  const { heroes, near } = sceneParty(state);
+  const onHero = (e) => heroes.some((c) => (c.blocks || []).some((b) => b.type === 'status' && norm(b.name) === norm(e.title)));
+  const onNpc = (e) => near.some((n) => mentioned(e, norm(n.status)));
+  return [...groups.values()].filter((g) =>
+    (g.parent ? mentioned(g.parent, last2) : keyMatches(norm(g.title), last2)) ||
+    g.items.some((e) => mentioned(e, last2) || onHero(e) || onNpc(e)));
+}
+// Список в пределах своего бюджета: сначала ужимаются выжимки, в крайнем случае остаются одни названия.
+function fittedGroupList(g) {
+  for (const max of [180, 120, 80, 50, 0]) {
+    const text = `${g.title} — ${groupList(g, true, max)}`;
+    if (tok(text) <= GROUP_LIST_BUDGET_TOKENS || max === 0) return text;
+  }
+  return '';
 }
 
 export function narratorIndex(state) {
@@ -295,8 +319,11 @@ export function renderCodex(state) {
   }
   const dropped = [];
   const groups = magicGroups((state.lorebook || []).filter((e) => e.enabled !== false).map((e) => (e.kind ? e : normalizeEntry(e))));
+  const live = activeGroups(state, groups);
   for (const x of sel) {
-    const group = x.level === 'full' && x.entry.kind === 'magic' ? groups.get(norm(x.entry.title)) : null;
+    // Названия видов через запятую — только если полного списка этой группы в запросе не будет.
+    const own = x.level === 'full' && x.entry.kind === 'magic' ? groups.get(norm(x.entry.title)) : null;
+    const group = own && !live.includes(own) ? own : null;
     const base = x.level === 'full' ? renderFull(x.entry) : null;
     const withNames = base && group ? base + '\n' + groupList(group, false) : null;
     const full = withNames && used + tok(withNames) <= budget ? withNames : base; // названия видов — пока влезают
@@ -306,6 +333,8 @@ export function renderCodex(state) {
     else dropped.push(x.entry.title);
   }
   if (dropped.length) parts.push(`(не поместилось: ${dropped.slice(0, 12).join(', ')}${dropped.length > 12 ? '…' : ''})`);
+  // Списки видов групп «в деле» — сверх бюджета кодекса, у каждого свой предел.
+  for (const g of live) { parts.push(fittedGroupList(g)); for (const e of g.items) shown.add(e.id); }
   return { text: parts.join('\n'), shown };
 }
 export const codexBlock = (state) => renderCodex(state).text;
