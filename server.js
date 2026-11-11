@@ -24,7 +24,7 @@ import { stamp, visibleTo, viewMessages } from './src/lines.js';
 import { companionIds, groupOf } from './src/relations.js';
 import { portraitTags, sceneTags, codexTags, codexStyle, cleanTags } from './src/art.js';
 import { DEFAULT_IMAGE_SETTINGS } from './src/images.js';
-import { fillField, writeBrief } from './src/fill.js';
+import { fillField, writeBrief, splitArticle } from './src/fill.js';
 import { CODEX_KINDS, KIND_LABEL, KIND_FIELDS, findPeople } from './src/codex.js';
 import { listRequests, getRequest, clearRequests, diagCounts } from './src/diag.js';
 import { txt2img, pingSd } from './src/images.js';
@@ -337,6 +337,30 @@ app.post('/api/lore/briefs', whileIdle, async (_req, res) => {
     catch (err) { failed.push(`${e.title}: ${String(err.message || err).slice(0, 120)}`); }
   }
   res.json({ ...publicState(), briefs: { done, failed } });
+});
+
+// ✂ Разобрать большую статью на отдельные: каждая разновидность — своя статья раздела «Магия и явления»
+// в группе этой статьи. Уже существующие названия не трогаем.
+app.post('/api/lore/:id/split', whileIdle, async (req, res) => {
+  if (!apiKey()) return res.status(400).json({ error: 'Не задан OPENROUTER_API_KEY.' });
+  try {
+    const state = getState();
+    const parent = state.lorebook.find((x) => x.id === req.params.id);
+    if (!parent) return res.status(404).json({ error: 'Статья не найдена.' });
+    const items = await splitArticle({ state, apiKey: apiKey(), entry: parent });
+    const flat = (t) => String(t || '').trim().toLowerCase().replace(/ё/g, 'е');
+    const created = []; const skipped = [];
+    for (const it of items) {
+      if (flat(it.title) === flat(parent.title)) continue;
+      if (getState().lorebook.some((x) => flat(x.title) === flat(it.title))) { skipped.push(it.title); continue; }
+      const fields = { group: parent.title };
+      for (const k of ['effect', 'look', 'how']) if (it[k]) fields[k] = it[k];
+      await addLoreEntry({ title: it.title, kind: 'magic', brief: it.brief, fields, keys: [] });
+      created.push(it.title);
+    }
+    if (created.length && parent.kind !== 'magic') await updateLoreEntry(parent.id, { kind: 'magic' });
+    res.json({ ...publicState(), split: { created, skipped } });
+  } catch (e) { fail(res, e, 502); }
 });
 
 // ---- Лорбук ----

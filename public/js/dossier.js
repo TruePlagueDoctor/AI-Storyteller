@@ -311,6 +311,21 @@ function renderCodexText(e, body, kind) {
     const sec = dSection(body, 'Подробно');
     for (const para of e.content.split(/\n{2,}|\n/).map((x) => x.trim()).filter(Boolean)) sec.appendChild(dEl('p', 'dossier-text para', para));
   }
+  // Группа магии: разновидности ссылками (общая статья «Лоно-руны» → все руны).
+  if (kind === 'magic') {
+    const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+    const kids = app.lorebook.filter((x) => x.id !== e.id && (x.kind || 'other') === 'magic' && x.fields && same(x.fields.group, e.title));
+    if (kids.length) {
+      const sec = dSection(body, `Разновидности · ${kids.length}`);
+      for (const k of kids) {
+        const row = dRow(`${k.title} ↗`, null, k.brief || (k.fields && k.fields.effect) || null);
+        const nm = row.querySelector('.dossier-row-name');
+        nm.classList.add('link');
+        nm.addEventListener('click', () => openCodexView(k.id));
+        sec.appendChild(row);
+      }
+    }
+  }
   // Знакомые этого народа — ссылками на их досье.
   if (kind === 'people') {
     const links = app.codexLinks || {};

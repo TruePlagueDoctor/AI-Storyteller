@@ -30,7 +30,7 @@ const world = (over = {}) => {
 
 test('раздел есть, с полями эффекта и механики', () => {
   assert.ok(CODEX_KINDS.includes('magic'));
-  assert.deepEqual(KIND_FIELDS.magic.map(([k]) => k), ['effect', 'look', 'how', 'mech_roll', 'mech_tick', 'mech_turns']);
+  assert.deepEqual(KIND_FIELDS.magic.map(([k]) => k), ['group', 'effect', 'look', 'how', 'mech_roll', 'mech_tick', 'mech_turns']);
 });
 
 test('рассказчик видит раздел в оглавлении с правилом «бери записанное»', () => {
@@ -83,7 +83,7 @@ test('учётчик знает руны как состояния и получ
   const sys = composeSyncSystem(st, '');
   assert.match(sys, /КАТАЛОГ СОСТОЯНИЙ:[^\n]*Руна голода \(-2 к броскам, Рассудок -2\/ход, 4 х\.\)/);
   assert.match(sys, /МАГИЯ И ЯВЛЕНИЯ[^\n]*block type:status/);
-  assert.match(codexIndex(st), /Магия и явления: Руны суккубов, Руна голода, Руна покорности/);
+  assert.ok(!/Руна голода/.test(codexIndex(st)), 'состояния из кодекса учётчик видит в каталоге — в оглавлении не дублируются');
   // Без статей этого раздела промт учётчика прежний.
   const plain = composeSyncSystem(makeState(), '');
   assert.ok(!/МАГИЯ И ЯВЛЕНИЯ/.test(plain));
@@ -105,4 +105,42 @@ test('рассказчик описал руну, не видя статьи, �
   assert.deepEqual(codexMisses(st, 'На её коже проступает руна покорности.', seen), ['Руна покорности']);
   fake = installFakeFetch([reply('На её коже проступает руна покорности, и воздух густеет.'), reply('', [call('nothing', {})])]);
   await runTurn({ state: { ...st, diceEnabled: false }, apiKey: 'k' });
+});
+
+// 32 руны в оглавление не помещались (влезала половина). Группа: одна строка в оглавлении, полный список — по запросу.
+const NAMES = ['голода', 'покорности', 'жажды', 'тишины', 'боли', 'сна', 'верности', 'огня', 'льда', 'тени', 'страха', 'забвения', 'желания', 'слабости', 'силы', 'крови',
+  'уз', 'молчания', 'зова', 'послушания', 'истомы', 'голоса', 'плодородия', 'увядания', 'метки', 'привязи', 'отражения', 'обмана', 'правды', 'покоя', 'ярости', 'пустоты'];
+const bigBook = () => [
+  normalizeEntry({ id: 'g', title: 'Лоно-руны', kind: 'magic', brief: 'Магия суккубов: знаки на теле, меняющие носителя.' }),
+  ...NAMES.map((n, i) => normalizeEntry({ id: 'r' + i, title: 'Руна ' + n, kind: 'magic', brief: `Эффект руны ${n} одной строкой.`, fields: { group: 'Лоно-руны', effect: 'эффект ' + n } })),
+  normalizeEntry({ id: 'c', title: 'Гуль', kind: 'creature' }),
+  normalizeEntry({ id: 'm', title: 'Чёрная хворь', kind: 'magic', brief: 'Болезнь.', fields: { effect: 'слабость' } }),
+];
+
+test('группа из 32 рун: в оглавлении одна строка с числом видов, без «и ещё N»', () => {
+  const st = world({ lorebook: bigBook() });
+  const idx = narratorIndex(st);
+  assert.match(idx, /Магия и явления: Лоно-руны \(32 вида — список в статье\), Чёрная хворь/);
+  assert.ok(!/Руна голода/.test(idx) && !/и ещё/.test(idx), idx);
+  assert.match(idx, /прежде чем выбрать разновидность, прочитай статью группы/);
+});
+
+test('по запросу группа отдаёт все разновидности с эффектами одной строкой; разновидность — свою статью', () => {
+  const st = world({ lorebook: bigBook() });
+  const res = lookupCodex(st, ['Лоно-руны']);
+  for (const n of NAMES) assert.ok(res.text.includes(`Руна ${n} — Эффект руны ${n} одной строкой.`), n);
+  assert.match(res.text, /Разновидности \(32\)/);
+  assert.match(lookupCodex(st, ['Руна пустоты']).text, /Эффект: эффект пустоты/);
+  // Группа без общей статьи тоже находится по названию.
+  st.lorebook = st.lorebook.filter((e) => e.id !== 'g');
+  assert.match(narratorIndex(st), /Лоно-руны \(32 вида — список в статье\)/);
+  assert.match(lookupCodex(st, ['Лоно-руны']).text, /Разновидности \(32\)[\s\S]*Руна голода/);
+});
+
+test('общая статья в запросе несёт названия разновидностей, пока влезает в бюджет', () => {
+  const st = world({ lorebook: bigBook() });
+  st.lorebook[0].always = true;
+  const text = renderCodex(st).text;
+  assert.match(text, /Разновидности: Руна голода, Руна покорности/);
+  assert.ok(text.length / 3.2 <= 1300, `кодекс в бюджете: ~${Math.round(text.length / 3.2)} ток.`);
 });

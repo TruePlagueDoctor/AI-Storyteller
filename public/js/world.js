@@ -4,6 +4,7 @@
 // ---- Кодекс мира (бывший лорбук) ----
 let editingLoreId = null;
 let codexFilter = 'all';
+const codexOpenGroups = new Set(); // какие группы магии развёрнуты в списке
 const CODEX_GLYPH = { people: '☗', creature: '☠', faction: '⚜', place: '⌂', magic: '✦', other: '✎' };
 const CODEX_TITLE = { all: 'Все', people: 'Народы', creature: 'Бестиарий', faction: 'Фракции', place: 'Места', magic: 'Магия и явления', other: 'Прочее' };
 const codexKinds = () => (app.codexKinds && app.codexKinds.kinds) || ['people', 'creature', 'faction', 'place', 'magic', 'other'];
@@ -52,7 +53,23 @@ function renderLore() {
       h.textContent = CODEX_TITLE[kind];
       list.appendChild(h);
     }
-    for (const e of items) list.appendChild(renderLoreCard(e));
+    // Магия: разновидности одной группы (десятки рун) сворачиваются под названием группы.
+    const groupOfItem = (e) => (kind === 'magic' && e.fields && e.fields.group ? String(e.fields.group).trim() : '');
+    const boxes = new Map();
+    for (const e of items) {
+      const g = groupOfItem(e);
+      if (!g || g.toLowerCase() === String(e.title).toLowerCase()) { list.appendChild(renderLoreCard(e)); continue; }
+      if (!boxes.has(g.toLowerCase())) {
+        const d = document.createElement('details'); d.className = 'lore-group'; d.dataset.group = g;
+        d.open = codexOpenGroups.has(g.toLowerCase());
+        d.addEventListener('toggle', () => { if (d.open) codexOpenGroups.add(g.toLowerCase()); else codexOpenGroups.delete(g.toLowerCase()); });
+        d.appendChild(document.createElement('summary'));
+        boxes.set(g.toLowerCase(), d);
+        list.appendChild(d);
+      }
+      boxes.get(g.toLowerCase()).appendChild(renderLoreCard(e));
+    }
+    for (const d of boxes.values()) d.querySelector('summary').textContent = `${d.dataset.group} · ${d.children.length - 1}`;
   }
 }
 
@@ -146,10 +163,29 @@ function openLoreModal(entry) {
   $('loreAlways').checked = entry ? !!entry.always : false;
   renderLoreKindFields(kindSel.value, entry ? entry.fields || {} : {});
   $('loreDelete').style.display = entry ? '' : 'none';
+  $('loreSplit').style.display = entry ? '' : 'none';
   $('loreModal').hidden = false;
   $('loreTitle').focus();
 }
 function closeLoreModal() { $('loreModal').hidden = true; }
+
+// ✂ Одна большая статья со списком разновидностей → отдельные статьи в группе этой статьи.
+async function splitLore() {
+  if (!editingLoreId) return;
+  const e = app.lorebook.find((x) => x.id === editingLoreId);
+  if (!e) return;
+  if (!confirm(`Разобрать «${e.title}» на отдельные статьи?\n\nМодель учёта найдёт в тексте разновидности и заведёт по статье на каждую — в разделе «Магия и явления», в группе «${e.title}». Сама статья останется. Несохранённые правки в этом окне не учитываются — сначала сохрани.`)) return;
+  const btn = $('loreSplit');
+  btn.disabled = true; const label = btn.textContent; btn.textContent = 'Разбираю…';
+  try {
+    const data = await api(`/api/lore/${e.id}/split`, { method: 'POST' });
+    applyState(data);
+    closeLoreModal();
+    const { created = [], skipped = [] } = data.split || {};
+    toast(created.length ? `Заведено статей: ${created.length}${skipped.length ? ` (уже были: ${skipped.length})` : ''}. Проверь эффекты и допиши механику, где нужна.` : 'Новых разновидностей в статье не нашлось.');
+  } catch (err) { toast(err.message); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
 
 async function saveLore() {
   const body = readLoreForm();

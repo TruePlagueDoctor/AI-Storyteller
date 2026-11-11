@@ -276,7 +276,7 @@ try {
     await page.waitForSelector('#loreModal:not([hidden])');
     await page.selectOption('#loreKind', 'magic');
     const magicFields = await page.$$eval('#loreKindFields [data-field]', (els) => els.map((e) => e.dataset.field));
-    if (magicFields.join() !== 'effect,look,how,mech_roll,mech_tick,mech_turns') errors.push(`[${viewport.name}] поля раздела «Магия и явления»: ${magicFields.join()}`);
+    if (magicFields.join() !== 'group,effect,look,how,mech_roll,mech_tick,mech_turns') errors.push(`[${viewport.name}] поля раздела «Магия и явления»: ${magicFields.join()}`);
     await page.fill('#loreTitle', 'Руна голода');
     await page.fill('#loreKindFields [data-field="effect"]', 'Тянет силы каждый час');
     await page.fill('#loreKindFields [data-field="mech_roll"]', '−2');
@@ -291,8 +291,23 @@ try {
     const sheet = await page.textContent('#sidebar');
     if (!/Руна голода/.test(sheet) || !/[-−]2 к броскам/.test(sheet)) errors.push(`[${viewport.name}] на листе нет эффекта руны из кодекса`);
     if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-magic.png`), fullPage: false });
-    const runeId = (await stack.api('GET', '/api/state')).data.lorebook.find((e) => e.title === 'Руна голода').id;
+    // Группа: общая статья + разновидности сворачиваются в списке, в статье группы — ссылки на виды.
+    const parentRes = await stack.api('POST', '/api/lore', { title: 'Лоно-руны', kind: 'magic', brief: 'Магия суккубов.' });
+    const runeId = parentRes.data.lorebook.find((e) => e.title === 'Руна голода').id;
+    const parentId = parentRes.data.lorebook.find((e) => e.title === 'Лоно-руны').id;
+    await stack.api('PUT', `/api/lore/${runeId}`, { fields: { group: 'Лоно-руны', effect: 'Тянет силы каждый час', mech_roll: '−2' } });
+    await page.reload();
+    await page.waitForSelector('.entry.narrator');
+    await page.click('#sheetToggle').catch(() => {});
+    await page.click('#tabLore');
+    if (!/Лоно-руны · 1/.test(await page.textContent('#panelLore .lore-group summary').catch(() => ''))) errors.push(`[${viewport.name}] разновидности не свернулись в группу`);
+    await page.evaluate((id) => openCodexView(id), parentId);
+    await page.waitForSelector('#codexViewModal:not([hidden])');
+    if (!/Разновидности · 1[\s\S]*Руна голода/.test(await page.textContent('#codexViewBody'))) errors.push(`[${viewport.name}] в статье группы нет списка разновидностей`);
+    if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-group.png`), fullPage: false });
+    await page.keyboard.press('Escape');
     await stack.api('DELETE', `/api/lore/${runeId}`);
+    await stack.api('DELETE', `/api/lore/${parentId}`);
     step('кодекс «Магия и явления»: поля раздела, эффект состояния на листе');
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

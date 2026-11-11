@@ -492,3 +492,26 @@ test('ход: видно, чего ждём; прерывание возвращ
   ({ data } = await api('POST', '/api/retry'));
   assert.match(lastNarr(data).text, /Ольт опускает алебарду/);
 });
+
+test('кодекс: большая статья разбирается на отдельные статьи группы', async () => {
+  await api('POST', '/api/reset');
+  let { data } = await api('POST', '/api/lore', { title: 'Лоно-руны', kind: 'other', content: 'Руна голода — жертва слабеет. Руна покорности — трудно ослушаться.' });
+  const parent = data.lorebook.find((e) => e.title === 'Лоно-руны');
+  await api('POST', '/api/lore', { title: 'Руна покорности', kind: 'magic', brief: 'уже заведена руками' });
+  handlers.other = (body) => {
+    assert.match(body.messages[0].content, /Разбей статью/);
+    assert.match(body.messages[1].content, /Руна голода — жертва слабеет/);
+    return reply('Вот список:\n```json\n[{"title":"Руна голода","brief":"Жертва слабеет.","effect":"Тянет силы","look":"алый знак","how":"касанием"},{"title":"Руна покорности","brief":"Трудно ослушаться.","effect":"приказы"},{"title":"","brief":"мусор"}]\n```');
+  };
+  const res = await api('POST', `/api/lore/${parent.id}/split`);
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.data.split, { created: ['Руна голода'], skipped: ['Руна покорности'] });
+  const made = res.data.lorebook.find((e) => e.title === 'Руна голода');
+  assert.equal(made.kind, 'magic');
+  assert.deepEqual(made.fields, { group: 'Лоно-руны', effect: 'Тянет силы', look: 'алый знак', how: 'касанием' });
+  assert.equal(res.data.lorebook.find((e) => e.id === parent.id).kind, 'magic', 'общая статья переезжает в раздел «Магия и явления»');
+  assert.ok(res.data.statusEffective.some((d) => d.name === 'Руна голода'));
+  handlers.other = () => reply('не список');
+  assert.equal((await api('POST', `/api/lore/${parent.id}/split`)).status, 502);
+  handlers.other = defaultHandlers().other;
+});
