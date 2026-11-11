@@ -223,3 +223,14 @@ test('промт рассказчика: нетронутый прежний о�
   await writeFile(settings, JSON.stringify(raw));
   await S.loadState();
 });
+
+test('кодекс: переименовали общую статью группы — разновидности остались в группе', async () => {
+  await S.resetGame();
+  const parent = await S.addLoreEntry({ title: 'Виды лоно-рун', kind: 'magic' });
+  const kid = await S.addLoreEntry({ title: 'Руна голода', kind: 'magic', fields: { group: 'виды лоно-рун', effect: 'слабость' } });
+  const other = await S.addLoreEntry({ title: 'Чёрная хворь', kind: 'magic', fields: { group: 'Болезни', effect: 'жар' } });
+  await S.updateLoreEntry(parent.id, { title: 'Лоно-руны' });
+  const book = S.getState().lorebook;
+  assert.equal(book.find((e) => e.id === kid.id).fields.group, 'Лоно-руны');
+  assert.equal(book.find((e) => e.id === other.id).fields.group, 'Болезни', 'чужие группы не тронуты');
+});

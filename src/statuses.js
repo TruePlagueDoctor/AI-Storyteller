@@ -33,8 +33,12 @@ const key = (s) => String(s || '').trim().toLowerCase();
 const num = (v) => { const n = Number(String(v ?? '').replace(/[−–—]/g, '-').replace(',', '.').replace(/\s+/g, '')); return Number.isFinite(n) ? n : null; };
 export function magicStatuses(state) {
   const out = [];
-  for (const e of (state && state.lorebook) || []) {
+  const book = (state && state.lorebook) || [];
+  // Общая статья группы (на неё ссылаются разновидности) — не состояние: её «Эффект» — общий для всех видов.
+  const parents = new Set(book.filter((x) => x && x.kind === 'magic' && x.enabled !== false && x.fields && x.fields.group).map((x) => key(x.fields.group)));
+  for (const e of book) {
     if (!e || e.kind !== 'magic' || e.enabled === false || !String(e.title || '').trim()) continue;
+    if (parents.has(key(e.title))) continue;
     const f = e.fields || {};
     const roll = f.mech_roll !== undefined && f.mech_roll !== '' ? num(f.mech_roll) : null;
     const m = String(f.mech_tick || '').match(/^\s*(.+?)\s*([+\-−–]\s*\d+)\s*(?:\/?\s*(?:за\s+)?ход)?\s*$/i);

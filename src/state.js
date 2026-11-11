@@ -988,6 +988,16 @@ export async function updateLoreEntry(id, { title, keys, content, always, enable
   if (!e) throw new Error('Запись не найдена.');
   const before = deepCopy(e);
   if (typeof title === 'string' && title.trim()) e.title = title.trim();
+  // Переименовали общую статью группы магии — разновидности идут за ней (иначе группа распалась бы).
+  if (e.title !== before.title) {
+    const flat = (t) => String(t || '').trim().toLowerCase().replace(/ё/g, 'е');
+    for (const x of state.lorebook) {
+      if (x.id === e.id || x.kind !== 'magic' || !x.fields || flat(x.fields.group) !== flat(before.title)) continue;
+      const was = deepCopy(x);
+      x.fields = { ...x.fields, group: e.title };
+      noteManual('lore', x.id, was, x);
+    }
+  }
   if (keys !== undefined) e.keys = normalizeKeys(keys);
   if (typeof content === 'string') e.content = content;
   if (typeof always === 'boolean') e.always = always;
