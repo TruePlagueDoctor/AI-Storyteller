@@ -37,7 +37,8 @@ try {
     console.log(`Экран ${viewport.name}:`);
     if (viewport.name === 'mobile') await stack.api('POST', '/api/reset');
     const page = await browser.newPage({ viewport });
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(`[${viewport.name}] console: ${m.text()}`); });
+    let aborting = false; // прерванный ход честно отвечает 502 — браузер пишет это в консоль
+    page.on('console', (m) => { if (m.type() === 'error' && !(aborting && /502/.test(m.text()))) errors.push(`[${viewport.name}] console: ${m.text()}`); });
     page.on('pageerror', (e) => errors.push(`[${viewport.name}] ${e.message}`));
     await page.goto(stack.base + '/');
     await page.waitForSelector('#startBtn', { state: 'visible' });
@@ -250,6 +251,25 @@ try {
     await stack.api('DELETE', `/api/characters/${miraId}`);
     stack.handlers.narrator = () => reply('Ты стоишь у ворот. Стражник Ольт смотрит на тебя: «Чего надо?»'); // как по умолчанию — для следующего экрана
     step('линии героев: своя лента, общая по кнопке, чужой ход не переиграть');
+
+    // Долгий ход: видно, что именно ждём, и его можно прервать — реплика остаётся «на повтор».
+    await page.evaluate(() => { thinkingStopAfter = 3; });
+    stack.handlers.narrator = () => new Promise(() => {}); // модель зависла
+    await page.fill('#input', 'Жду развязки');
+    await page.press('#input', 'Enter');
+    await page.waitForSelector('#thinkingStage', { timeout: 15000 });
+    if (!/пишет рассказчик · \d+ с/.test(await page.textContent('#thinkingStageText'))) errors.push(`[${viewport.name}] не видно, чего ждёт ход: ${await page.textContent('#thinkingStageText')}`);
+    await page.waitForSelector('#thinkingStop:not([hidden])', { timeout: 15000 });
+    if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-waiting.png`), fullPage: false });
+    aborting = true;
+    await page.click('#thinkingStop');
+    await page.waitForSelector('.fail-bar', { timeout: 15000 });
+    if (!/Ход прерван/.test(await page.textContent('.fail-bar'))) errors.push(`[${viewport.name}] после прерывания нет пометки у реплики`);
+    stack.handlers.narrator = () => reply('Ты стоишь у ворот. Стражник Ольт смотрит на тебя: «Чего надо?»');
+    await page.click('.retry-btn');
+    await page.waitForFunction(() => !document.querySelector('.fail-bar') && !document.getElementById('thinkingEntry'));
+    aborting = false;
+    step('долгий ход: видно, чего ждём; прерывание и повтор');
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     if (overflow > 1) errors.push(`[${viewport.name}] горизонтальная прокрутка: лишние ${overflow}px`);

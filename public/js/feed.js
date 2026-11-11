@@ -46,7 +46,7 @@ function makeEntryEl(role, text, index, entry) {
     bar.append(msg, btn);
     div.appendChild(bar);
   }
-  if (entry && ((entry.ticks && entry.ticks.length) || (entry.growth && entry.growth.length) || (entry.lookups && entry.lookups.length) || (entry.voices && entry.voices.length))) {
+  if (entry && ((entry.ticks && entry.ticks.length) || (entry.growth && entry.growth.length) || (entry.lookups && entry.lookups.length) || (entry.voices && entry.voices.length) || entry.voiceNote)) {
     const fx = document.createElement('div');
     fx.className = 'turn-fx';
     if (entry.lookups && entry.lookups.length) {
@@ -68,6 +68,7 @@ function makeEntryEl(role, text, index, entry) {
       }
       fx.appendChild(d);
     }
+    if (entry.voiceNote) { const l = document.createElement('div'); l.className = 'fx-tick'; l.textContent = '🎭 ' + entry.voiceNote; fx.appendChild(l); }
     for (const t of entry.ticks || []) { const l = document.createElement('div'); l.className = 'fx-tick'; l.textContent = '⏳ ' + t; fx.appendChild(l); }
     for (const g of entry.growth || []) { const l = document.createElement('div'); l.className = 'fx-growth'; l.textContent = '✦ ' + g; fx.appendChild(l); }
     div.appendChild(fx);
@@ -262,12 +263,41 @@ function showThinking() {
   const t0 = Date.now();
   clearInterval(thinkingTimer);
   // Секундомер ожидания: видно, что запрос жив и сколько уже идёт.
+  let lastPoll = 0;
   thinkingTimer = setInterval(() => {
     const c = $('thinkingClock');
     if (!c) { clearInterval(thinkingTimer); return; }
     const s = Math.floor((Date.now() - t0) / 1000);
     c.textContent = s >= 1 ? `${s} с` : '';
+    // Раз в 2 секунды спрашиваем сервер, какой запрос сейчас идёт: ход — это персонажи, рассказчик и учёт подряд.
+    if (s >= 3 && Date.now() - lastPoll > 2000) { lastPoll = Date.now(); refreshThinkingStage(s); }
   }, 250);
+}
+// Что именно сейчас ждём и кнопка «прервать» (после 15 секунд ожидания).
+let thinkingStopAfter = 15;
+const STAGE_LABEL = [[/^персонаж: (.+)$/, (m) => `решает ${m[1]}`], [/^рассказчик: продолжение/, () => 'рассказчик дописывает'], [/^рассказчик/, () => 'пишет рассказчик'],
+  [/уч[её]т/, () => 'идёт учёт'], [/сжатие/, () => 'сжимается история']];
+function stageText(r) {
+  for (const [re, fn] of STAGE_LABEL) { const m = String(r.purpose || '').match(re); if (m) return `${fn(m)} · ${r.sec} с`; }
+  return `${r.purpose} · ${r.sec} с`;
+}
+async function refreshThinkingStage(total) {
+  let st;
+  try { st = await api('/api/turn/status'); } catch { return; }
+  const box = $('thinkingEntry');
+  if (!box || !st.running) return;
+  let line = $('thinkingStage');
+  if (!line) {
+    line = document.createElement('div'); line.id = 'thinkingStage'; line.className = 'thinking-stage';
+    const txt = document.createElement('span'); txt.id = 'thinkingStageText';
+    const stop = document.createElement('button'); stop.type = 'button'; stop.id = 'thinkingStop'; stop.className = 'link-btn'; stop.textContent = 'прервать'; stop.hidden = true;
+    stop.title = 'Оборвать запрос к модели. Твоя реплика останется, её можно будет отправить снова.';
+    stop.addEventListener('click', async () => { stop.disabled = true; stop.textContent = 'прерываю…'; try { await api('/api/turn/abort', { method: 'POST' }); } catch { /* ход уже закончился */ } });
+    line.append(txt, stop);
+    box.appendChild(line);
+  }
+  $('thinkingStageText').textContent = (st.requests || []).map(stageText).join(' · ') || 'сервер обрабатывает ответ';
+  $('thinkingStop').hidden = total < thinkingStopAfter;
 }
 function hideThinking() { clearInterval(thinkingTimer); const t = $('thinkingEntry'); if (t) t.remove(); }
 

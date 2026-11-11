@@ -9,6 +9,8 @@ import { tailItems, lastPlayerAction } from './narrator.js';
 import { clockLabel } from './scene.js';
 
 export const MAX_VOICES = 2;        // не больше двух таких запросов за ход
+// Персонаж — необязательная часть хода: не ответил быстро — его сыграет рассказчик, ход не ждёт.
+const VOICE_TIMEOUT_MS = Number(process.env.VOICE_TIMEOUT_MS) || 30000;
 const WITNESSED_MESSAGES = 6;       // сколько последних реплик сцены он помнит дословно (если был рядом)
 const WORLD_CHARS = 1200;
 
@@ -170,6 +172,7 @@ export function parseVoice(text) {
 export async function npcVoices(state, apiKey, timer = null) {
   const picked = voiceCandidates(state);
   if (!picked.length) return [];
+  const missed = []; // кто не ответил (сбой или не уложился во время) — показываем под ответом
   const results = await Promise.all(picked.map(async (npc) => {
     try {
       const data = await callOpenRouter({
@@ -177,11 +180,17 @@ export async function npcVoices(state, apiKey, timer = null) {
         model: state.model, apiKey, timer,
         messages: voiceMessages(state, npc),
         temperature: state.temperature ?? 0.8,
-        maxTokens: 400, noReasoning: true,
+        maxTokens: 400, noReasoning: true, timeoutMs: VOICE_TIMEOUT_MS,
       });
       const v = guardVoice(parseVoice(data?.choices?.[0]?.message?.content), state, npc);
       return v ? { name: npc.name, ...v } : null;
-    } catch { return null; }
+    } catch (e) {
+      if (/Ход прерван/.test(String(e && e.message))) throw e; // игрок прервал ход — не продолжаем
+      missed.push(npc.name);
+      return null;
+    }
   }));
-  return results.filter(Boolean);
+  const out = results.filter(Boolean);
+  out.missed = missed;
+  return out;
 }

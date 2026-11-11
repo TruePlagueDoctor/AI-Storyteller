@@ -459,3 +459,36 @@ test('линии героев: своя лента и история, вступ
   assert.deepEqual(data.companions, []);
   await api('DELETE', `/api/characters/${mira.id}`);
 });
+
+// Жалоба: ход висел 161 с без объяснений. Теперь видно, какой запрос идёт, и ход можно прервать.
+test('ход: видно, чего ждём; прерывание возвращает реплику «на повтор», мир цел', async () => {
+  await api('POST', '/api/reset');
+  handlers.sync = () => reply('', [call('nothing', {})]);
+  handlers.narrator = () => reply('Ты у ворот. Тихо.');
+  await api('POST', '/api/action', { text: 'Иду к воротам' });
+  assert.deepEqual((await api('GET', '/api/turn/status')).data, { running: false, requests: [] });
+
+  let started = false;
+  handlers.narrator = () => new Promise(() => { started = true; }); // модель зависла
+  const turn = api('POST', '/api/action', { text: 'Развязка' });
+  for (let i = 0; i < 100 && !started; i++) await new Promise((r) => setTimeout(r, 20));
+  const status = (await api('GET', '/api/turn/status')).data;
+  assert.equal(status.running, true);
+  assert.equal(status.requests.length, 1);
+  assert.equal(status.requests[0].purpose, 'рассказчик');
+  assert.ok(status.requests[0].model && status.requests[0].sec >= 0);
+
+  assert.equal((await api('POST', '/api/turn/abort')).status, 200);
+  const res = await turn;
+  assert.equal(res.status, 502);
+  assert.match(res.data.error, /Ход прерван/);
+  let { data } = await api('GET', '/api/state');
+  assert.equal(data.pendingTurn, true);
+  assert.equal(data.log.at(-1).text, 'Развязка');
+  assert.equal((await api('POST', '/api/turn/abort')).status, 400, 'прерывать нечего');
+
+  // Повтор после прерывания работает как обычно.
+  handlers.narrator = () => reply('Всё решается у ворот. Ольт опускает алебарду.');
+  ({ data } = await api('POST', '/api/retry'));
+  assert.match(lastNarr(data).text, /Ольт опускает алебарду/);
+});
