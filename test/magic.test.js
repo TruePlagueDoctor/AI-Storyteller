@@ -166,3 +166,33 @@ test('общая статья группы — не состояние, даже
   assert.ok(!names.includes('Лоно-руны'));
   assert.ok(names.includes('Руна голода') && names.includes('Чёрная хворь'));
 });
+
+// Жалоба: в запросе руны перечислены через запятую без описаний — эффекты рассказчик получал, только если сам
+// запросит статью (codex_lookup), а дешёвые модели инструмент вызывают не всегда.
+test('речь зашла о рунах — список видов с эффектами приходит рассказчику сам, без запроса', () => {
+  const st = world({ lorebook: bigBook() });
+  st.lorebook[0].keys = ['руна', 'руны'];
+  const quiet = renderCodex(st).text;
+  assert.ok(!/Разновидности \(32\)/.test(quiet), 'пока о рунах не говорят — списка нет');
+  st.messages.push({ role: 'assistant', content: 'Суккуб улыбается.' }, { role: 'user', content: 'Спрашиваю её про руны' });
+  const { text, shown } = renderCodex(st);
+  assert.match(text, /Разновидности \(32\)/);
+  for (const n of NAMES) assert.ok(text.includes(`Руна ${n} — `), n);
+  assert.ok(!/Разновидности: Руна голода, Руна покорности/.test(text), 'названия через запятую не дублируются');
+  assert.ok(shown.has('r5'), 'виды из списка считаются показанными — замечания «не зная статьи» не будет');
+  assert.ok(text.length / 3.2 <= 1200 + 950, `кодекс со списком в пределах: ~${Math.round(text.length / 3.2)} ток.`);
+});
+
+test('список приходит и когда руна уже на герое или названа в прошлом ответе; длинные выжимки ужимаются', () => {
+  const st = world({ lorebook: bigBook() });
+  hero(st).blocks.push({ id: 'p', type: 'status', name: 'Руна пустоты' });
+  assert.match(renderCodex(st).text, /Разновидности \(32\)/);
+  const st2 = world({ lorebook: bigBook() });
+  st2.messages = [{ role: 'user', content: 'Жду' }, { role: 'assistant', content: 'На её коже вспыхивает руна тени.' }, { role: 'user', content: 'Отступаю' }];
+  assert.match(renderCodex(st2).text, /Разновидности \(32\)/);
+  // Очень длинные выжимки: список всё равно со всеми названиями, но в пределе.
+  for (const e of st2.lorebook) if (e.fields && e.fields.group) e.brief = 'Очень длинное описание эффекта. '.repeat(12);
+  const text = renderCodex(st2).text;
+  for (const n of NAMES) assert.ok(text.includes(`Руна ${n}`), n);
+  assert.ok(text.length / 3.2 <= 1200 + 950, `~${Math.round(text.length / 3.2)} ток.`);
+});
