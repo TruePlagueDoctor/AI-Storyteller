@@ -232,7 +232,7 @@ function renderDossier() {
     if (statuses.length) {
       const chips = el('div', 'dossier-tags status-chips');
       for (const st of statuses) {
-        const def = (app.statusCatalog || []).find((d) => d.name.toLowerCase() === st.name.toLowerCase());
+        const def = (app.statusEffective || app.statusCatalog || []).find((d) => d.name.toLowerCase() === st.name.toLowerCase());
         const rm = st.rollMod ?? def?.rollMod;
         const tk = st.tick ?? def?.tick;
         const fx = [rm ? `${rm > 0 ? '+' : ''}${rm} к броскам` : '', tk && tk.stat ? `${tk.stat} ${tk.delta > 0 ? '+' : ''}${tk.delta}/ход` : '', st.duration != null ? `ещё ${st.duration} х.` : ''].filter(Boolean);

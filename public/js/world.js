@@ -4,9 +4,9 @@
 // ---- Кодекс мира (бывший лорбук) ----
 let editingLoreId = null;
 let codexFilter = 'all';
-const CODEX_GLYPH = { people: '☗', creature: '☠', faction: '⚜', place: '⌂', other: '✎' };
-const CODEX_TITLE = { all: 'Все', people: 'Народы', creature: 'Бестиарий', faction: 'Фракции', place: 'Места', other: 'Прочее' };
-const codexKinds = () => (app.codexKinds && app.codexKinds.kinds) || ['people', 'creature', 'faction', 'place', 'other'];
+const CODEX_GLYPH = { people: '☗', creature: '☠', faction: '⚜', place: '⌂', magic: '✦', other: '✎' };
+const CODEX_TITLE = { all: 'Все', people: 'Народы', creature: 'Бестиарий', faction: 'Фракции', place: 'Места', magic: 'Магия и явления', other: 'Прочее' };
+const codexKinds = () => (app.codexKinds && app.codexKinds.kinds) || ['people', 'creature', 'faction', 'place', 'magic', 'other'];
 const codexFields = (kind) => ((app.codexKinds && app.codexKinds.fields) || {})[kind] || [];
 
 function renderCodexFilter() {
@@ -108,7 +108,7 @@ function renderLoreKindFields(kind, values = {}) {
         const o = document.createElement('option'); o.value = v; o.textContent = t; input.appendChild(o);
       }
     } else {
-      input = document.createElement(['customs', 'habits', 'rumors', 'what'].includes(key) ? 'textarea' : 'input');
+      input = document.createElement(['customs', 'habits', 'rumors', 'what', 'effect', 'how'].includes(key) ? 'textarea' : 'input');
       if (input.tagName === 'TEXTAREA') input.rows = 2; else input.type = 'text';
     }
     input.dataset.field = key;
@@ -464,7 +464,7 @@ function openBlockModal(b) {
   $('blockDelete').style.display = b ? '' : 'none';
   const dl = $('statusNames');
   dl.innerHTML = '';
-  for (const d of app.statusCatalog || []) { const o = document.createElement('option'); o.value = d.name; dl.appendChild(o); }
+  for (const d of app.statusEffective || app.statusCatalog || []) { const o = document.createElement('option'); o.value = d.name; dl.appendChild(o); }
   syncBlockRows();
   $('blockModal').hidden = false;
   $('blockName').focus();

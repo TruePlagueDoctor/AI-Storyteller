@@ -7,7 +7,8 @@ import { toolsFor, NOTHING_TOOL, executeTool, isUnnamedName } from './tools.js';
 import { TRAIT_CATEGORIES } from './traits.js';
 import { sceneForSync, dayPart, clockLabel, advanceClock } from './scene.js';
 import { chronicleForSync, isOverdue } from './chronicle.js';
-import { codexIndex } from './codex.js';
+import { codexIndex, mentionedIn } from './codex.js';
+import { statusCatalogOf, magicStatuses } from './statuses.js';
 import { callOpenRouter, parseLeakedToolCalls, toolModelOf } from './llm.js';
 import { FIX_SIGNAL, journalEntry } from './journal.js';
 import { whoShort, lastPlayerAction } from './narrator.js';
@@ -214,15 +215,20 @@ export function composeSyncSystem(state, narration = '') {
   // всё постоянное, в конце — то, что меняется от хода к ходу.
   const lines = state.syncPromptStyle === 'legacy' ? legacySyncHead(state) : technicalSyncHead(state);
 
-  const cat = state.statusCatalog || [];
+  const cat = statusCatalogOf(state);
   if (cat.length) {
     lines.push('', 'КАТАЛОГ СОСТОЯНИЙ: ' + cat.map((d) => {
       const fx = [];
       if (d.rollMod) fx.push(`${d.rollMod > 0 ? '+' : ''}${d.rollMod} к броскам`);
       if (d.tick) fx.push(`${d.tick.stat} ${d.tick.delta > 0 ? '+' : ''}${d.tick.delta}/ход`);
       if (d.duration) fx.push(`${d.duration} х.`);
-      return fx.length ? `${d.name} (${fx.join(', ')})` : d.name;
+      return (d.fromCodex ? '✦' : '') + (fx.length ? `${d.name} (${fx.join(', ')})` : d.name);
     }).join('; '));
+  }
+  // Магия и явления из кодекса партии — состояния с тем же названием (эффект считает код по статье).
+  if (magicStatuses(state).length) {
+    lines.push('МАГИЯ И ЯВЛЕНИЯ из кодекса (в КАТАЛОГЕ помечены ✦): наложено на героя → block type:status с этим названием, точно как в каталоге; ' +
+      'снято или прошло → action:remove; наложено на НПС → запиши в его status. Своих названий для них не придумывай.');
   }
 
   // ---- дальше — меняется от хода к ходу ----
@@ -347,6 +353,18 @@ export function completenessHints(state, narration, calls) {
   if (!moneyTouched() && aboutHero(RE_PAY)) hints.push('Во фрагменте платят, отдают, получают или тратят — лист героя (деньги, предметы) не менялся.' + sheetNote);
   if (!blockTouched('stat', 'status') && aboutHero(RE_HURT)) hints.push('Во фрагменте ранение или лечение — показатели и состояния героя не менялись (переведи по ШКАЛЕ).' + sheetNote);
   if (!blockTouched('stat', 'status') && !aboutHero(RE_HURT) && aboutHero(RE_REST)) hints.push('Во фрагменте отдых, сон, еда или трата сил — показатели героя не менялись (по ШКАЛЕ).' + sheetNote);
+  // Магия из кодекса: в тексте её накладывают или снимают, а состояния с её названием в вызовах нет.
+  const RE_CAST = /(налож|наклад|нанос|нанес|нанёс|начерт|вспых|проступ|загора|загоре|выжиг|выжж|появля|появил|снима|снял|развея|развеи|гасн|погас|исчез|стира|ст[её]р)/i;
+  const castSentences = text.split(/(?<=[.!?…])\s+/);
+  const flatName = (x) => String(x || '').trim().toLowerCase().replace(/ё/g, 'е');
+  for (const d of magicStatuses(state)) {
+    const entry = (state.lorebook || []).find((e) => e.kind === 'magic' && flatName(e.title) === flatName(d.name));
+    if (!entry || !castSentences.some((sen) => mentionedIn(entry, sen) && RE_CAST.test(sen))) continue;
+    const recorded = calls.some((c) => c.args && (
+      (BLOCK_NAMES.includes(c.name) && flatName(c.args.name) === flatName(d.name)) ||
+      (c.name === 'npc' && flatName(c.args.status).includes(flatName(d.name)))));
+    if (!recorded) hints.push(`Во фрагменте накладывают или снимают «${d.name}» (магия из кодекса): на героя — block type:status name:"${d.name}" (снято — action:remove); на НПС — его status.`);
+  }
   if (!blockTouched('item') && !aboutHero(RE_PAY) && aboutHero(RE_USE)) hints.push('Во фрагменте израсходован или использован предмет — инвентарь не менялся.' + sheetNote);
   const heroSkills = ((state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0] || {}).blocks || []).filter((b) => b.type === 'ability');
   if (heroSkills.length && !used.has('practice') && aboutHero(RE_TRAIN)) {

@@ -7,7 +7,7 @@ import { ROLL_TOOL, toolsFor, executeTool, resolveCharacterFor } from './tools.j
 import { rollCheck, describeRoll } from './dice.js';
 import { traitModifier } from './traits.js';
 import { competenceMod } from './skills.js';
-import { statusRollMod, describeStatus } from './statuses.js';
+import { statusRollMod, describeStatus, statusCatalogOf } from './statuses.js';
 import { recordRoll } from './progress.js';
 import { sceneBlock } from './scene.js';
 import { chronicleBlock } from './chronicle.js';
@@ -145,7 +145,7 @@ function heroesBlock(state) {
       s += '\n  Недавние перемены (внешность, раса, имя — о них знают только видевшие): ' + changes.map((e) =>
         `«${e.text}» — ход ${e.turn}, видели: ${e.seenBy && e.seenBy.length ? e.seenBy.join(', ') : 'никто из НПС'}`).join('; ');
     }
-    s += `\n  Лист: ${sheetSnapshot(c, state.statusCatalog)}`;
+    s += `\n  Лист: ${sheetSnapshot(c, statusCatalogOf(state))}`;
   }
   if (inScene.some((c) => (c.blocks || []).some((b) => b.type === 'ability'))) {
     s += '\n\nУМЕНИЯ — НЕ ТОЛЬКО БОНУС К БРОСКУ. Это ещё и то, что герой замечает, понимает и умеет без проверки: ' +
@@ -608,7 +608,7 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
         // Умелость цели: мастера-следователя обмануть труднее, чем крестьянина.
         const cm = competenceMod(targetNpc, args.skill);
         if (cm.mod) { tm.mod += cm.mod; tm.reasons = [...tm.reasons, cm.reason]; }
-        const sm = statusRollMod(state.statusCatalog || [], character);
+        const sm = statusRollMod(statusCatalogOf(state), character);
         const r = rollCheck({
           character, skill: args.skill, difficulty: args.difficulty,
           traitMod: tm.mod + sm.mod,

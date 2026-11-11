@@ -271,6 +271,30 @@ try {
     aborting = false;
     step('долгий ход: видно, чего ждём; прерывание и повтор');
 
+    // Кодекс «Магия и явления»: раздел с полями эффекта и механики; состояние с названием статьи берёт эффект из неё.
+    await page.evaluate(() => openLoreModal(null));
+    await page.waitForSelector('#loreModal:not([hidden])');
+    await page.selectOption('#loreKind', 'magic');
+    const magicFields = await page.$$eval('#loreKindFields [data-field]', (els) => els.map((e) => e.dataset.field));
+    if (magicFields.join() !== 'effect,look,how,mech_roll,mech_tick,mech_turns') errors.push(`[${viewport.name}] поля раздела «Магия и явления»: ${magicFields.join()}`);
+    await page.fill('#loreTitle', 'Руна голода');
+    await page.fill('#loreKindFields [data-field="effect"]', 'Тянет силы каждый час');
+    await page.fill('#loreKindFields [data-field="mech_roll"]', '−2');
+    await page.click('#loreSave');
+    await page.waitForSelector('#loreModal', { state: 'hidden' });
+    const heroNow = (await stack.api('GET', '/api/state')).data;
+    await stack.api('POST', `/api/characters/${heroNow.activeCharacterId}/blocks`, { type: 'status', name: 'Руна голода' });
+    await page.reload();
+    await page.waitForSelector('.entry.narrator');
+    await page.click('#sheetToggle').catch(() => {});
+    await page.click('#tabHeroes').catch(() => {});
+    const sheet = await page.textContent('#sidebar');
+    if (!/Руна голода/.test(sheet) || !/[-−]2 к броскам/.test(sheet)) errors.push(`[${viewport.name}] на листе нет эффекта руны из кодекса`);
+    if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-magic.png`), fullPage: false });
+    const runeId = (await stack.api('GET', '/api/state')).data.lorebook.find((e) => e.title === 'Руна голода').id;
+    await stack.api('DELETE', `/api/lore/${runeId}`);
+    step('кодекс «Магия и явления»: поля раздела, эффект состояния на листе');
+
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     if (overflow > 1) errors.push(`[${viewport.name}] горизонтальная прокрутка: лишние ${overflow}px`);
     await page.click('#toast').catch(() => {}); // щелчок убирает уведомление

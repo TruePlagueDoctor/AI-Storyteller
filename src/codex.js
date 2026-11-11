@@ -12,14 +12,18 @@ import { keyMatches } from './narrator-keys.js';
 export const CODEX_BUDGET_TOKENS = 1200;
 const tok = (s) => Math.ceil(String(s).length / 3.2);
 
-export const CODEX_KINDS = ['people', 'creature', 'faction', 'place', 'other'];
-export const KIND_LABEL = { people: 'народ', creature: 'бестиарий', faction: 'фракция', place: 'место', other: 'заметка' };
+export const CODEX_KINDS = ['people', 'creature', 'faction', 'place', 'magic', 'other'];
+export const KIND_LABEL = { people: 'народ', creature: 'бестиарий', faction: 'фракция', place: 'место', magic: 'магия', other: 'заметка' };
 // Поля статьи по разделам: [ключ, подпись]. Опасность существа — число 1–5.
 export const KIND_FIELDS = {
   people: [['look', 'Облик'], ['lifespan', 'Век'], ['customs', 'Обычаи и нрав']],
   creature: [['look', 'Облик'], ['habits', 'Повадки'], ['habitat', 'Где водится'], ['danger', 'Опасность'], ['weaknesses', 'Слабости'], ['rumors', 'Слухи']],
   faction: [['goal', 'Цель'], ['leader', 'Глава'], ['stance', 'Отношение к герою']],
   place: [['what', 'Что там'], ['ruler', 'Кто правит'], ['danger', 'Чем опасно']],
+  // Магия и явления: заклинания, руны, проклятия, болезни, зелья. Название статьи = название состояния на листе;
+  // три последних поля — механика этого состояния (см. statusCatalogOf в statuses.js).
+  magic: [['effect', 'Эффект'], ['look', 'Как выглядит'], ['how', 'Как возникает и снимается'],
+    ['mech_roll', 'К броскам, пока действует (число, например −2)'], ['mech_tick', 'За ход (например: Рассудок −2)'], ['mech_turns', 'Длится ходов (пусто — пока не снимут)']],
   other: [],
 };
 
@@ -90,6 +94,7 @@ function findAny(book, text) {
 }
 
 // Упомянута ли статья в тексте: ключи, название; однословное название — и по основе.
+export const mentionedIn = (e, text) => mentioned(e, norm(text));
 function mentioned(e, hay) {
   if (!hay) return false;
   const keys = [...e.keys, e.title];
@@ -131,6 +136,14 @@ export function selectCodex(state) {
   for (const name of (state.scene && state.scene.creatures) || []) { const e = findAny(book, name); if (e) pick(e, 'full', 90, 'в сцене'); }
   for (const e of book) if (mentioned(e, lastPlayer)) pick(e, 'full', 85, 'спросил игрок');
   const { heroes, near } = sceneParty(state);
+  // Магия, которая сейчас действует: состояние на листе героя с названием статьи — статья нужна целиком;
+  // упомянута в положении НПС рядом — выжимкой.
+  for (const e of book) {
+    if (e.kind !== 'magic') continue;
+    const t = norm(e.title);
+    if (heroes.some((c) => (c.blocks || []).some((b) => b.type === 'status' && norm(b.name) === t))) pick(e, 'full', 88, 'действует на героя');
+    else if (near.some((n) => mentioned(e, norm(n.status)))) pick(e, 'brief', 75, 'действует на того, кто рядом');
+  }
   for (const p of [...near.map((n) => n.race), ...heroes.map((c) => c.race)]) { const e = findPeople(book, p); if (e) pick(e, 'brief', 80, 'народ в сцене'); }
   const loc = norm(state.scene && state.scene.location);
   for (const e of book) if (e.kind === 'place' && loc && mentioned(e, loc)) pick(e, 'brief', 70, 'место сцены');
@@ -138,7 +151,7 @@ export function selectCodex(state) {
   for (const e of book) if (mentioned(e, older)) pick(e, 'brief', 40, 'упоминалось');
   // Открывающая сцена: рассказчик ещё ничего не писал — пусть знает мир не только по названиям.
   if (isOpening(state)) {
-    const order = { creature: 30, people: 25, faction: 20, place: 15 };
+    const order = { creature: 30, people: 25, faction: 20, place: 15, magic: 10 };
     for (const e of book) if (order[e.kind]) pick(e, 'brief', order[e.kind], 'начало игры');
   }
   return [...picked.values()].sort((a, b) => b.prio - a.prio);
@@ -162,15 +175,18 @@ function renderBrief(e) {
   const b = entryBrief(e);
   return `• ${e.title} [${KIND_LABEL[e.kind]}]${b ? ' — ' + b : ''}`;
 }
-function renderFull(e) {
+// В запросе статья ужата (бюджет кодекса); по подглядыванию рассказчик получает её целиком:
+// статья-список (виды рун и их эффекты) в 600 знаков не помещалась, и остальное модель додумывала.
+const FIELD_SHORT = { mech_roll: 'К броскам', mech_tick: 'За ход', mech_turns: 'Длится ходов' };
+function renderFull(e, { fieldMax = 300, textMax = 600 } = {}) {
   let s = renderBrief(e);
   for (const [k, label] of KIND_FIELDS[e.kind]) {
     const v = e.fields && e.fields[k];
     if (v === undefined || v === '') continue;
-    s += `\n  ${label}: ${k === 'danger' && e.kind === 'creature' ? `${v}/5` : cut(String(v), 300)}`;
+    s += `\n  ${FIELD_SHORT[k] || label}: ${k === 'danger' && e.kind === 'creature' ? `${v}/5` : cut(String(v), fieldMax)}`;
   }
   const c = str(e.content);
-  if (c && c !== e.brief) s += `\n  ${cut(c.replace(/\s+/g, ' '), 600)}`;
+  if (c && c !== e.brief) s += `\n  ${cut(c.replace(/\s+/g, ' '), textMax)}`;
   return s;
 }
 
@@ -187,11 +203,13 @@ export function narratorIndex(state) {
     if (str(f.habitat)) bits.push(cut(str(f.habitat).replace(/\s+/g, ' '), 30));
     return bits.length ? `${e.title} (${bits.join(', ')})` : e.title;
   };
-  const kinds = [['creature', 'Бестиарий'], ['people', 'Народы'], ['faction', 'Фракции'], ['place', 'Места']];
+  const kinds = [['creature', 'Бестиарий'], ['people', 'Народы'], ['faction', 'Фракции'], ['place', 'Места'], ['magic', 'Магия и явления']];
   const lists = kinds.map(([k, n]) => [n, book.filter((e) => e.kind === k).map(label)]).filter(([, l]) => l.length);
   if (!lists.length) return '';
-  const head = 'Что есть в этом мире (когда сцене нужен зверь, чудовище, народ, фракция или место — бери отсюда, а не выдумывай; новое — только если ничего не подходит). ' +
-    'Чудовища — всегда конкретный вид отсюда, не безымянная «тварь». Выводишь в сцену того, о ком ниже нет подробностей, — сначала загляни в статью (codex_lookup), потом пиши:';
+  const hasMagic = lists.some(([n]) => n === 'Магия и явления');
+  const head = `Что есть в этом мире (когда сцене нужен зверь, чудовище, народ, фракция${hasMagic ? ', место, заклинание или иное явление' : ' или место'} — бери отсюда, а не выдумывай; новое — только если ничего не подходит). ` +
+    'Чудовища — всегда конкретный вид отсюда, не безымянная «тварь». Выводишь в сцену того, о ком ниже нет подробностей, — сначала загляни в статью (codex_lookup), потом пиши' +
+    (hasMagic ? '. Магия и явления действуют строго по статье: не придумывай новых разновидностей и эффектов, пока подходит записанное' : '') + ':';
   // По одному названию по кругу, пока влезает: так ни один раздел не съедает весь бюджет.
   const taken = lists.map(() => []);
   let used = tok(head) + lists.reduce((a, [n]) => a + tok(n + ': \n'), 0);
@@ -246,7 +264,7 @@ export const LOOKUP_TOOL = {
     name: 'codex_lookup',
     description:
       'Прочитать статьи кодекса мира перед тем, как писать. Вызывай, когда собираешься вывести в сцену существо, ' +
-      'народ, фракцию или место из оглавления кодекса, которых нет в кодексе подробно. Названия — как в оглавлении.',
+      'народ, фракцию, место, магию или явление из оглавления кодекса, которых нет в кодексе подробно. Названия — как в оглавлении.',
     parameters: {
       type: 'object',
       properties: { titles: { type: 'array', items: { type: 'string' }, description: 'Названия статей, до трёх.' } },
@@ -264,7 +282,7 @@ export function lookupCodex(state, titles) {
   const out = [];
   for (const t of list) {
     const e = findAny(book, t);
-    if (e) { found.push(e.id); out.push(renderFull(e)); continue; }
+    if (e) { found.push(e.id); out.push(renderFull(e, { fieldMax: 1000, textMax: 4000 })); continue; }
     const similar = book.filter((x) => nameMatches(x, t)).map((x) => x.title).slice(0, 6);
     out.push(`«${t}» в кодексе не найдено.` + (similar.length ? ` Похожие: ${similar.join(', ')}.` : ' Возьми название из оглавления.'));
   }
@@ -278,7 +296,7 @@ export function codexMisses(state, narration, seen) {
   const text = norm(narration);
   if (!text) return [];
   return (state.lorebook || []).filter((e) => e.enabled !== false).map((e) => (e.kind ? e : normalizeEntry(e)))
-    .filter((e) => (e.kind === 'creature' || e.kind === 'faction') && !seen.has(e.id) && mentioned(e, text))
+    .filter((e) => (e.kind === 'creature' || e.kind === 'faction' || e.kind === 'magic') && !seen.has(e.id) && mentioned(e, text))
     .map((e) => e.title);
 }
 
@@ -286,7 +304,7 @@ export function codexMisses(state, narration, seen) {
 export function codexIndex(state) {
   const book = (state.lorebook || []).filter((e) => e.enabled !== false);
   const by = (k) => book.filter((e) => (e.kind || 'other') === k).map((e) => e.title);
-  const parts = [['Народы', by('people')], ['Бестиарий', by('creature')], ['Фракции', by('faction')], ['Места', by('place')]]
+  const parts = [['Народы', by('people')], ['Бестиарий', by('creature')], ['Фракции', by('faction')], ['Места', by('place')], ['Магия и явления', by('magic')]]
     .filter(([, l]) => l.length).map(([n, l]) => `${n}: ${l.slice(0, 40).join(', ')}`);
-  return parts.length ? 'КОДЕКС (названия — для race у npc и creatures у scene):\n' + parts.join('\n') : '';
+  return parts.length ? 'КОДЕКС (названия — для race у npc и creatures у scene; магия и явления — названия состояний):\n' + parts.join('\n') : '';
 }
