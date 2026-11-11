@@ -1,6 +1,7 @@
 // Хранилище игрового состояния. Один слот сохранения в data/save.json.
 // Одна история, несколько героев; у каждого героя свой лист блоков.
 
+import { DEFAULT_CLICHE_PHRASES, normalizeCliches } from './contradictions.js';
 import { switchRelations, dropRelations, migrateRelations, reconcileRelations, groupOf, companionIds } from './relations.js';
 import { switchLine, dropLine, migrateLines, reconcileLines } from './lines.js';
 import { emptyScene, normalizeScene } from './scene.js';
@@ -22,7 +23,7 @@ const GLOBAL_PATH = join(DATA_DIR, 'settings.json');    // общие настр
 const INDEX_PATH = join(DATA_DIR, 'slots.json');        // список партий и активная
 
 // Что живёт в общих настройках, а не в партии.
-const GLOBAL_FIELDS = ['syncPromptStyle', 'promptLayout', 'model', 'toolModel', 'systemPrompt', 'temperature', 'repetitionPenalty', 'frequencyPenalty', 'traitPool', 'seedPool', 'statusCatalog', 'sdUrl', 'imageStyle', 'imageNegative', 'imageSize', 'imageSteps', 'imageCfg', 'imageSampler', 'sceneStyle', 'sceneNegative', 'sceneSize', 'imageClipSkip', 'faceFix', 'sceneHires', 'hiresScale', 'hiresDenoise', 'hiresUpscaler', 'handFix', 'portraitHires', 'imageScheduler'];
+const GLOBAL_FIELDS = ['syncPromptStyle', 'promptLayout', 'clichePhrases', 'model', 'toolModel', 'systemPrompt', 'temperature', 'repetitionPenalty', 'frequencyPenalty', 'traitPool', 'seedPool', 'statusCatalog', 'sdUrl', 'imageStyle', 'imageNegative', 'imageSize', 'imageSteps', 'imageCfg', 'imageSampler', 'sceneStyle', 'sceneNegative', 'sceneSize', 'imageClipSkip', 'faceFix', 'sceneHires', 'hiresScale', 'hiresDenoise', 'hiresUpscaler', 'handFix', 'portraitHires', 'imageScheduler'];
 const IMAGE_FIELDS = ['sdUrl', 'imageStyle', 'imageNegative', 'imageSize', 'imageSteps', 'imageCfg', 'imageSampler', 'sceneStyle', 'sceneNegative', 'sceneSize', 'imageClipSkip', 'faceFix', 'sceneHires', 'hiresScale', 'hiresDenoise', 'hiresUpscaler', 'handFix', 'portraitHires', 'imageScheduler'];
 
 export const DEFAULT_MODEL = 'openai/gpt-4o-mini';
@@ -131,6 +132,8 @@ function migrate(s) {
   if (typeof out.scenarioPrompt !== 'string') out.scenarioPrompt = '';
   out.scene = normalizeScene(out.scene);
   out.events = normalizeEvents(out.events);
+  // Список заезженных оборотов: нет — берём стандартный; пустой — выбор игрока.
+  out.clichePhrases = normalizeCliches(out.clichePhrases) || [...DEFAULT_CLICHE_PHRASES];
   migrateLines(out); // предыстория — по героям (прежняя общая остаётся у всех прежних героев)
   if (Array.isArray(out.npcs)) migrateRelations(out); // отношения НПС — по героям (старое значение остаётся у всех прежних героев)
   for (const f of IMAGE_FIELDS) if (out[f] === undefined) out[f] = DEFAULT_IMAGE_SETTINGS[f];
@@ -1277,6 +1280,7 @@ export async function updateSettings({ systemPrompt, worldPrompt, scenarioPrompt
   if (typeof loreAutoWrite === 'boolean') state.loreAutoWrite = loreAutoWrite;
   if (rest.syncPromptStyle === 'legacy' || rest.syncPromptStyle === 'technical') state.syncPromptStyle = rest.syncPromptStyle;
   if (rest.promptLayout === 'classic' || rest.promptLayout === 'cache') state.promptLayout = rest.promptLayout;
+  if (rest.clichePhrases !== undefined) { const list = normalizeCliches(rest.clichePhrases); if (list) state.clichePhrases = list; }
   if (typeof diceEnabled === 'boolean') state.diceEnabled = diceEnabled;
   if (typeof summary === 'string') state.summary = summary;
   if (typeof autoSummarize === 'boolean') state.autoSummarize = autoSummarize;

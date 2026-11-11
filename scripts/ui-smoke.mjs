@@ -185,6 +185,10 @@ try {
     step('резервные копии видны');
     await page.click('#slotsClose');
     step('настройки и список историй открываются');
+    // Список заезженных оборотов в настройках: заполнен по умолчанию и уходит на сервер при сохранении.
+    const cliches = (await stack.api('GET', '/api/state')).data.clichePhrases || [];
+    if (!cliches.length) errors.push(`[${viewport.name}] список заезженных оборотов пуст по умолчанию`);
+    if (!(await page.$('#clicheInput'))) errors.push(`[${viewport.name}] в настройках нет поля заезженных оборотов`);
 
     // Правки v59: «Заново» ушло из шапки в список историй; на телефоне место и время — строкой над лентой.
     if (await page.$('#resetBtn')) errors.push(`[${viewport.name}] кнопка «Заново» осталась в шапке`);

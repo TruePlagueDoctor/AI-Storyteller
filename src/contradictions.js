@@ -192,6 +192,46 @@ const META = /(говорил[аио]?\s+больше\s+(любых\s+)?слов
 // Афоризм в конце: обобщение вместо события.
 const KICKER = /((больше|сильнее|громче|страшнее|правдивее|честнее|красноречивее),?\s+чем\s+(любые|любых|все|тысяч)|(в\s+этом|в\s+этой|в\s+том)\s+(и\s+)?(было|была|был|есть|заключал\p{L}*)\s+(вся|весь|всё|правда|суть|смысл|ответ)|(вся|в\s+этом\s+вся|в\s+этом\s+и\s+была)\s+(суть|правда|разница)|(всё|все)\s+только\s+начиналось|ничто\s+уже\s+не\s+будет\s+прежним|(^|[.!?…]\s+)(иногда|порой)\s+[^.!?…]{0,60}\s+(значит\s+больше|важнее|правдивее|громче\s+слов))/iu;
 
+// «Не страх. Не злость. Что-то третье.» — перечисление отрицаний: тот же штамп, что «не X, а Y».
+const NEG_LIST = /(^|[.!?…]\s+)Не\s+[^.!?…]{1,30}[.!?…]\s+Не\s+[^.!?…]{1,30}[.!?…]/u;
+// «Пустой хвост»: деепричастие в конце фразы, которое приписывает сцене эффект, а не действие.
+const TAIL = /,\s+(заставля[яв]\p{L}*\s+(?:\p{L}+\s+)?(сердц|кров|кож|дыхан|тебя|его|её|ее|вас)|наполня[яв]\p{L}*\s+(воздух|комнат|зал|помещен|простран|всё|все)|подч[её]ркива[яв]|напомина[яв]\p{L}*\s+о(\s|б)|придава[яв]\p{L}*\s+\p{L}+\s+(вид|оттенок|выражен)|созда[вя]\p{L}*\s+(ощущен|впечатлен|атмосфер)|окутыва[яв])/giu;
+// Рубленые обрубки: три предложения подряд не длиннее двух слов.
+const wordCount = (s) => (String(s).match(/\p{L}+/gu) || []).length;
+function fragmentRun(text) {
+  let run = 0;
+  for (const s of sentencesOf(text)) {
+    const n = wordCount(s);
+    if (n >= 1 && n <= 2) { run++; if (run >= 3) return true; } else if (n > 0) run = 0;
+  }
+  return false;
+}
+
+// Заезженные обороты ролевой прозы — список правит игрок в настройках. Совпадение — по основам слов
+// в пределах одной фразы, в любом порядке: «мурашки пробежали по спине» = «по спине пробежали мурашки».
+export const DEFAULT_CLICHE_PHRASES = [
+  'по спине пробежали мурашки', 'сердце пропустило удар', 'время словно остановилось', 'воздух сгустился',
+  'воздух наэлектризован', 'бархатный голос', 'хищная улыбка', 'глаза потемнели', 'мир сузился до',
+  'тишина стала осязаемой', 'что-то первобытное', 'едва слышный шёпот',
+];
+export function normalizeCliches(raw) {
+  const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(/\r?\n/) : null;
+  if (!list) return null;
+  const seen = new Set();
+  return list.map((x) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, 80))
+    .filter((x) => x.length >= 3 && !seen.has(x.toLowerCase()) && seen.add(x.toLowerCase())).slice(0, 60);
+}
+const flatWords = (t) => (String(t || '').toLowerCase().replace(/ё/g, 'е').match(/[\p{L}\p{N}-]+/gu) || []);
+const stemOf = (w) => (w.length > 5 ? w.slice(0, w.length - 2) : w.length > 3 ? w.slice(0, w.length - 1) : w);
+function listedPhrases(text, phrases) {
+  const sents = sentencesOf(text).map(flatWords);
+  return (phrases || []).filter((p) => {
+    // Короткие слова («по», «до») — точно; остальные — по основе, чтобы совпадали падежи и формы.
+    const need = flatWords(p).map((w) => ({ stem: stemOf(w), exact: w.length <= 3 }));
+    return need.length && sents.some((words) => need.every((n) => words.some((w) => (n.exact ? w === n.stem : w.startsWith(n.stem)))));
+  });
+}
+
 // Реплики персонажей: строки через тире и цитаты в «».
 function speechText(text) {
   const t = String(text || '');
@@ -204,8 +244,15 @@ const contrastSoft = (t) => (String(t).match(CONTRAST_SOFT) || []).length;
 
 // prev — прошлые ответы рассказчика: в репликах одна такая фигура — манера персонажа,
 // а когда так говорят все и из ответа в ответ — штамп модели.
-export function findClicheIssues(narration, prev = []) {
+export function findClicheIssues(narration, prev = [], { phrases = [] } = {}) {
   const issues = [];
+  const listed = listedPhrases(narration, phrases);
+  if (listed.length) {
+    issues.push({
+      kind: 'cliche-list',
+      text: `Заезженные обороты из списка игрока: ${listed.slice(0, 5).map((p) => `«${p}»`).join(', ')}. Замени деталью именно этой сцены; на другой оборот из той же обоймы не меняй.`,
+    });
+  }
   const speechCount = [...prev.slice(-2), narration].reduce((n, t) => { const sp = speechText(t); return n + contrastPairs(sp) + contrastSoft(sp); }, 0);
   const nowSpeech = speechText(narration);
   if (speechCount >= 2 && (contrastPairs(nowSpeech) + contrastSoft(nowSpeech)) >= 1) {
@@ -218,10 +265,22 @@ export function findClicheIssues(narration, prev = []) {
   if (!text) return issues;
   const pairs = contrastPairs(text);
   const soft = contrastSoft(text);
-  if (pairs >= 1 || soft >= 2) {
+  if (pairs >= 1 || soft >= 2 || NEG_LIST.test(text)) {
     issues.push({
       kind: 'cliche-contrast',
-      text: 'Штамп «не X, а Y» («Это был не страх. Это было узнавание», «не просто взгляд — обещание»). Говори сразу Y, без противопоставления.',
+      text: 'Штамп «не X, а Y» («Это был не страх. Это было узнавание», «не просто взгляд — обещание», «Не страх. Не злость. Что-то третье»). Говори сразу Y, без противопоставления.',
+    });
+  }
+  if (fragmentRun(text)) {
+    issues.push({
+      kind: 'cliche-fragments',
+      text: 'Рубленые обрубки подряд («Тишина. Долгая. Тяжёлая.»). Собери в одно нормальное предложение с деталью этой сцены.',
+    });
+  }
+  if ((text.match(TAIL) || []).length >= 2) {
+    issues.push({
+      kind: 'cliche-tail',
+      text: 'Фразы заканчиваются «пустым хвостом» («…, заставляя сердце биться чаще», «…, наполняя воздух ароматом»). Убери хвост или скажи отдельной фразой, что именно произошло.',
     });
   }
   const meta = text.match(META);

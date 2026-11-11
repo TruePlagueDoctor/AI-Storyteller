@@ -99,6 +99,7 @@ function publicState() {
     loreAutoWrite: s.loreAutoWrite,
     syncPromptStyle: s.syncPromptStyle || 'technical',
     promptLayout: promptLayoutOf(s),
+    clichePhrases: s.clichePhrases || [],
     diceEnabled: s.diceEnabled,
     summary: s.summary,
     compressing: compression.running,

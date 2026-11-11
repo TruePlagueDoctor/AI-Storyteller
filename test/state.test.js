@@ -234,3 +234,16 @@ test('кодекс: переименовали общую статью груп�
   assert.equal(book.find((e) => e.id === kid.id).fields.group, 'Лоно-руны');
   assert.equal(book.find((e) => e.id === other.id).fields.group, 'Болезни', 'чужие группы не тронуты');
 });
+
+test('список заезженных оборотов: по умолчанию есть, правится, очищается и переживает перезагрузку', async () => {
+  const { DEFAULT_CLICHE_PHRASES } = await import('../src/contradictions.js');
+  let st = await S.loadState();
+  assert.deepEqual(st.clichePhrases, DEFAULT_CLICHE_PHRASES);
+  await S.updateSettings({ clichePhrases: 'бархатный голос\n\n  хищная улыбка  \nбархатный голос' });
+  assert.deepEqual(S.getState().clichePhrases, ['бархатный голос', 'хищная улыбка']);
+  st = await S.loadState();
+  assert.deepEqual(st.clichePhrases, ['бархатный голос', 'хищная улыбка']);
+  await S.updateSettings({ clichePhrases: '' });
+  assert.deepEqual((await S.loadState()).clichePhrases, [], 'пустой список — выбор игрока, а не повод вернуть умолчания');
+  await S.updateSettings({ clichePhrases: DEFAULT_CLICHE_PHRASES });
+});

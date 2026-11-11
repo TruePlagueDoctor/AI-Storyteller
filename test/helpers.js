@@ -21,6 +21,7 @@ export function makeState(over = {}) {
     turn: 1,
     model: 'test/model',
     toolModel: '',
+    clichePhrases: [],
     ...over,
   };
 }
