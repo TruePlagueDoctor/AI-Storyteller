@@ -128,7 +128,7 @@ function renderBlock(b, animate) {
   row.appendChild(nameWrap);
 
   if (b.type === 'status') {
-    const def = (app.statusCatalog || []).find((d) => d.name.toLowerCase() === b.name.toLowerCase());
+    const def = (app.statusEffective || app.statusCatalog || []).find((d) => d.name.toLowerCase() === b.name.toLowerCase());
     const bits = [];
     const rm = b.rollMod ?? def?.rollMod;
     const tk = b.tick ?? def?.tick;

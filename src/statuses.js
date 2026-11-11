@@ -27,6 +27,37 @@ export const DEFAULT_STATUSES = [
 
 const key = (s) => String(s || '').trim().toLowerCase();
 
+// Магия и явления из кодекса партии — тоже состояния: название статьи = название состояния,
+// а поля «к броскам / за ход / длится ходов» задают его эффект. Так руна, проклятие или болезнь из кодекса
+// работают механически без отдельной записи в общем каталоге (он один на все партии, кодекс — у каждой свой).
+const num = (v) => { const n = Number(String(v ?? '').replace(/[−–—]/g, '-').replace(',', '.').replace(/\s+/g, '')); return Number.isFinite(n) ? n : null; };
+export function magicStatuses(state) {
+  const out = [];
+  for (const e of (state && state.lorebook) || []) {
+    if (!e || e.kind !== 'magic' || e.enabled === false || !String(e.title || '').trim()) continue;
+    const f = e.fields || {};
+    const roll = f.mech_roll !== undefined && f.mech_roll !== '' ? num(f.mech_roll) : null;
+    const m = String(f.mech_tick || '').match(/^\s*(.+?)\s*([+\-−–]\s*\d+)\s*(?:\/?\s*(?:за\s+)?ход)?\s*$/i);
+    const turns = f.mech_turns !== undefined && f.mech_turns !== '' ? num(f.mech_turns) : null;
+    // Статья-обзор без эффекта и чисел («Руны суккубов: какие бывают») — не состояние.
+    if (!String(f.effect || '').trim() && roll === null && !m && turns === null) continue;
+    out.push({
+      name: String(e.title).trim(),
+      rollMod: roll || 0,
+      tick: m && num(m[2]) ? { stat: m[1].trim(), delta: num(m[2]) } : null,
+      duration: turns && turns > 0 ? Math.round(turns) : null,
+      fromCodex: true,
+    });
+  }
+  return out;
+}
+// Каталог состояний этой партии: магия из кодекса + общий каталог (при совпадении имён главнее статья партии).
+export function statusCatalogOf(state) {
+  const magic = magicStatuses(state);
+  const taken = new Set(magic.map((d) => key(d.name)));
+  return [...magic, ...((state && state.statusCatalog) || []).filter((d) => !taken.has(key(d.name)))];
+}
+
 export function findStatusDef(catalog, name) {
   const k = key(name);
   return (catalog || []).find((d) => key(d.name) === k) || null;
@@ -54,7 +85,7 @@ export function statusRollMod(catalog, character) {
 
 // Один ход прошёл: тики, длительность, снятие истёкших. Возвращает отчёт.
 export function advanceStatuses(state) {
-  const catalog = state.statusCatalog || [];
+  const catalog = statusCatalogOf(state);
   const report = [];
   // Время идёт для тех, кто в сцене: герой со своей отдельной историей «стоит на паузе», пока играют не за него.
   for (const c of partyOf(state)) {

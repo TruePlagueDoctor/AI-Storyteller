@@ -28,7 +28,7 @@ import { fillField, writeBrief } from './src/fill.js';
 import { CODEX_KINDS, KIND_LABEL, KIND_FIELDS, findPeople } from './src/codex.js';
 import { listRequests, getRequest, clearRequests, diagCounts } from './src/diag.js';
 import { txt2img, pingSd } from './src/images.js';
-import { advanceStatuses } from './src/statuses.js';
+import { advanceStatuses, statusCatalogOf } from './src/statuses.js';
 import { PUBLIC_DIR, AVATAR_DIR, SCENE_DIR } from './src/paths.js';
 import { makeBackup, listBackups, maybeDailyBackup, readBackupSlot } from './src/backup.js';
 import { accessConfig, accessGuard, lanAddresses } from './src/access.js';
@@ -74,6 +74,8 @@ function publicState() {
     traitPool: s.traitPool,
     seedPool: s.seedPool,
     statusCatalog: s.statusCatalog,
+    // С магией из кодекса партии — для показа эффектов на листе (редактор каталога правит только общий каталог).
+    statusEffective: statusCatalogOf(s),
     threads: s.threads,
     scene: s.scene,
     events: s.events || [],

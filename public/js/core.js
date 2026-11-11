@@ -1,5 +1,5 @@
 // Версия сборки — видна в консоли браузера (F12), помогает проверить, что файл обновился.
-console.log('AI Storyteller UI v61 — видно, чего ждёт ход, и его можно прервать');
+console.log('AI Storyteller UI v62 — раздел кодекса «Магия и явления», связанный с состояниями');
 
 // ---- Метаданные типов блоков ----
 const TYPE_META = {
@@ -95,6 +95,7 @@ function applyState(data, { animate = false } = {}) {
   if (data.traitPool) app.traitPool = data.traitPool;
   if (data.seedPool) app.seedPool = data.seedPool;
   if (data.statusCatalog) app.statusCatalog = data.statusCatalog;
+  if (data.statusEffective) app.statusEffective = data.statusEffective;
   if (data.threads) app.threads = data.threads;
   if (data.scene) app.scene = data.scene;
   if (data.events) { app.events = data.events; renderEvents(); }

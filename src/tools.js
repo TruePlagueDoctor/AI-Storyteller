@@ -1,6 +1,7 @@
 // Определения инструментов (OpenAI-совместимый формат для OpenRouter)
 // и их исполнители. Блоки принадлежат конкретному герою.
 
+import { statusCatalogOf } from './statuses.js';
 import { randomUUID } from 'node:crypto';
 import { normalizeScene, advanceClock, parseTimeHint, clockLabel, dayPart } from './scene.js';
 import { findSimilar, EVENT_TYPES, OUTCOMES, typeLabel, outcomeLabel } from './chronicle.js';
@@ -325,7 +326,7 @@ function catalogStatusName(state, name) {
   const n = String(name).trim();
   if (/\s/.test(n)) return null;
   const low = n.toLowerCase();
-  for (const d of state.statusCatalog || []) {
+  for (const d of statusCatalogOf(state)) {
     const c = String(d.name || '').toLowerCase();
     if (!c || c === low || /\s/.test(c)) continue;
     const stem = c.length > 5 ? c.slice(0, c.length - 2) : c.length > 3 ? c.slice(0, c.length - 1) : c;

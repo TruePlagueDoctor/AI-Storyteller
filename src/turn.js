@@ -41,7 +41,7 @@ export function afterSync(state, narration, rolls = [], { codexSeen = null } = {
   const questions = [...findQuestionIssues(state, narration), ...findClicheIssues(narration, prevReplies), ...findFormatIssues(narration)];
   const missed = codexMisses(state, narration, codexSeen);
   const codex = missed.length ? [{ kind: 'codex', text: `Ты вывел ${missed.map((t) => `«${t}»`).join(', ')}, не зная статьи кодекса. ` +
-    'Сверь с ней облик и повадки (codex_lookup) и дальше заглядывай в статью до того, как выводить существо в сцену.' }] : [];
+    'Сверь с ней облик, повадки или эффект (codex_lookup) и дальше заглядывай в статью до того, как выводить это в сцену.' }] : [];
   state.correctionNote = correctionNote([...issues, ...scene, ...questions, ...codex]) || undefined;
   markSeen(state);
   return { issues: issues.map((i) => i.text), fixed };
