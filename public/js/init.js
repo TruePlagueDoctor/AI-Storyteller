@@ -170,6 +170,7 @@ async function init() {
   $('loreModalClose').addEventListener('click', closeLoreModal);
   $('loreCancel').addEventListener('click', closeLoreModal);
   $('loreSave').addEventListener('click', saveLore);
+  $('loreSplit').addEventListener('click', splitLore);
   $('loreKind').addEventListener('change', () => {
     const keep = {};
     for (const el of $('loreKindFields').querySelectorAll('[data-field]')) if (el.value.trim()) keep[el.dataset.field] = el.value.trim();

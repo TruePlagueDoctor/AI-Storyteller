@@ -161,3 +161,32 @@ export async function writeBrief({ state, apiKey, entry }) {
   if (!text) throw new Error('Модель не вернула выжимку — попробуй ещё раз.');
   return text.length > 260 ? text.slice(0, 259).replace(/\s+\S*$/, '') + '…' : text;
 }
+
+// ---- ✂ Разобрать большую статью на отдельные ----
+// Игрок держит «типы рун и их эффекты» одной статьёй; чтобы каждая руна стала своей статьёй (и состоянием),
+// модель учёта раскладывает текст на записи. Ничего не сохраняет — это делает вызывающий.
+export async function splitArticle({ state, apiKey, entry }) {
+  const e = entry || {};
+  const source = [String(e.brief || '').trim(), ...Object.values(e.fields || {}).map(String), String(e.content || '').trim()].filter(Boolean).join('\n\n');
+  if (source.trim().length < 20) throw new Error('В статье нечего разбирать — сначала впиши в неё список разновидностей.');
+  const system =
+    'Ты разбираешь статью кодекса ролевой игры. Разбей статью на отдельные записи — по одной на каждую разновидность, перечисленную в ней ' +
+    '(виды рун, заклинаний, болезней, зелий и т. п.). Бери только то, что написано в статье: ничего не придумывай и не дополняй.\n' +
+    'Верни ТОЛЬКО JSON-массив, без пояснений. Каждая запись: {"title": "название как в статье", "brief": "суть одной фразой, до 160 знаков", ' +
+    '"effect": "что делает с тем, на кого действует", "look": "как выглядит", "how": "как возникает и снимается"}. ' +
+    'Чего в статье нет — оставь пустой строкой. Общие сведения о явлении в целом в записи не включай.';
+  const data = await callOpenRouter({
+    purpose: 'разбор статьи кодекса', model: toolModelOf(state), apiKey, temperature: 0.1, noReasoning: true, maxTokens: 12000,
+    messages: [{ role: 'system', content: system }, { role: 'user', content: `СТАТЬЯ «${e.title || ''}»:\n${source.slice(0, 24000)}` }],
+  });
+  const raw = stripToolMarkup(String(data?.choices?.[0]?.message?.content || ''));
+  const a = raw.indexOf('['); const b = raw.lastIndexOf(']');
+  let items = null;
+  if (a !== -1 && b > a) { try { items = JSON.parse(raw.slice(a, b + 1)); } catch { items = null; } }
+  if (!Array.isArray(items)) throw new Error('Модель не вернула список разновидностей — попробуй ещё раз или другой моделью учёта.');
+  const clean = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const seen = new Set();
+  return items.filter((x) => x && typeof x === 'object').map((x) => ({
+    title: clean(x.title, 80), brief: clean(x.brief, 260), effect: clean(x.effect, 600), look: clean(x.look, 400), how: clean(x.how, 400),
+  })).filter((x) => x.title && !seen.has(x.title.toLowerCase()) && seen.add(x.title.toLowerCase())).slice(0, 80);
+}

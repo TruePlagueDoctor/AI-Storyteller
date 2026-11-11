@@ -22,7 +22,7 @@ export const KIND_FIELDS = {
   place: [['what', 'Что там'], ['ruler', 'Кто правит'], ['danger', 'Чем опасно']],
   // Магия и явления: заклинания, руны, проклятия, болезни, зелья. Название статьи = название состояния на листе;
   // три последних поля — механика этого состояния (см. statusCatalogOf в statuses.js).
-  magic: [['effect', 'Эффект'], ['look', 'Как выглядит'], ['how', 'Как возникает и снимается'],
+  magic: [['group', 'Входит в группу (название общей статьи, например: Лоно-руны)'], ['effect', 'Эффект'], ['look', 'Как выглядит'], ['how', 'Как возникает и снимается'],
     ['mech_roll', 'К броскам, пока действует (число, например −2)'], ['mech_tick', 'За ход (например: Рассудок −2)'], ['mech_turns', 'Длится ходов (пусто — пока не снимут)']],
   other: [],
 };
@@ -177,7 +177,7 @@ function renderBrief(e) {
 }
 // В запросе статья ужата (бюджет кодекса); по подглядыванию рассказчик получает её целиком:
 // статья-список (виды рун и их эффекты) в 600 знаков не помещалась, и остальное модель додумывала.
-const FIELD_SHORT = { mech_roll: 'К броскам', mech_tick: 'За ход', mech_turns: 'Длится ходов' };
+const FIELD_SHORT = { group: 'Входит в', mech_roll: 'К броскам', mech_tick: 'За ход', mech_turns: 'Длится ходов' };
 function renderFull(e, { fieldMax = 300, textMax = 600 } = {}) {
   let s = renderBrief(e);
   for (const [k, label] of KIND_FIELDS[e.kind]) {
@@ -193,6 +193,30 @@ function renderFull(e, { fieldMax = 300, textMax = 600 } = {}) {
 // Оглавление для рассказчика: что вообще есть в мире (существа — с опасностью и местом обитания),
 // чтобы он брал зверей, народы и фракции отсюда, а не выдумывал. Ограничено INDEX_BUDGET_TOKENS.
 export const INDEX_BUDGET_TOKENS = 250;
+// Группы магии: ключ — название общей статьи (поле «Входит в группу» у разновидностей). Общей статьи может и не быть.
+const groupKey = (e) => norm(e && e.fields && e.fields.group);
+const plural = (n, one, few, many) => { const m10 = n % 10, m100 = n % 100; return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many; };
+function magicGroups(book) {
+  const groups = new Map();
+  for (const e of book) {
+    if (e.kind !== 'magic' || !groupKey(e) || groupKey(e) === norm(e.title)) continue;
+    const k = groupKey(e);
+    if (!groups.has(k)) groups.set(k, { title: str(e.fields.group), parent: null, items: [] });
+    groups.get(k).items.push(e);
+  }
+  for (const [k, g] of groups) {
+    g.parent = book.find((e) => e.kind === 'magic' && norm(e.title) === k) || null;
+    if (g.parent) g.title = g.parent.title;
+  }
+  return groups;
+}
+// Список разновидностей группы: с выжимками (по запросу) или одними названиями (в запросе рассказчику).
+function groupList(g, withBriefs) {
+  if (!withBriefs) return `  Разновидности: ${g.items.map((e) => e.title).join(', ')} (эффект каждой — в её статье)`;
+  return `Разновидности (${g.items.length}) — выбирай из них; подробности каждой — в её статье:\n` +
+    g.items.map((e) => { const b = entryBrief(e) || str(e.fields && e.fields.effect); return `• ${e.title}${b ? ' — ' + cut(b, 180) : ''}`; }).join('\n');
+}
+
 export function narratorIndex(state) {
   const book = (state.lorebook || []).filter((e) => e.enabled !== false).map((e) => (e.kind ? e : normalizeEntry(e)));
   const label = (e) => {
@@ -204,12 +228,27 @@ export function narratorIndex(state) {
     return bits.length ? `${e.title} (${bits.join(', ')})` : e.title;
   };
   const kinds = [['creature', 'Бестиарий'], ['people', 'Народы'], ['faction', 'Фракции'], ['place', 'Места'], ['magic', 'Магия и явления']];
-  const lists = kinds.map(([k, n]) => [n, book.filter((e) => e.kind === k).map(label)]).filter(([, l]) => l.length);
+  // Магия: разновидности одной группы (32 руны) в оглавление не помещаются — группа идёт одной строкой с числом видов,
+  // а список рассказчик читает по запросу (codex_lookup по названию группы).
+  const groups = magicGroups(book);
+  const magicLabels = () => {
+    const out = []; const seenGroups = new Set();
+    for (const e of book.filter((x) => x.kind === 'magic')) {
+      const g = groups.get(groupKey(e)) || groups.get(norm(e.title));
+      if (!g) { out.push(e.title); continue; }
+      if (seenGroups.has(g)) continue;
+      seenGroups.add(g);
+      out.push(`${g.title} (${g.items.length} ${plural(g.items.length, 'вид', 'вида', 'видов')} — список в статье)`);
+    }
+    return out;
+  };
+  const lists = kinds.map(([k, n]) => [n, k === 'magic' ? magicLabels() : book.filter((e) => e.kind === k).map(label)]).filter(([, l]) => l.length);
   if (!lists.length) return '';
   const hasMagic = lists.some(([n]) => n === 'Магия и явления');
   const head = `Что есть в этом мире (когда сцене нужен зверь, чудовище, народ, фракция${hasMagic ? ', место, заклинание или иное явление' : ' или место'} — бери отсюда, а не выдумывай; новое — только если ничего не подходит). ` +
     'Чудовища — всегда конкретный вид отсюда, не безымянная «тварь». Выводишь в сцену того, о ком ниже нет подробностей, — сначала загляни в статью (codex_lookup), потом пиши' +
-    (hasMagic ? '. Магия и явления действуют строго по статье: не придумывай новых разновидностей и эффектов, пока подходит записанное' : '') + ':';
+    (hasMagic ? '. Магия и явления действуют строго по статье: не придумывай новых разновидностей и эффектов, пока подходит записанное' +
+      (groups.size ? '; у группы указано число видов — прежде чем выбрать разновидность, прочитай статью группы (codex_lookup)' : '') : '') + ':';
   // По одному названию по кругу, пока влезает: так ни один раздел не съедает весь бюджет.
   const taken = lists.map(() => []);
   let used = tok(head) + lists.reduce((a, [n]) => a + tok(n + ': \n'), 0);
@@ -243,8 +282,12 @@ export function renderCodex(state) {
     parts.push(p); used += tok(p);
   }
   const dropped = [];
+  const groups = magicGroups((state.lorebook || []).filter((e) => e.enabled !== false).map((e) => (e.kind ? e : normalizeEntry(e))));
   for (const x of sel) {
-    const full = x.level === 'full' ? renderFull(x.entry) : null;
+    const group = x.level === 'full' && x.entry.kind === 'magic' ? groups.get(norm(x.entry.title)) : null;
+    const base = x.level === 'full' ? renderFull(x.entry) : null;
+    const withNames = base && group ? base + '\n' + groupList(group, false) : null;
+    const full = withNames && used + tok(withNames) <= budget ? withNames : base; // названия видов — пока влезают
     const brief = renderBrief(x.entry);
     if (full && used + tok(full) <= budget) { parts.push(full); used += tok(full); shown.add(x.entry.id); }
     else if (used + tok(brief) <= budget) { parts.push(brief); used += tok(brief); shown.add(x.entry.id); }
@@ -278,11 +321,15 @@ export const hasCodex = (state) => (state.lorebook || []).some((e) => e.enabled 
 export function lookupCodex(state, titles) {
   const book = (state.lorebook || []).filter((e) => e.enabled !== false).map((e) => (e.kind ? e : normalizeEntry(e)));
   const list = (Array.isArray(titles) ? titles : [titles]).map(str).filter(Boolean).slice(0, 3);
+  const groups = magicGroups(book);
   const found = [];
   const out = [];
   for (const t of list) {
     const e = findAny(book, t);
-    if (e) { found.push(e.id); out.push(renderFull(e, { fieldMax: 1000, textMax: 4000 })); continue; }
+    const group = groups.get(norm(e ? e.title : t));
+    if (e) { found.push(e.id); out.push(renderFull(e, { fieldMax: 1000, textMax: 4000 }) + (group ? '\n' + groupList(group, true) : '')); continue; }
+    // Группа без общей статьи: название есть только в поле разновидностей.
+    if (group) { out.push(`• ${group.title} [${KIND_LABEL.magic}]\n` + groupList(group, true)); continue; }
     const similar = book.filter((x) => nameMatches(x, t)).map((x) => x.title).slice(0, 6);
     out.push(`«${t}» в кодексе не найдено.` + (similar.length ? ` Похожие: ${similar.join(', ')}.` : ' Возьми название из оглавления.'));
   }
@@ -304,7 +351,7 @@ export function codexMisses(state, narration, seen) {
 export function codexIndex(state) {
   const book = (state.lorebook || []).filter((e) => e.enabled !== false);
   const by = (k) => book.filter((e) => (e.kind || 'other') === k).map((e) => e.title);
-  const parts = [['Народы', by('people')], ['Бестиарий', by('creature')], ['Фракции', by('faction')], ['Места', by('place')], ['Магия и явления', by('magic')]]
+  const parts = [['Народы', by('people')], ['Бестиарий', by('creature')], ['Фракции', by('faction')], ['Места', by('place')]]
     .filter(([, l]) => l.length).map(([n, l]) => `${n}: ${l.slice(0, 40).join(', ')}`);
-  return parts.length ? 'КОДЕКС (названия — для race у npc и creatures у scene; магия и явления — названия состояний):\n' + parts.join('\n') : '';
+  return parts.length ? 'КОДЕКС (названия — для race у npc и creatures у scene):\n' + parts.join('\n') : '';
 }

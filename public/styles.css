@@ -2080,3 +2080,11 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 .thinking-stage { margin-top: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-faint); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
 .thinking-stage .link-btn { font-size: 11px; color: var(--brass-dim); }
 .thinking-stage .link-btn:hover { color: var(--brass); }
+
+/* ---- Кодекс: группа разновидностей магии, свёрнутая под названием ---- */
+.lore-group { margin: 6px 0; border-left: 2px solid var(--edge-soft); padding-left: 8px; }
+.lore-group > summary { cursor: pointer; list-style: none; padding: 6px 4px; font-family: 'Cormorant Garamond', serif; font-size: 17px; color: var(--text-warm); }
+.lore-group > summary::-webkit-details-marker { display: none; }
+.lore-group > summary::before { content: '▸ '; color: var(--brass-dim); }
+.lore-group[open] > summary::before { content: '▾ '; }
+.lore-group > summary:hover { color: var(--brass); }
