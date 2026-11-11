@@ -5,6 +5,7 @@ import { installFakeFetch, reply, call } from './fake-llm.js';
 import { runTurn, markSeen } from '../src/turn.js';
 import { voiceCandidates, voiceMessages, parseVoice, guardVoice, MAX_VOICES } from '../src/voices.js';
 import { composeStorySystem } from '../src/narrator.js';
+import { normalizeEntry } from '../src/codex.js';
 import { makeState, hero } from './helpers.js';
 
 let fake;
@@ -168,6 +169,54 @@ test('рассказчику решение подаётся с пометкой
       assert.match(prompt, /• Ольт \(персонаж, не герой\) — делает: Ольт требует серебряный; его слова: «Серебряный — и иди\.»/);
       assert.match(prompt, /Это поступки и слова самих персонажей, не героя/);
       return reply('— Серебряный — и иди, — бросает Ольт.');
+    },
+    reply('', [call('nothing', {})]),
+  ]);
+  await runTurn({ state: st, apiKey: 'k' });
+});
+
+// На практике суккуб с «играет сам» выдумала руну: кодекса в её запросе не было вовсе.
+const runeBook = () => [
+  normalizeEntry({ id: 'p', title: 'Суккубы', kind: 'people', brief: 'Демоницы, питаются желанием.', fields: { customs: 'Накладывают лоно-руны на жертв.' } }),
+  normalizeEntry({ id: 'g', title: 'Лоно-руны', kind: 'magic', keys: ['руна', 'руны'], brief: 'Магия суккубов: знаки на теле.', fields: { effect: 'Любая руна греется рядом с наложившей' } }),
+  normalizeEntry({ id: 'r1', title: 'Руна голода', kind: 'magic', brief: 'Жертва слабеет без близости.', fields: { group: 'Лоно-руны', effect: 'слабость' } }),
+  normalizeEntry({ id: 'r2', title: 'Руна покорности', kind: 'magic', brief: 'Трудно ослушаться.', fields: { group: 'Лоно-руны', effect: 'приказы' } }),
+  normalizeEntry({ id: 'c', title: 'Гуль', kind: 'creature', brief: 'Трупоед.' }),
+  normalizeEntry({ id: 'x', title: 'Гномьи клейма', kind: 'magic', brief: 'Клейма гномов.' }),
+  normalizeEntry({ id: 'x1', title: 'Клеймо молота', kind: 'magic', brief: 'Сила в руках.', fields: { group: 'Гномьи клейма', effect: 'сила' } }),
+];
+
+test('персонаж знает из кодекса своё: статью о своём народе и связанную с ним магию со списком видов', () => {
+  const st = world({ lorebook: runeBook() });
+  st.npcs.push(npc('Лилит', { self: true, race: 'суккуб', description: 'Суккуб, хозяйка купален', lastSeen: { turn: 4, day: 1, since: 4 } }));
+  st.scene.present.push('Лилит');
+  const text = voiceMessages(st, st.npcs[2]).map((m) => m.content).join('\n');
+  assert.match(text, /ЧТО ЛИЛИТ ЗНАЕТ О МИРЕ/i);
+  assert.match(text, /Суккубы \[народ\][\s\S]*Накладывают лоно-руны/);
+  assert.match(text, /Разновидности \(2\)[\s\S]*Руна голода — Жертва слабеет[\s\S]*Руна покорности — Трудно ослушаться/);
+  assert.match(text, /только из этого списка[\s\S]*не придумывай/i);
+  assert.ok(!text.includes('Клеймо молота'), 'чужая магия ей неизвестна');
+  assert.ok(!text.includes('Трупоед'), 'кодекс целиком персонажу не уходит');
+});
+
+test('персонаж, не связанный с магией, списка видов не получает — пока о ней не заговорили при нём', () => {
+  const st = world({ lorebook: runeBook() });
+  const olt = st.npcs[0]; // стражник
+  assert.ok(!voiceMessages(st, olt).map((m) => m.content).join('\n').includes('Руна голода'));
+  st.messages[2].content = 'Ольт, что ты знаешь про руны суккубов?';
+  const asked = voiceMessages(st, olt).map((m) => m.content).join('\n');
+  assert.match(asked, /Лоно-руны \[магия\] — Магия суккубов/, 'о чём заговорили — знает в общих чертах');
+  assert.ok(!asked.includes('Руна покорности — Трудно ослушаться'), 'но не весь список с эффектами');
+});
+
+test('рассказчику: выдуманную персонажем разновидность заменить записанной', async () => {
+  const st = world({ lorebook: runeBook() });
+  fake = installFakeFetch([
+    reply('РЕШЕНИЕ: Ольт чертит Руну вечной ночи\nРЕПЛИКА: Стой.\nВЫДАЁТ: —'),
+    (body) => {
+      const prompt = body.messages.map((m) => m.content).join('\n');
+      assert.match(prompt, /назвал разновидность, которой нет в кодексе, — замени ближайшей записанной/);
+      return reply('Ольт поднимает руку.');
     },
     reply('', [call('nothing', {})]),
   ]);

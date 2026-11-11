@@ -339,6 +339,39 @@ export function renderCodex(state) {
 }
 export const codexBlock = (state) => renderCodex(state).text;
 
+// ---- Кодекс для персонажа, который «играет сам» ----
+// Ему уходит не весь кодекс, а то, что он знает: статья о своём народе и магия, связанная с ним или его народом
+// (со списком видов — чтобы выбирал записанное, а не выдумывал). О чужой магии — только в общих чертах и только
+// если о ней заговорили при нём.
+export const NPC_CODEX_GROUP_TOKENS = 700;
+export function codexForNpc(state, npc, recentText = '') {
+  const book = (state.lorebook || []).filter((e) => e.enabled !== false).map((e) => (e.kind ? e : normalizeEntry(e)));
+  if (!book.length || !npc) return '';
+  const parts = [];
+  const people = findPeople(book, npc.race);
+  if (people) parts.push(renderFull(people));
+  // «Своё»: упомянуто в его карточке или в статье о его народе.
+  const own = norm([npc.description, npc.personality, npc.wants, npc.secret, npc.links, npc.status, (npc.skills || []).join(' '),
+    people ? [people.title, people.brief, people.content, ...Object.values(people.fields || {})].join(' ') : ''].join(' '));
+  const heard = norm(recentText);
+  const groups = magicGroups(book);
+  const inGroup = new Set([...groups.values()].flatMap((g) => g.items.map((e) => e.id)));
+  const fit = (g) => { for (const max of [160, 100, 60, 0]) { const t = groupList(g, true, max); if (tok(t) <= NPC_CODEX_GROUP_TOKENS || max === 0) return t; } return ''; };
+  for (const g of groups.values()) {
+    const key = (text) => (g.parent ? mentioned(g.parent, text) : keyMatches(norm(g.title), text)) || g.items.some((e) => mentioned(e, text));
+    if (key(own)) {
+      parts.push((g.parent ? renderFull(g.parent) : `• ${g.title} [${KIND_LABEL.magic}]`) + '\n' + fit(g) +
+        '\n  Разновидность выбирай только из этого списка и называй точно так же; новых не придумывай.');
+    } else if (g.parent && key(heard)) parts.push(renderBrief(g.parent));
+  }
+  // Магия без группы: своя — целиком, услышанная — выжимкой.
+  for (const e of book) {
+    if (e.kind !== 'magic' || inGroup.has(e.id) || groups.has(norm(e.title))) continue;
+    if (mentioned(e, own)) parts.push(renderFull(e)); else if (mentioned(e, heard)) parts.push(renderBrief(e));
+  }
+  return parts.join('\n');
+}
+
 // ---- Подглядывание в кодекс ----
 // Рассказчик перед тем, как вывести в сцену существо (народ, фракцию), берёт его полную статью —
 // чтобы первое же появление было по кодексу, а не «киношным зомби».
