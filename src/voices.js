@@ -7,6 +7,7 @@ import { callOpenRouter, stripToolMarkup } from './llm.js';
 import { sameName } from './tools.js';
 import { tailItems, lastPlayerAction } from './narrator.js';
 import { clockLabel } from './scene.js';
+import { codexForNpc } from './codex.js';
 
 export const MAX_VOICES = 2;        // не больше двух таких запросов за ход
 // Персонаж — необязательная часть хода: не ответил быстро — его сыграет рассказчик, ход не ждёт.
@@ -100,6 +101,10 @@ export function voiceMessages(state, npc) {
   now.push(`Рядом с ним: ${[heroName, ...others].join(', ')}`);
   if (npc.mood) now.push(`Настроение персонажа ${me}: ${npc.mood}${npc.moodReason ? ` — потому что ${npc.moodReason}` : ''}`);
   sys += `\n\n=== СЕЙЧАС ===\n${now.join('\n')}`;
+  // Что он знает из кодекса: свой народ и связанную с ним магию; услышанное при нём — в общих чертах.
+  const heardText = [...witnessed(state, npc).map((m) => m.content), lastPlayerAction(state)].join('\n');
+  const lore = codexForNpc(state, npc, heardText);
+  if (lore) sys += `\n\n=== ЧТО ${me.toUpperCase()} ЗНАЕТ О МИРЕ (из кодекса; не противоречь) ===\n${lore}`;
 
   // Отрывки истории написаны для игрока: «ты» (или «вы») в них — герой. Подписываем каждый и объясняем это явно.
   const nameOf = (id) => (state.characters.find((c) => c.id === id) || {}).name || heroName;
