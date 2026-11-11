@@ -146,6 +146,7 @@ async function openSettings() {
     $('worldInput').value = s.worldPrompt || '';
     $('scenarioInput').value = s.scenarioPrompt || '';
     $('promptInput').value = s.systemPrompt || '';
+    $('clicheInput').value = (s.clichePhrases || []).join('\n');
     for (const seg of document.querySelectorAll('#difficultySeg .seg')) {
       seg.classList.toggle('active', seg.dataset.value === (s.difficulty || 'normal'));
     }
@@ -238,6 +239,7 @@ async function saveSettings() {
         historyKeep: $('historyKeepInput').value,
         summary: $('summaryInput').value,
         systemPrompt: $('promptInput').value,
+        clichePhrases: $('clicheInput').value,
       }),
     });
     modelLabel.textContent = data.model;

@@ -38,7 +38,7 @@ export function afterSync(state, narration, rolls = [], { codexSeen = null } = {
   const scene = findSceneIssues(state, narration, lastPlayerAction(state), rolls);
   const prevReplies = viewMessages(state).filter((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string').map((m) => m.content);
   if (prevReplies.length && prevReplies[prevReplies.length - 1] === narration) prevReplies.pop(); // текущий ответ уже в истории
-  const questions = [...findQuestionIssues(state, narration), ...findClicheIssues(narration, prevReplies), ...findFormatIssues(narration)];
+  const questions = [...findQuestionIssues(state, narration), ...findClicheIssues(narration, prevReplies, { phrases: state.clichePhrases || [] }), ...findFormatIssues(narration)];
   const missed = codexMisses(state, narration, codexSeen);
   const codex = missed.length ? [{ kind: 'codex', text: `Ты вывел ${missed.map((t) => `«${t}»`).join(', ')}, не зная статьи кодекса. ` +
     'Сверь с ней облик, повадки или эффект (codex_lookup) и дальше заглядывай в статью до того, как выводить это в сцену.' }] : [];
