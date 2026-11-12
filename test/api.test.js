@@ -515,3 +515,29 @@ test('кодекс: большая статья разбирается на от
   assert.equal((await api('POST', `/api/lore/${parent.id}/split`)).status, 502);
   handlers.other = defaultHandlers().other;
 });
+
+// Жалоба: неотправленное сообщение нельзя было отредактировать — только отправить снова как есть.
+test('неотправленную реплику можно исправить, и повтор уходит уже с новым текстом', async () => {
+  await api('POST', '/api/reset');
+  handlers.sync = () => reply('', [call('nothing', {})]);
+  handlers.narrator = () => reply('Ты у ворот. Тихо.');
+  await api('POST', '/api/action', { text: 'Иду к воротам' });
+  handlers.narrator = () => ({ status: 500, text: 'boom' });
+  const failed = await api('POST', '/api/action', { text: 'Атакую стражнека' });
+  assert.equal(failed.status, 502);
+  let { data } = await api('GET', '/api/state');
+  const index = data.log.length - 1;
+  assert.equal(data.log[index].failed, true);
+  ({ data } = await api('PUT', `/api/log/${index}`, { text: 'Отступаю от стражника' }));
+  assert.equal(data.log[index].text, 'Отступаю от стражника');
+  assert.equal(data.log[index].failed, true, 'реплика по-прежнему ждёт отправки');
+  assert.equal(data.pendingTurn, true);
+  handlers.narrator = (body) => {
+    const last = body.messages.at(-1).content;
+    assert.ok(last.includes('Отступаю от стражника') && !last.includes('стражнека'), 'рассказчик получил исправленный текст');
+    return reply('Ты отходишь на шаг. Стражник провожает тебя взглядом.');
+  };
+  ({ data } = await api('POST', '/api/retry'));
+  assert.match(lastNarr(data).text, /отходишь на шаг/);
+  assert.equal(data.log.filter((e) => e.role === 'player').at(-1).text, 'Отступаю от стражника');
+});

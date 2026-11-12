@@ -124,6 +124,8 @@ function makeEntryEl(role, text, index, entry) {
     retry.className = 'btn primary retry-btn';
     retry.textContent = 'Отправить снова';
     bar.append(msg, retry);
+    // Неотправленное можно поправить перед повтором (раньше у такой реплики кнопок правки не было вовсе).
+    if (index != null) bar.appendChild(failEditBtn());
     div.appendChild(bar);
     return div;
   }
@@ -140,6 +142,15 @@ function makeEntryEl(role, text, index, entry) {
     div.appendChild(tools);
   }
   return div;
+}
+
+// «Изменить» у реплики, оставшейся без ответа: правка текста, затем «Отправить снова».
+function failEditBtn() {
+  const b = document.createElement('button');
+  b.className = 'btn ghost edit-btn fail-edit';
+  b.textContent = 'Изменить';
+  b.title = 'Исправить текст перед повторной отправкой';
+  return b;
 }
 
 // ---- История как дерево ----
@@ -460,6 +471,7 @@ function decorateLastNarrator() {
       btn.className = 'btn primary retry-btn';
       btn.textContent = 'Отправить снова';
       bar.append(msg, btn);
+      if (el.dataset.index != null) bar.appendChild(failEditBtn());
       el.appendChild(bar);
     }
     return;
