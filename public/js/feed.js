@@ -49,7 +49,7 @@ function makeEntryEl(role, text, index, entry) {
     bar.append(msg, btn);
     div.appendChild(bar);
   }
-  if (entry && ((entry.ticks && entry.ticks.length) || (entry.growth && entry.growth.length) || (entry.lookups && entry.lookups.length) || (entry.voices && entry.voices.length) || entry.voiceNote)) {
+  if (entry && ((entry.ticks && entry.ticks.length) || (entry.growth && entry.growth.length) || (entry.lookups && entry.lookups.length) || (entry.voices && entry.voices.length) || entry.voiceNote || entry.fallbackNote)) {
     const fx = document.createElement('div');
     fx.className = 'turn-fx';
     if (entry.lookups && entry.lookups.length) {
@@ -71,6 +71,7 @@ function makeEntryEl(role, text, index, entry) {
       }
       fx.appendChild(d);
     }
+    if (entry.fallbackNote) { const l = document.createElement('div'); l.className = 'fx-tick'; l.textContent = '⇄ ' + entry.fallbackNote; fx.appendChild(l); }
     if (entry.voiceNote) { const l = document.createElement('div'); l.className = 'fx-tick'; l.textContent = '🎭 ' + entry.voiceNote; fx.appendChild(l); }
     for (const t of entry.ticks || []) { const l = document.createElement('div'); l.className = 'fx-tick'; l.textContent = '⏳ ' + t; fx.appendChild(l); }
     for (const g of entry.growth || []) { const l = document.createElement('div'); l.className = 'fx-growth'; l.textContent = '✦ ' + g; fx.appendChild(l); }

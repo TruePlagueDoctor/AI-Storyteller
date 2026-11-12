@@ -34,7 +34,7 @@ export function explainError(raw) {
   if (/reasoning.*(mandatory|cannot be disabled)/i.test(m)) return 'Модель работает только с включённым рассуждением — это обходится автоматически; если ошибка осталась, смените модель.';
   if (/context length|maximum context|too many tokens|context_length/i.test(m)) return 'Запрос не влезает в контекст модели: сократите историю (сжатие), лор или выберите модель с большим контекстом.';
   if (/is not a valid model|model.*not found|invalid model/i.test(m)) return 'Такой модели нет: проверьте её идентификатор в настройках (например, «deepseek/deepseek-chat»).';
-  if (/moderation|flagged|content policy|safety/i.test(m)) return 'Провайдер отклонил запрос модерацией. Смените модель или провайдера.';
+  if (/PROHIBITED_CONTENT|blockReason|content_filter|из-за содержания|moderation|flagged|content policy|safety/i.test(m)) return 'Модель отказалась из-за содержания: сработал фильтр провайдера (из игры он не отключается, и проверяет он весь запрос — историю и кодекс тоже). Перегенерируй ход другой моделью или укажи запасную модель в настройках — она подхватит такие ходы сама.';
   switch (status) {
     case 400: return 'Модель не приняла запрос (неподдерживаемый параметр или формат). Подробности — в сыром тексте ошибки ниже.';
     case 401: return 'Ключ OpenRouter не подходит: проверьте OPENROUTER_API_KEY в .env и перезапустите сервер.';

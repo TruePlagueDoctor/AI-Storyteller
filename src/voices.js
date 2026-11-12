@@ -182,7 +182,7 @@ export async function npcVoices(state, apiKey, timer = null) {
     try {
       const data = await callOpenRouter({
         purpose: `персонаж: ${npc.name}`,
-        model: state.model, apiKey, timer,
+        model: state.model, fallbackModel: state.fallbackModel, apiKey, timer,
         messages: voiceMessages(state, npc),
         temperature: state.temperature ?? 0.8,
         maxTokens: 400, noReasoning: true, timeoutMs: VOICE_TIMEOUT_MS,

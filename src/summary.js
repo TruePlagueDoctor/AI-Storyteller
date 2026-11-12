@@ -85,7 +85,7 @@ export async function computeSummary(plan, apiKey, timer = null) {
     'НОВЫЕ СОБЫТИЯ (сверни их вместе с прежней предысторией):\n' + plan.transcript;
   const data = await callOpenRouter({
     purpose: 'сжатие истории',
-    model: plan.state.model,
+    model: plan.state.model, fallbackModel: plan.state.fallbackModel, // сжимать откровенную историю основная модель тоже может отказаться
     messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
     apiKey,
     temperature: 0.3,
