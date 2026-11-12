@@ -269,11 +269,18 @@ try {
     await page.click('#thinkingStop');
     await page.waitForSelector('.fail-bar', { timeout: 15000 });
     if (!/Ход прерван/.test(await page.textContent('.fail-bar'))) errors.push(`[${viewport.name}] после прерывания нет пометки у реплики`);
-    stack.handlers.narrator = () => reply('Ты стоишь у ворот. Стражник Ольт смотрит на тебя: «Чего надо?»');
+    // Неотправленную реплику можно исправить: «Изменить» рядом с «Отправить снова», повтор уходит с новым текстом.
+    await page.click('.fail-bar .fail-edit');
+    await page.fill('.entry.editing .edit-area', 'Жду развязки у ворот');
+    await page.click('.entry.editing .edit-bar .btn.primary');
+    await page.waitForSelector('.fail-bar .retry-btn');
+    let retried = '';
+    stack.handlers.narrator = (body) => { retried = body.messages.at(-1).content; return reply('Ты стоишь у ворот. Стражник Ольт смотрит на тебя: «Чего надо?»'); };
     await page.click('.retry-btn');
     await page.waitForFunction(() => !document.querySelector('.fail-bar') && !document.getElementById('thinkingEntry'));
+    if (!/Жду развязки у ворот/.test(retried)) errors.push(`[${viewport.name}] повтор ушёл со старым текстом: ${retried.slice(-80)}`);
     aborting = false;
-    step('долгий ход: видно, чего ждём; прерывание и повтор');
+    step('долгий ход: видно, чего ждём; прерывание, правка и повтор');
 
     // Кодекс «Магия и явления»: раздел с полями эффекта и механики; состояние с названием статьи берёт эффект из неё.
     await page.evaluate(() => openLoreModal(null));
