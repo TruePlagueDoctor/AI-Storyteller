@@ -185,6 +185,11 @@
           <input type="text" id="toolModelInput" placeholder="как модель рассказа" />
           <span class="field-hint">Отдельная модель для прохода учёта (вызовы инструментов). Пусто — та же, что для рассказа. Ставь сюда надёжную по tool-call, напр. <code>deepseek/deepseek-v3.2:exacto</code>.</span>
         </label>
+        <label class="field">
+          <span class="field-label">Запасная модель рассказа (необязательно)</span>
+          <input type="text" id="fallbackModelInput" placeholder="не задана" />
+          <span class="field-hint">Если основная модель отказалась писать из-за содержания (фильтр провайдера, например PROHIBITED_CONTENT у Gemini), ход автоматически допишет эта модель. Под ответом будет пометка. Пусто — игра покажет ошибку, и ход можно перегенерировать вручную.</span>
+        </label>
         <div class="field field-row">
           <label class="field-col">
             <span class="field-label">Температура</span>

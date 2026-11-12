@@ -23,7 +23,7 @@ const GLOBAL_PATH = join(DATA_DIR, 'settings.json');    // общие настр
 const INDEX_PATH = join(DATA_DIR, 'slots.json');        // список партий и активная
 
 // Что живёт в общих настройках, а не в партии.
-const GLOBAL_FIELDS = ['syncPromptStyle', 'promptLayout', 'clichePhrases', 'model', 'toolModel', 'systemPrompt', 'temperature', 'repetitionPenalty', 'frequencyPenalty', 'traitPool', 'seedPool', 'statusCatalog', 'sdUrl', 'imageStyle', 'imageNegative', 'imageSize', 'imageSteps', 'imageCfg', 'imageSampler', 'sceneStyle', 'sceneNegative', 'sceneSize', 'imageClipSkip', 'faceFix', 'sceneHires', 'hiresScale', 'hiresDenoise', 'hiresUpscaler', 'handFix', 'portraitHires', 'imageScheduler'];
+const GLOBAL_FIELDS = ['syncPromptStyle', 'promptLayout', 'clichePhrases', 'model', 'toolModel', 'fallbackModel', 'systemPrompt', 'temperature', 'repetitionPenalty', 'frequencyPenalty', 'traitPool', 'seedPool', 'statusCatalog', 'sdUrl', 'imageStyle', 'imageNegative', 'imageSize', 'imageSteps', 'imageCfg', 'imageSampler', 'sceneStyle', 'sceneNegative', 'sceneSize', 'imageClipSkip', 'faceFix', 'sceneHires', 'hiresScale', 'hiresDenoise', 'hiresUpscaler', 'handFix', 'portraitHires', 'imageScheduler'];
 const IMAGE_FIELDS = ['sdUrl', 'imageStyle', 'imageNegative', 'imageSize', 'imageSteps', 'imageCfg', 'imageSampler', 'sceneStyle', 'sceneNegative', 'sceneSize', 'imageClipSkip', 'faceFix', 'sceneHires', 'hiresScale', 'hiresDenoise', 'hiresUpscaler', 'handFix', 'portraitHires', 'imageScheduler'];
 
 export const DEFAULT_MODEL = 'openai/gpt-4o-mini';
@@ -1290,6 +1290,7 @@ export async function updateSettings({ systemPrompt, worldPrompt, scenarioPrompt
   }
   if (typeof model === 'string' && model.trim()) state.model = model.trim();
   if (typeof toolModel === 'string') state.toolModel = toolModel.trim();
+  if (typeof rest.fallbackModel === 'string') state.fallbackModel = rest.fallbackModel.trim();
   if (temperature !== undefined) {
     const t = Number(temperature);
     if (Number.isFinite(t)) state.temperature = Math.min(2, Math.max(0, t));

@@ -553,6 +553,11 @@ function rollToolFor(state) {
 export async function narrate(state, apiKey, withTools, { allowDice = true, journal = null, timer = null } = {}) {
   const messages = storyMessages(state, { withTools }, [DIFFICULTY_REMINDER[state.difficulty], state.correctionNote, state.tickNote]);
 
+  // Основная модель отказала из-за содержания — остаток хода ведёт запасная (если задана), а не по кругу.
+  const timings = Array.isArray(timer) ? timer : [];
+  const backup = String(state.fallbackModel || '').trim();
+  let activeModel = state.model;
+  const stick = () => { const last = timings[timings.length - 1]; if (last && last.fallback && last.model) activeModel = last.model; };
   const dice = allowDice && state.diceEnabled !== false;
   const narrationParts = [];
   let finishReason = null;
@@ -572,8 +577,8 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
 
     const data = await callOpenRouter({
       purpose: withTools ? 'рассказчик (с инструментами)' : 'рассказчик',
-      model: state.model,
-      timer,
+      model: activeModel, fallbackModel: backup,
+      timer: timings,
       messages,
       apiKey,
       tools,
@@ -581,6 +586,7 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
       presencePenalty: state.repetitionPenalty ?? 0.3,
       frequencyPenalty: state.frequencyPenalty ?? 0,
     });
+    stick();
     const msg = data?.choices?.[0]?.message;
     if (!msg) throw new Error('Пустой ответ от модели.');
     finishReason = data?.choices?.[0]?.finish_reason;
@@ -660,7 +666,7 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
       messages.push({ role: 'user', content: 'Продолжи ровно с того места, где оборвалось. Не повторяй уже написанное, не начинай заново.' });
       const cont = await callOpenRouter({
         purpose: 'рассказчик: продолжение',
-        model: state.model, messages, apiKey, timer,
+        model: activeModel, fallbackModel: backup, messages, apiKey, timer: timings,
         temperature: state.temperature ?? 0.8,
         presencePenalty: state.repetitionPenalty ?? 0.3,
         frequencyPenalty: state.frequencyPenalty ?? 0,

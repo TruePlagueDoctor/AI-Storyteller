@@ -28,6 +28,23 @@ export function cancelTurnRequests() {
 export function resetTurnCancel() { turnCancelled = false; }
 const CANCELLED = 'Ход прерван.';
 
+// Отказ из-за содержания: фильтр провайдера (PROHIBITED_CONTENT у Gemini, модерация у других).
+// Приходит либо ошибкой, либо ответом 200 без текста с причиной остановки. Это не сбой связи: повтор той же
+// моделью бесполезен, зато запрос может взять запасная модель.
+const REFUSAL_RE = /PROHIBITED_CONTENT|blockReason|content_filter|content[ _]policy|moderation|flagged|RECITATION|(^|\W)SAFETY(\W|$)/i;
+export function isContentRefusal(x) {
+  if (typeof x === 'string') return REFUSAL_RE.test(x);
+  const ch = x && x.choices && x.choices[0];
+  if (!ch) return false;
+  const text = ch.message && typeof ch.message.content === 'string' ? ch.message.content.trim() : '';
+  const calls = (ch.message && ch.message.tool_calls) || [];
+  return !text && !calls.length && REFUSAL_RE.test(`${ch.finish_reason || ''} ${ch.native_finish_reason || ''}`);
+}
+const refusalError = (data) => {
+  const ch = data.choices[0];
+  return new Error(`Модель отказалась из-за содержания (${ch.native_finish_reason || ch.finish_reason}).`);
+};
+
 // Модель учёта и служебных запросов: отдельная, если задана, иначе — модель рассказа.
 export const toolModelOf = (state) => (state.toolModel && state.toolModel.trim() ? state.toolModel.trim() : state.model);
 
@@ -98,6 +115,7 @@ export async function callOpenRouter(opts) {
     opts.timer.push({
       ms: Date.now() - t0,
       model: o.model,
+      fallback: o._fellBack ? true : undefined,
       in: u && Number.isFinite(u.prompt_tokens) ? u.prompt_tokens : undefined,
       cached: u && Number.isFinite(u.prompt_tokens_details?.cached_tokens) ? u.prompt_tokens_details.cached_tokens : undefined,
       out: u && Number.isFinite(u.completion_tokens) ? u.completion_tokens : undefined,
@@ -110,10 +128,17 @@ export async function callOpenRouter(opts) {
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const data = await postOpenRouter(o);
+      if (isContentRefusal(data)) throw refusalError(data);
       note(data);
       return data;
     } catch (err) {
       const msg = String(err.message);
+      // Отказ по содержанию: один раз пробуем запасную модель, если она задана и это другая модель.
+      const backup = String(o.fallbackModel || '').trim();
+      if (isContentRefusal(msg) && backup && backup !== o.model && !o._fellBack) {
+        retry(msg, `запасная модель ${backup}: основная отказала из-за содержания`, { model: backup, _fellBack: true });
+        continue;
+      }
       // «Думающая» модель не даёт отключить reasoning.
       if ((o.tools || o.noReasoning) && !o._noReasoningFlag && /reasoning.*(mandatory|cannot be disabled)/i.test(msg)) {
         REASONING_MANDATORY.add(o.model); retry(msg, 'reasoning оставлен включённым', { _noReasoningFlag: true }); continue;
@@ -138,6 +163,7 @@ export async function callOpenRouter(opts) {
     }
   }
   const data = await postOpenRouter(o);
+  if (isContentRefusal(data)) { const e = refusalError(data); note(null, e.message); throw e; }
   note(data);
   return data;
 }
