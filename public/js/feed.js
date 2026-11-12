@@ -23,14 +23,17 @@ function makeEntryEl(role, text, index, entry) {
       val.className = 'roll-value';
       // Все слагаемые видны: раньше модификаторы от состояний и черт цели прятались («8 = 5»).
       const sgn = (n) => (n > 0 ? ` +${n}` : ` −${Math.abs(n)}`);
-      val.textContent = `🎲 ${r.roll}${r.bonus ? sgn(r.bonus) : ''}${r.penalty ? sgn(-r.penalty) : ''}${r.traitMod ? sgn(r.traitMod) : ''} = ${r.total} против ${r.target}`;
+      val.textContent = `🎲 ${r.roll}${r.bonus ? sgn(r.bonus) : ''}${r.penalty ? sgn(-r.penalty) : ''}${r.traitMod ? sgn(r.traitMod) : ''}${r.edge ? sgn(r.edge) : ''} = ${r.total} против ${r.target}`;
       val.title = [`бросок d20: ${r.roll}`, r.bonus ? `умение (${r.level}): +${r.bonus}` : `умение: ${r.level}`,
         r.penalty ? `${r.penaltyReason}: −${r.penalty}` : '', ...(r.traitReasons || []),
+        r.edge ? `обстоятельства: ${r.edge > 0 ? '+' : '−'}${Math.abs(r.edge)}${r.edgeReason ? ' — ' + r.edgeReason : ''}` : '',
         r.target_npc ? `против: ${r.target_npc}` : '', `нужно ${r.target} (${r.difficulty})`].filter(Boolean).join('\n');
       const out = document.createElement('span');
       out.className = 'roll-outcome';
       out.textContent = r.outcome;
       chip.append(label, val, out);
+      // За что дано преимущество или помеха — видно сразу, не только во всплывающей подсказке.
+      if (r.edge && r.edgeReason) { const why = document.createElement('span'); why.className = 'roll-edge'; why.textContent = `${r.edge > 0 ? 'преимущество' : 'помеха'}: ${r.edgeReason}`; chip.appendChild(why); }
       div.appendChild(chip);
     }
   }

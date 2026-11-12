@@ -2088,3 +2088,6 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 .lore-group > summary::before { content: '▸ '; color: var(--brass-dim); }
 .lore-group[open] > summary::before { content: '▾ '; }
 .lore-group > summary:hover { color: var(--brass); }
+
+/* ---- Бросок: за что преимущество или помеха ---- */
+.roll-edge { flex-basis: 100%; font-family: 'Spectral', serif; font-size: 12.5px; font-style: italic; color: var(--text-dim); }
