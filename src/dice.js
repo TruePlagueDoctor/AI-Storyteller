@@ -16,6 +16,11 @@ export const DIFFICULTY_TARGET = {
   'очень сложно': 17,
 };
 
+// Обстоятельства: как герой подошёл к делу. Сложность — о самой задаче, а это — о подготовке, плане, инструменте,
+// позиции (преимущество) или о спешке, негодных средствах, чужой настороженности (помеха).
+// Без этого продуманная заявка игрока бросалась так же, как необдуманная.
+export const EDGE_MOD = { 'помеха': -2, 'нет': 0, 'преимущество': 2, 'большое преимущество': 4 };
+
 // Показатели тела и духа: раненый, измотанный, теряющий рассудок герой действует хуже.
 // Граница слова — через (?!\p{L}): обычный \b в JS не видит кириллицу, и «Сила» не находилась.
 export const VITAL_STAT = /(здоров|жизн|(?<![\p{L}])hp(?![\p{L}])|рассуд|психик|вынослив|бодр|энерг|стамин|(?<![\p{L}])сил[аы](?![\p{L}]))/iu;
@@ -49,14 +54,20 @@ function conditionPenalty(character) {
 const d20 = () => 1 + Math.floor(Math.random() * 20);
 
 // Выполняет проверку и возвращает подробный, но компактный результат.
-export function rollCheck({ character, skill, difficulty, traitMod = 0, traitReasons = [] }) {
+export function rollCheck({ character, skill, difficulty, traitMod = 0, traitReasons = [], edge: edgeKey = 'нет', edgeReason = '' }) {
   const diffKey = String(difficulty || 'обычно').trim().toLowerCase();
   const target = DIFFICULTY_TARGET[diffKey] ?? DIFFICULTY_TARGET['обычно'];
   const { bonus, level, block } = bonusFor(character, skill);
   const { penalty, reason } = conditionPenalty(character);
 
+  // Преимущество — только с названной причиной: её видит игрок, и «+4 просто так» не проходит.
+  const why = String(edgeReason || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+  const wanted = EDGE_MOD[String(edgeKey || 'нет').trim().toLowerCase()] ?? 0;
+  const edge = wanted > 0 && !why ? 0 : wanted;
+  const edgeDenied = wanted > 0 && !why;
+
   const roll = d20();
-  const total = roll + bonus - penalty + traitMod;
+  const total = roll + bonus - penalty + traitMod + edge;
 
   let outcome;
   if (roll === 1) outcome = 'критический провал';
@@ -73,7 +84,7 @@ export function rollCheck({ character, skill, difficulty, traitMod = 0, traitRea
     asked: block && block.name.toLowerCase() !== String(skill || '').trim().toLowerCase() ? skill : undefined,
     level,
     difficulty: diffKey,
-    roll, bonus, penalty, traitMod, traitReasons, total, target,
+    roll, bonus, penalty, traitMod, traitReasons, edge, edgeReason: edge ? why : undefined, edgeDenied: edgeDenied || undefined, total, target,
     outcome, success,
     penaltyReason: reason,
   };
@@ -85,7 +96,9 @@ export function describeRoll(r) {
     `Проверка «${r.skill}» (${r.level}), сложность: ${r.difficulty}.`,
     `Бросок ${r.roll} + ${r.bonus}${r.penalty ? ` − ${r.penalty} (${r.penaltyReason})` : ''}` +
       `${r.traitMod ? ` ${r.traitMod > 0 ? '+' : '−'} ${Math.abs(r.traitMod)} (${(r.traitReasons || []).join('; ')})` : ''}` +
+      `${r.edge ? ` ${r.edge > 0 ? '+' : '−'} ${Math.abs(r.edge)} (обстоятельства${r.edgeReason ? ': ' + r.edgeReason : ''})` : ''}` +
       ` = ${r.total} против ${r.target}.`,
+    ...(r.edgeDenied ? ['Преимущество не засчитано: не названо, чем оно заслужено (edge_reason).'] : []),
     `ИСХОД: ${r.outcome.toUpperCase()}.`,
   ];
   if (r.outcome === 'критический провал') {
