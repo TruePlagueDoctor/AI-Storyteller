@@ -84,6 +84,7 @@ function publicState() {
     canResync: canResync(),
     toolModel: s.toolModel || '',
     fallbackModel: s.fallbackModel || '',
+    artModel: s.artModel || '',
     ...listSlots(),
     log: s.log,
     systemPrompt: s.systemPrompt,

@@ -1,7 +1,7 @@
 // Картинки: теги портрета и раскадровка сцены для Automatic1111 (запросы к модели учёта).
 
 import { clockLabel, dayPart } from './scene.js';
-import { callOpenRouter, stripToolMarkup, toolModelOf } from './llm.js';
+import { callOpenRouter, stripToolMarkup, artModelOf } from './llm.js';
 
 
 // Теги в порядок: без повторов и мусора, не больше max. Модель иногда зацикливается
@@ -45,7 +45,7 @@ export async function portraitTags({ state, apiKey, subject }) {
       'Не выдумывай того, чего нет в описании.' },
     { role: 'user', content: `${kind === 'hero' ? 'Герой' : 'Персонаж'}: ${name}\n${facts || '(описания нет — только имя)'}` },
   ];
-  const data = await callOpenRouter({ purpose: 'теги портрета', model: toolModelOf(state), messages, apiKey, temperature: 0.3, maxTokens: 400, ...TAG_CALL });
+  const data = await callOpenRouter({ purpose: 'теги портрета', model: artModelOf(state), fallbackModel: state.fallbackModel, messages, apiKey, temperature: 0.3, maxTokens: 400, ...TAG_CALL });
   const text = String(data?.choices?.[0]?.message?.content || '').trim();
   const tags = cleanTags(stripToolMarkup(text).replace(/^[^:]*теги[^:]*:\s*/i, ''), 40);
   if (!tags) throw new Error('Модель не вернула теги — попробуй ещё раз.');
@@ -115,7 +115,7 @@ export async function sceneTags({ state, apiKey, ctx }) {
     (ctx.action ? `ДЕЙСТВИЕ ИГРОКА: ${String(ctx.action).slice(0, 400)}\n\n` : '') +
     `ФРАГМЕНТ:\n${text.length > 3000 ? text.slice(0, 3000) + '…' : text}`;
   const data = await callOpenRouter({
-    purpose: 'теги сцены', model: toolModelOf(state), apiKey, temperature: 0.4, maxTokens: 700, ...TAG_CALL,
+    purpose: 'теги сцены', model: artModelOf(state), fallbackModel: state.fallbackModel, apiKey, temperature: 0.4, maxTokens: 700, ...TAG_CALL,
     messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
   });
   const raw = String(data?.choices?.[0]?.message?.content || '').trim();
@@ -164,7 +164,7 @@ export async function codexTags({ state, apiKey, entry }) {
       'Не добавляй теги качества и стиля — они подставятся сами. Не выдумывай того, что противоречит статье.' },
     { role: 'user', content: `Статья «${e.title || ''}» (${kind}):\n${facts || '(описания нет — только название)'}` },
   ];
-  const data = await callOpenRouter({ purpose: 'теги иллюстрации кодекса', model: toolModelOf(state), messages, apiKey, temperature: 0.4, maxTokens: 450, ...TAG_CALL });
+  const data = await callOpenRouter({ purpose: 'теги иллюстрации кодекса', model: artModelOf(state), fallbackModel: state.fallbackModel, messages, apiKey, temperature: 0.4, maxTokens: 450, ...TAG_CALL });
   const text = cleanTags(stripToolMarkup(String(data?.choices?.[0]?.message?.content || '')).trim().replace(/^[^:]*теги[^:]*:\s*/i, ''), 45);
   if (!text) throw new Error('Модель не вернула теги — попробуй ещё раз.');
   return text;
