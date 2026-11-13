@@ -190,6 +190,11 @@
           <input type="text" id="fallbackModelInput" placeholder="не задана" />
           <span class="field-hint">Если основная модель отказалась писать из-за содержания (фильтр провайдера, например PROHIBITED_CONTENT у Gemini), ход автоматически допишет эта модель. Под ответом будет пометка. Пусто — игра покажет ошибку, и ход можно перегенерировать вручную.</span>
         </label>
+        <label class="field">
+          <span class="field-label">Модель для описания картинок (необязательно)</span>
+          <input type="text" id="artModelInput" placeholder="как модель учёта" />
+          <span class="field-hint">Она составляет описание кадра (теги) для портретов, иллюстраций сцен и статей кодекса; саму картинку рисует Automatic1111. Пусто — та же, что для учёта. Ставь отдельную, если модель учёта плохо подбирает теги или отказывается описывать сцену.</span>
+        </label>
         <div class="field field-row">
           <label class="field-col">
             <span class="field-label">Температура</span>

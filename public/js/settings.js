@@ -141,6 +141,7 @@ async function openSettings() {
     $('modelInput').value = s.model || '';
     $('toolModelInput').value = s.toolModel || '';
     $('fallbackModelInput').value = s.fallbackModel || '';
+    $('artModelInput').value = s.artModel || '';
     $('temperatureInput').value = s.temperature ?? 0.8;
     $('repetitionInput').value = s.repetitionPenalty ?? 0.3;
     $('frequencyInput').value = s.frequencyPenalty ?? 0;
@@ -206,6 +207,7 @@ async function saveSettings() {
         model: $('modelInput').value,
         toolModel: $('toolModelInput').value,
         fallbackModel: $('fallbackModelInput').value,
+        artModel: $('artModelInput').value,
         temperature: $('temperatureInput').value,
         repetitionPenalty: $('repetitionInput').value,
         frequencyPenalty: $('frequencyInput').value,

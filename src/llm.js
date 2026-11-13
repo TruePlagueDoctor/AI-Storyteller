@@ -47,6 +47,9 @@ const refusalError = (data) => {
 
 // Модель учёта и служебных запросов: отдельная, если задана, иначе — модель рассказа.
 export const toolModelOf = (state) => (state.toolModel && state.toolModel.trim() ? state.toolModel.trim() : state.model);
+// Модель, которая составляет описание картинки (теги для портрета, сцены, статьи кодекса): своя, если задана, иначе модель учёта.
+// Отдельная нужна, когда модель учёта плохо знает теги или отказывается описывать откровенные сцены.
+export const artModelOf = (state) => (state.artModel && state.artModel.trim() ? state.artModel.trim() : toolModelOf(state));
 
 // Некоторые провайдеры/модели (особенно «думающие» варианты DeepSeek) не парсят
 // вызовы инструментов в структурированный tool_calls, и разметка утекает в текст.
