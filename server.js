@@ -25,7 +25,7 @@ import { companionIds, groupOf } from './src/relations.js';
 import { portraitTags, sceneTags, codexTags, codexStyle, cleanTags } from './src/art.js';
 import { DEFAULT_IMAGE_SETTINGS } from './src/images.js';
 import { fillField, writeBrief, splitArticle } from './src/fill.js';
-import { CODEX_KINDS, KIND_LABEL, KIND_FIELDS, findPeople } from './src/codex.js';
+import { CODEX_KINDS, KIND_LABEL, KIND_FIELDS, findPeople, withInherited } from './src/codex.js';
 import { listRequests, getRequest, clearRequests, diagCounts } from './src/diag.js';
 import { txt2img, pingSd } from './src/images.js';
 import { advanceStatuses, statusCatalogOf } from './src/statuses.js';
@@ -343,7 +343,7 @@ app.post('/api/lore/briefs', whileIdle, async (_req, res) => {
 });
 
 // ✂ Разобрать большую статью на отдельные: каждая разновидность — своя статья раздела «Магия и явления»
-// в группе этой статьи. Уже существующие названия не трогаем.
+// в группе этой статьи; статья бестиария — на особые варианты существа. Уже существующие названия не трогаем.
 app.post('/api/lore/:id/split', whileIdle, async (req, res) => {
   if (!apiKey()) return res.status(400).json({ error: 'Не задан OPENROUTER_API_KEY.' });
   try {
@@ -357,11 +357,13 @@ app.post('/api/lore/:id/split', whileIdle, async (req, res) => {
       if (flat(it.title) === flat(parent.title)) continue;
       if (getState().lorebook.some((x) => flat(x.title) === flat(it.title))) { skipped.push(it.title); continue; }
       const fields = { group: parent.title };
-      for (const k of ['effect', 'look', 'how']) if (it[k]) fields[k] = it[k];
-      await addLoreEntry({ title: it.title, kind: 'magic', brief: it.brief, fields, keys: [] });
+      // Статья бестиария разбирается на особые варианты существа, любая другая — на разновидности магии.
+      const kind = parent.kind === 'creature' ? 'creature' : 'magic';
+      for (const k of (kind === 'creature' ? ['look', 'habits', 'weaknesses'] : ['effect', 'look', 'how'])) if (it[k]) fields[k] = it[k];
+      await addLoreEntry({ title: it.title, kind, brief: it.brief, fields, keys: [] });
       created.push(it.title);
     }
-    if (created.length && parent.kind !== 'magic') await updateLoreEntry(parent.id, { kind: 'magic' });
+    if (created.length && parent.kind !== 'magic' && parent.kind !== 'creature') await updateLoreEntry(parent.id, { kind: 'magic' });
     res.json({ ...publicState(), split: { created, skipped } });
   } catch (e) { fail(res, e, 502); }
 });
@@ -468,7 +470,8 @@ app.post('/api/lore/:id/illustrate', async (req, res) => {
     let tags = cleanTags(req.body?.tags, 80);
     if (!tags) {
       if (!apiKey()) throw new Error('Не задан OPENROUTER_API_KEY — впиши теги вручную или добавь ключ.');
-      tags = await codexTags({ state, apiKey: apiKey(), entry: e });
+      // Особый вариант существа рисуется с учётом облика типового: незаполненное он берёт у общей статьи.
+      tags = await codexTags({ state, apiKey: apiKey(), entry: withInherited(state.lorebook, e) });
     }
     const style = codexStyle(state.imageStyle || DEFAULT_IMAGE_SETTINGS.imageStyle) + ', full body, detailed background';
     const { png, prompt, warnings } = await txt2img({ ...state, imageStyle: style }, tags, { seed: req.body?.seed });

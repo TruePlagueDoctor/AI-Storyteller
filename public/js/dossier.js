@@ -311,12 +311,23 @@ function renderCodexText(e, body, kind) {
     const sec = dSection(body, 'Подробно');
     for (const para of e.content.split(/\n{2,}|\n/).map((x) => x.trim()).filter(Boolean)) sec.appendChild(dEl('p', 'dossier-text para', para));
   }
-  // Группа магии: разновидности ссылками (общая статья «Лоно-руны» → все руны).
-  if (kind === 'magic') {
+  // Группа: разновидности магии или особые варианты существа — ссылками (общая статья → подстатьи).
+  if (kind === 'magic' || kind === 'creature') {
     const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
-    const kids = app.lorebook.filter((x) => x.id !== e.id && (x.kind || 'other') === 'magic' && x.fields && same(x.fields.group, e.title));
+    const kids = app.lorebook.filter((x) => x.id !== e.id && (x.kind || 'other') === kind && x.fields && same(x.fields.group, e.title));
+    // У особого варианта — ссылка на типового: незаполненное вариант берёт у него.
+    const parent = kind === 'creature' && e.fields && e.fields.group
+      ? app.lorebook.find((x) => x.id !== e.id && (x.kind || 'other') === 'creature' && same(x.title, e.fields.group)) : null;
+    if (parent) {
+      const sec = dSection(body, 'Особый вариант существа');
+      const row = dRow(`${parent.title} ↗`, null, 'Чего здесь не сказано — как у обычного: ' + (parent.brief || 'см. его статью'));
+      const nm = row.querySelector('.dossier-row-name');
+      nm.classList.add('link');
+      nm.addEventListener('click', () => openCodexView(parent.id));
+      sec.appendChild(row);
+    }
     if (kids.length) {
-      const sec = dSection(body, `Разновидности · ${kids.length}`);
+      const sec = dSection(body, `${kind === 'creature' ? 'Особые виды' : 'Разновидности'} · ${kids.length}`);
       for (const k of kids) {
         const row = dRow(`${k.title} ↗`, null, k.brief || (k.fields && k.fields.effect) || null);
         const nm = row.querySelector('.dossier-row-name');

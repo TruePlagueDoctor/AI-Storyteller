@@ -167,9 +167,17 @@ export async function writeBrief({ state, apiKey, entry }) {
 // модель учёта раскладывает текст на записи. Ничего не сохраняет — это делает вызывающий.
 export async function splitArticle({ state, apiKey, entry }) {
   const e = entry || {};
+  const creature = e.kind === 'creature';
   const source = [String(e.brief || '').trim(), ...Object.values(e.fields || {}).map(String), String(e.content || '').trim()].filter(Boolean).join('\n\n');
   if (source.trim().length < 20) throw new Error('В статье нечего разбирать — сначала впиши в неё список разновидностей.');
-  const system =
+  // Бестиарий: статья о монстре с перечнем его особых вариантов → подстатьи-варианты (только отличия от типового).
+  const creatureSystem =
+    'Ты разбираешь статью бестиария ролевой игры. В статье описано существо и его особые варианты (разновидности, подвиды, редкие формы). ' +
+    'Выдели каждый особый вариант отдельной записью. Бери только то, что написано в статье: ничего не придумывай и не дополняй.\n' +
+    'Верни ТОЛЬКО JSON-массив, без пояснений. Каждая запись: {"title": "название варианта как в статье", "brief": "чем он отличается от обычного, одной фразой до 160 знаков", ' +
+    '"look": "чем отличается облик", "habits": "чем отличаются повадки", "weaknesses": "слабости, если они свои"}. ' +
+    'Пиши только отличия от типового существа; чего в статье нет — оставь пустой строкой. Само типовое существо отдельной записью не выделяй.';
+  const system = creature ? creatureSystem :
     'Ты разбираешь статью кодекса ролевой игры. Разбей статью на отдельные записи — по одной на каждую разновидность, перечисленную в ней ' +
     '(виды рун, заклинаний, болезней, зелий и т. п.). Бери только то, что написано в статье: ничего не придумывай и не дополняй.\n' +
     'Верни ТОЛЬКО JSON-массив, без пояснений. Каждая запись: {"title": "название как в статье", "brief": "суть одной фразой, до 160 знаков", ' +
@@ -188,5 +196,6 @@ export async function splitArticle({ state, apiKey, entry }) {
   const seen = new Set();
   return items.filter((x) => x && typeof x === 'object').map((x) => ({
     title: clean(x.title, 80), brief: clean(x.brief, 260), effect: clean(x.effect, 600), look: clean(x.look, 400), how: clean(x.how, 400),
+    habits: clean(x.habits, 400), weaknesses: clean(x.weaknesses, 400),
   })).filter((x) => x.title && !seen.has(x.title.toLowerCase()) && seen.add(x.title.toLowerCase())).slice(0, 80);
 }
