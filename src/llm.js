@@ -99,6 +99,10 @@ const RELAXED = new Set(); // модели, которым параметры ш
 
 // Модели, которые не принимают tool_choice: "required" — им шлём auto.
 const AUTO_CHOICE = new Set();
+// Модели (или их провайдеры), которые не принимают инструменты вовсе: если инструменты необязательны
+// (бросок и кодекс у рассказчика), шлём запрос без них — игра идёт дальше, а не падает на каждом ходу.
+const NO_TOOLS = new Set();
+const TOOLS_UNSUPPORTED = /No endpoints found|support tool use|does not support tool|tools? (is|are) not supported|tool calling is not supported/i;
 
 // Запрос с цепочкой откатов: каждая несовместимость модели/провайдера с нашими
 // параметрами чинится одним повтором и запоминается, чтобы не платить дважды.
@@ -119,6 +123,7 @@ export async function callOpenRouter(opts) {
       ms: Date.now() - t0,
       model: o.model,
       fallback: o._fellBack ? true : undefined,
+      noTools: o.tools && o.toolsOptional && (o._noTools || NO_TOOLS.has(o.model)) ? true : undefined,
       in: u && Number.isFinite(u.prompt_tokens) ? u.prompt_tokens : undefined,
       cached: u && Number.isFinite(u.prompt_tokens_details?.cached_tokens) ? u.prompt_tokens_details.cached_tokens : undefined,
       out: u && Number.isFinite(u.completion_tokens) ? u.completion_tokens : undefined,
@@ -158,6 +163,10 @@ export async function callOpenRouter(opts) {
       if (o._relaxed && o.toolChoice === 'required' && /No endpoints found/i.test(msg)) {
         AUTO_CHOICE.add(o.model); retry(msg, 'мягкий режим + tool_choice auto', { toolChoice: 'auto' }); continue;
       }
+      // Инструменты необязательны, а модель их не принимает даже в мягком режиме — дальше без них.
+      if (o.tools && o.toolsOptional && o._relaxed && !o._noTools && TOOLS_UNSUPPORTED.test(msg)) {
+        NO_TOOLS.add(o.model); retry(msg, 'без инструментов: модель или провайдер их не принимает', { _noTools: true }); continue;
+      }
       note(null, msg);
       // Игроку — сначала понятное объяснение, потом сырой текст.
       const hint = explainError(msg);
@@ -172,9 +181,10 @@ export async function callOpenRouter(opts) {
 }
 
 export const DEFAULT_MAX_TOKENS = 16000;
-async function postOpenRouter({ model, messages, apiKey, tools, temperature, frequencyPenalty, presencePenalty, maxTokens, toolChoice = 'auto', noReasoning = false, _noReasoningFlag = false, _relaxed = false, capture = {}, purpose = 'запрос', timeoutMs = REQUEST_TIMEOUT_MS }) {
+async function postOpenRouter({ model, messages, apiKey, tools: toolsArg, toolsOptional = false, _noTools = false, temperature, frequencyPenalty, presencePenalty, maxTokens, toolChoice = 'auto', noReasoning = false, _noReasoningFlag = false, _relaxed = false, capture = {}, purpose = 'запрос', timeoutMs = REQUEST_TIMEOUT_MS }) {
   if (turnCancelled) throw new Error(CANCELLED);
   const relaxed = _relaxed || RELAXED.has(model);
+  const tools = toolsArg && toolsOptional && (_noTools || NO_TOOLS.has(model)) ? undefined : toolsArg;
   // usage.include — OpenRouter вернёт стоимость запроса.
   const body = { model, messages, usage: { include: true } };
   if (temperature !== undefined) body.temperature = temperature;
@@ -185,7 +195,8 @@ async function postOpenRouter({ model, messages, apiKey, tools, temperature, fre
   if (!relaxed && presencePenalty) body.presence_penalty = presencePenalty;
   if (tools) {
     body.tools = tools;
-    body.tool_choice = toolChoice === 'required' && !AUTO_CHOICE.has(model) ? 'required' : 'auto';
+    // 'none' — последний раунд рассказчика: инструменты объявлены (история с вызовами остаётся корректной), но вызывать нельзя.
+    body.tool_choice = toolChoice === 'none' ? 'none' : toolChoice === 'required' && !AUTO_CHOICE.has(model) ? 'required' : 'auto';
     // Маршрутизировать только на провайдеров, реально поддерживающих tools,
     // и отключить reasoning — «думающие» варианты чаще ломают вызовы.
     if (!relaxed) body.provider = { require_parameters: true };
