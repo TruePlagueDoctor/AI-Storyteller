@@ -54,7 +54,7 @@ function renderLore() {
       list.appendChild(h);
     }
     // Магия: разновидности одной группы (десятки рун) сворачиваются под названием группы.
-    const groupOfItem = (e) => (kind === 'magic' && e.fields && e.fields.group ? String(e.fields.group).trim() : '');
+    const groupOfItem = (e) => ((kind === 'magic' || kind === 'creature') && e.fields && e.fields.group ? String(e.fields.group).trim() : '');
     const boxes = new Map();
     for (const e of items) {
       const g = groupOfItem(e);
@@ -69,7 +69,7 @@ function renderLore() {
       }
       boxes.get(g.toLowerCase()).appendChild(renderLoreCard(e));
     }
-    for (const d of boxes.values()) d.querySelector('summary').textContent = `${d.dataset.group} · ${d.children.length - 1}`;
+    for (const d of boxes.values()) d.querySelector('summary').textContent = `${d.dataset.group} · ${kind === 'creature' ? 'особые виды: ' : ''}${d.children.length - 1}`;
   }
 }
 
@@ -174,7 +174,10 @@ async function splitLore() {
   if (!editingLoreId) return;
   const e = app.lorebook.find((x) => x.id === editingLoreId);
   if (!e) return;
-  if (!confirm(`Разобрать «${e.title}» на отдельные статьи?\n\nМодель учёта найдёт в тексте разновидности и заведёт по статье на каждую — в разделе «Магия и явления», в группе «${e.title}». Сама статья останется. Несохранённые правки в этом окне не учитываются — сначала сохрани.`)) return;
+  const what = (e.kind || 'other') === 'creature'
+    ? `Модель учёта найдёт в тексте особые варианты этого существа и заведёт по статье на каждый — в бестиарии, как особые виды «${e.title}». В них попадут только отличия от обычного.`
+    : `Модель учёта найдёт в тексте разновидности и заведёт по статье на каждую — в разделе «Магия и явления», в группе «${e.title}».`;
+  if (!confirm(`Разобрать «${e.title}» на отдельные статьи?\n\n${what} Сама статья останется. Несохранённые правки в этом окне не учитываются — сначала сохрани.`)) return;
   const btn = $('loreSplit');
   btn.disabled = true; const label = btn.textContent; btn.textContent = 'Разбираю…';
   try {

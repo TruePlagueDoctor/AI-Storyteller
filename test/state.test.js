@@ -233,6 +233,12 @@ test('кодекс: переименовали общую статью груп�
   const book = S.getState().lorebook;
   assert.equal(book.find((e) => e.id === kid.id).fields.group, 'Лоно-руны');
   assert.equal(book.find((e) => e.id === other.id).fields.group, 'Болезни', 'чужие группы не тронуты');
+  // То же для бестиария: переименовали типового монстра — особые варианты остались его вариантами.
+  const ghoul = await S.addLoreEntry({ title: 'Гуль', kind: 'creature' });
+  const queen = await S.addLoreEntry({ title: 'Гуль-матка', kind: 'creature', fields: { group: 'Гуль' } });
+  await S.updateLoreEntry(ghoul.id, { title: 'Трупоед' });
+  assert.equal(S.getState().lorebook.find((e) => e.id === queen.id).fields.group, 'Трупоед');
+  assert.equal(S.getState().lorebook.find((e) => e.id === kid.id).fields.group, 'Лоно-руны', 'группа магии с тем же ходом не затронута');
 });
 
 test('список заезженных оборотов: по умолчанию есть, правится, очищается и переживает перезагрузку', async () => {

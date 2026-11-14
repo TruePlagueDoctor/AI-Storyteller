@@ -541,3 +541,22 @@ test('неотправленную реплику можно исправить,
   assert.match(lastNarr(data).text, /отходишь на шаг/);
   assert.equal(data.log.filter((e) => e.role === 'player').at(-1).text, 'Отступаю от стражника');
 });
+
+test('бестиарий: большая статья о монстре разбирается на типового и особые варианты', async () => {
+  await api('POST', '/api/reset');
+  let { data } = await api('POST', '/api/lore', { title: 'Гуль', kind: 'creature', content: 'Гуль — трупоед. Бывает гуль-матка: раздутая, созывает стаю. Бывает гуль-плевун: плюётся слизью.' });
+  const parent = data.lorebook.find((e) => e.title === 'Гуль');
+  handlers.other = (body) => {
+    assert.match(body.messages[0].content, /особы[ех] вариант/);
+    return reply('[{"title":"Гуль-матка","brief":"Раздутая, созывает стаю.","look":"втрое крупнее","habits":"созывает стаю криком","weaknesses":""},{"title":"Гуль-плевун","brief":"Плюётся слизью.","look":"","habits":"плюётся","weaknesses":"холод"}]');
+  };
+  const res = await api('POST', `/api/lore/${parent.id}/split`);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.deepEqual(res.data.split.created, ['Гуль-матка', 'Гуль-плевун']);
+  const queen = res.data.lorebook.find((e) => e.title === 'Гуль-матка');
+  assert.equal(queen.kind, 'creature');
+  assert.deepEqual(queen.fields, { group: 'Гуль', look: 'втрое крупнее', habits: 'созывает стаю криком' });
+  assert.equal(res.data.lorebook.find((e) => e.id === parent.id).kind, 'creature', 'общая статья остаётся в бестиарии');
+  assert.ok(!res.data.statusEffective.some((d) => /Гуль/.test(d.name)));
+  handlers.other = defaultHandlers().other;
+});

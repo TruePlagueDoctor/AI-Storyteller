@@ -321,6 +321,24 @@ try {
     await stack.api('DELETE', `/api/lore/${parentId}`);
     step('кодекс «Магия и явления»: поля раздела, эффект состояния на листе');
 
+    // Бестиарий: особый вариант свёрнут под типовым монстром, в статье типового — ссылки на особые виды.
+    const typ = (await stack.api('POST', '/api/lore', { title: 'Волколак', kind: 'creature', brief: 'Оборотень.', fields: { danger: 3 } })).data.lorebook.find((e) => e.title === 'Волколак');
+    const varId = (await stack.api('POST', '/api/lore', { title: 'Волколак-вожак', kind: 'creature', brief: 'Ведёт стаю.', fields: { group: 'Волколак' } })).data.lorebook.find((e) => e.title === 'Волколак-вожак').id;
+    await page.reload();
+    await page.waitForSelector('.entry.narrator');
+    await page.click('#sheetToggle').catch(() => {});
+    await page.click('#tabLore');
+    if (!/Волколак · особые виды: 1/.test(await page.textContent('#panelLore .lore-group summary').catch(() => ''))) errors.push(`[${viewport.name}] особый вариант не свернулся под типовым`);
+    await page.evaluate((id) => openCodexView(id), typ.id);
+    await page.waitForSelector('#codexViewModal:not([hidden])');
+    if (!/Особые виды · 1[\s\S]*Волколак-вожак/.test(await page.textContent('#codexViewBody'))) errors.push(`[${viewport.name}] в статье типового нет особых видов`);
+    await page.evaluate((id) => openCodexView(id), varId);
+    if (!/Особый вариант существа[\s\S]*Волколак/.test(await page.textContent('#codexViewBody'))) errors.push(`[${viewport.name}] в статье варианта нет ссылки на типового`);
+    await page.keyboard.press('Escape');
+    await stack.api('DELETE', `/api/lore/${varId}`);
+    await stack.api('DELETE', `/api/lore/${typ.id}`);
+    step('бестиарий: особые варианты существа');
+
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     if (overflow > 1) errors.push(`[${viewport.name}] горизонтальная прокрутка: лишние ${overflow}px`);
     await page.click('#toast').catch(() => {}); // щелчок убирает уведомление

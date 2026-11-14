@@ -17,7 +17,8 @@ export const KIND_LABEL = { people: 'народ', creature: 'бестиарий'
 // Поля статьи по разделам: [ключ, подпись]. Опасность существа — число 1–5.
 export const KIND_FIELDS = {
   people: [['look', 'Облик'], ['lifespan', 'Век'], ['customs', 'Обычаи и нрав']],
-  creature: [['look', 'Облик'], ['habits', 'Повадки'], ['habitat', 'Где водится'], ['danger', 'Опасность'], ['weaknesses', 'Слабости'], ['rumors', 'Слухи']],
+  // group — особый вариант существа: название общей статьи о типовом монстре; незаполненное вариант берёт у него.
+  creature: [['group', 'Особый вариант существа (название общей статьи, например: Гуль)'], ['look', 'Облик'], ['habits', 'Повадки'], ['habitat', 'Где водится'], ['danger', 'Опасность'], ['weaknesses', 'Слабости'], ['rumors', 'Слухи']],
   faction: [['goal', 'Цель'], ['leader', 'Глава'], ['stance', 'Отношение к герою']],
   place: [['what', 'Что там'], ['ruler', 'Кто правит'], ['danger', 'Чем опасно']],
   // Магия и явления: заклинания, руны, проклятия, болезни, зелья. Название статьи = название состояния на листе;
@@ -157,7 +158,8 @@ export function selectCodex(state) {
   // Открывающая сцена: рассказчик ещё ничего не писал — пусть знает мир не только по названиям.
   if (isOpening(state)) {
     const order = { creature: 30, people: 25, faction: 20, place: 15, magic: 10 };
-    for (const e of book) if (order[e.kind]) pick(e, 'brief', order[e.kind], 'начало игры');
+    // Особые варианты существ в знакомство с миром не идут — только типовые.
+    for (const e of book) if (order[e.kind] && !(e.kind === 'creature' && creatureParent(book, e))) pick(e, 'brief', order[e.kind], 'начало игры');
   }
   return [...picked.values()].sort((a, b) => b.prio - a.prio);
 }
@@ -183,15 +185,27 @@ function renderBrief(e) {
 // В запросе статья ужата (бюджет кодекса); по подглядыванию рассказчик получает её целиком:
 // статья-список (виды рун и их эффекты) в 600 знаков не помещалась, и остальное модель додумывала.
 const FIELD_SHORT = { group: 'Входит в', mech_roll: 'К броскам', mech_tick: 'За ход', mech_turns: 'Длится ходов' };
-function renderFull(e, { fieldMax = 300, textMax = 600 } = {}) {
+const CREATURE_SHORT = { group: 'Особый вариант существа' };
+// parent — типовой монстр для особого варианта: его поля, не перекрытые вариантом, идут строкой «От обычного».
+function renderFull(e, { fieldMax = 300, textMax = 600, parent = null } = {}) {
   let s = renderBrief(e);
+  const short = e.kind === 'creature' ? CREATURE_SHORT : FIELD_SHORT;
+  const value = (k, v) => (k === 'danger' && e.kind === 'creature' ? `${v}/5` : cut(String(v), fieldMax));
   for (const [k, label] of KIND_FIELDS[e.kind]) {
     const v = e.fields && e.fields[k];
     if (v === undefined || v === '') continue;
-    s += `\n  ${FIELD_SHORT[k] || label}: ${k === 'danger' && e.kind === 'creature' ? `${v}/5` : cut(String(v), fieldMax)}`;
+    // У варианта в поле группы показываем название типового как в его статье, а не как набрал игрок.
+    s += `\n  ${short[k] || label}: ${k === 'group' && parent ? parent.title : value(k, v)}`;
   }
   const c = str(e.content);
   if (c && c !== e.brief) s += `\n  ${cut(c.replace(/\s+/g, ' '), textMax)}`;
+  if (parent && parent.id !== e.id) {
+    const own = e.fields || {};
+    const bits = KIND_FIELDS[e.kind].filter(([k]) => k !== 'group' && (own[k] === undefined || own[k] === '') && parent.fields && parent.fields[k] !== undefined && parent.fields[k] !== '')
+      .map(([k, label]) => `${label}: ${value(k, parent.fields[k])}`);
+    const pb = entryBrief(parent);
+    if (bits.length || pb) s += `\n  От обычного (${parent.title}): ${[pb, ...bits].filter(Boolean).join(' · ')}`;
+  }
   return s;
 }
 
@@ -201,20 +215,43 @@ export const INDEX_BUDGET_TOKENS = 250;
 // Группы магии: ключ — название общей статьи (поле «Входит в группу» у разновидностей). Общей статьи может и не быть.
 const groupKey = (e) => norm(e && e.fields && e.fields.group);
 const plural = (n, one, few, many) => { const m10 = n % 10, m100 = n % 100; return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many; };
-function magicGroups(book) {
+function magicGroups(book) { return groupsOf(book, 'magic'); }
+// Особые варианты существ: та же связка «общая статья ← подстатьи», что у магии, но в бестиарии.
+function creatureFamilies(book) { return groupsOf(book, 'creature'); }
+function groupsOf(book, kind) {
   const groups = new Map();
   for (const e of book) {
-    if (e.kind !== 'magic' || !groupKey(e) || groupKey(e) === norm(e.title)) continue;
+    if (e.kind !== kind || !groupKey(e) || groupKey(e) === norm(e.title)) continue;
     const k = groupKey(e);
     if (!groups.has(k)) groups.set(k, { title: str(e.fields.group), parent: null, items: [] });
     groups.get(k).items.push(e);
   }
   for (const [k, g] of groups) {
-    g.parent = book.find((e) => e.kind === 'magic' && norm(e.title) === k) || null;
+    g.parent = book.find((e) => e.kind === kind && norm(e.title) === k) || null;
     if (g.parent) g.title = g.parent.title;
   }
   return groups;
 }
+// Типовой монстр для особого варианта (или null).
+function creatureParent(book, e) {
+  if (!e || e.kind !== 'creature' || !groupKey(e) || groupKey(e) === norm(e.title)) return null;
+  return book.find((x) => x.kind === 'creature' && x.id !== e.id && norm(x.title) === groupKey(e)) || null;
+}
+// Вариант с подставленным от типового: что в нём не заполнено — берётся у общей статьи (опасность, слабости, место обитания…).
+export function withInherited(book, e) {
+  const list = (book || []).map((x) => (x.kind ? x : normalizeEntry(x)));
+  const parent = creatureParent(list, e);
+  if (!parent) return e;
+  const fields = { ...parent.fields, ...Object.fromEntries(Object.entries(e.fields || {}).filter(([, v]) => v !== undefined && v !== '')) };
+  return { ...e, fields };
+}
+// Особые виды типового монстра: названия (в запросе) или с выжимками (по запросу статьи).
+function variantList(g, withBriefs) {
+  if (!withBriefs) return `  Особые виды (редкость; обычно встречается типовой): ${g.items.map((e) => e.title).join(', ')} — подробности каждого в его статье`;
+  return `Особые виды (${g.items.length}) — редкость, обычно встречается типовой; выводи особый, когда это событие:\n` +
+    g.items.map((e) => { const b = entryBrief(e); return `• ${e.title}${b ? ' — ' + cut(b, 180) : ''}`; }).join('\n');
+}
+
 // Общее для группы — к статье разновидности: базовый эффект, который действует у любого вида.
 function groupCommon(groups, e) {
   const g = e.kind === 'magic' && groupKey(e) ? groups.get(groupKey(e)) : null;
@@ -278,11 +315,32 @@ export function narratorIndex(state) {
     }
     return out;
   };
-  const lists = kinds.map(([k, n]) => [n, k === 'magic' ? magicLabels() : book.filter((e) => e.kind === k).map(label)]).filter(([, l]) => l.length);
+  // Бестиарий: особые варианты не перечисляются — у типового указано их число; группа без общей статьи — одной строкой.
+  const families = creatureFamilies(book);
+  const creatureLabels = () => {
+    const out = []; const seenFam = new Set();
+    for (const e of book.filter((x) => x.kind === 'creature')) {
+      const fam = families.get(groupKey(e));
+      if (fam && groupKey(e) !== norm(e.title)) {            // это вариант
+        if (fam.parent || seenFam.has(fam)) continue;        // типовой скажет сам; сироты — один раз
+        seenFam.add(fam);
+        out.push(`${fam.title} (${fam.items.length} ${plural(fam.items.length, 'особый вид', 'особых вида', 'особых видов')})`);
+        continue;
+      }
+      const own = families.get(norm(e.title));
+      const base = label(e);
+      if (!own) { out.push(base); continue; }
+      const n = `${own.items.length} ${plural(own.items.length, 'особый вид', 'особых вида', 'особых видов')}`;
+      out.push(base.endsWith(')') ? base.slice(0, -1) + `; ${n})` : `${base} (${n})`);
+    }
+    return out;
+  };
+  const lists = kinds.map(([k, n]) => [n, k === 'magic' ? magicLabels() : k === 'creature' ? creatureLabels() : book.filter((e) => e.kind === k).map(label)]).filter(([, l]) => l.length);
   if (!lists.length) return '';
   const hasMagic = lists.some(([n]) => n === 'Магия и явления');
   const head = `Что есть в этом мире (когда сцене нужен зверь, чудовище, народ, фракция${hasMagic ? ', место, заклинание или иное явление' : ' или место'} — бери отсюда, а не выдумывай; новое — только если ничего не подходит). ` +
     'Чудовища — всегда конкретный вид отсюда, не безымянная «тварь». Выводишь в сцену того, о ком ниже нет подробностей, — сначала загляни в статью (codex_lookup), потом пиши' +
+    (families.size ? '. У существа с особыми видами обычно встречается типовой; особый вид — редкость: выводи его, когда это событие, и сначала прочитай статью существа' : '') +
     (hasMagic ? '. Магия и явления действуют строго по статье: не придумывай новых разновидностей и эффектов, пока подходит записанное' +
       (groups.size ? '; у группы указано число видов — прежде чем выбрать разновидность, прочитай статью группы (codex_lookup)' : '') : '') + ':';
   // По одному названию по кругу, пока влезает: так ни один раздел не съедает весь бюджет.
@@ -318,14 +376,17 @@ export function renderCodex(state) {
     parts.push(p); used += tok(p);
   }
   const dropped = [];
-  const groups = magicGroups((state.lorebook || []).filter((e) => e.enabled !== false).map((e) => (e.kind ? e : normalizeEntry(e))));
+  const bookAll = (state.lorebook || []).filter((e) => e.enabled !== false).map((e) => (e.kind ? e : normalizeEntry(e)));
+  const groups = magicGroups(bookAll);
+  const families = creatureFamilies(bookAll);
   const live = activeGroups(state, groups);
   for (const x of sel) {
     // Названия видов через запятую — только если полного списка этой группы в запросе не будет.
     const own = x.level === 'full' && x.entry.kind === 'magic' ? groups.get(norm(x.entry.title)) : null;
     const group = own && !live.includes(own) ? own : null;
-    const base = x.level === 'full' ? renderFull(x.entry) : null;
-    const withNames = base && group ? base + '\n' + groupList(group, false) : null;
+    const fam = x.level === 'full' && x.entry.kind === 'creature' ? families.get(norm(x.entry.title)) : null;
+    const base = x.level === 'full' ? renderFull(x.entry, { parent: creatureParent(bookAll, x.entry) }) : null;
+    const withNames = base && group ? base + '\n' + groupList(group, false) : base && fam ? base + '\n' + variantList(fam, false) : null;
     const full = withNames && used + tok(withNames) <= budget ? withNames : base; // названия видов — пока влезают
     const brief = renderBrief(x.entry);
     if (full && used + tok(full) <= budget) { parts.push(full); used += tok(full); shown.add(x.entry.id); }
@@ -396,12 +457,24 @@ export function lookupCodex(state, titles) {
   const book = (state.lorebook || []).filter((e) => e.enabled !== false).map((e) => (e.kind ? e : normalizeEntry(e)));
   const list = (Array.isArray(titles) ? titles : [titles]).map(str).filter(Boolean).slice(0, 3);
   const groups = magicGroups(book);
+  const families = creatureFamilies(book);
   const found = [];
   const out = [];
   for (const t of list) {
-    const e = findAny(book, t);
+    // Название группы без общей статьи важнее похожего названия одной из её разновидностей.
+    const exact = book.find((x) => norm(x.title) === norm(t));
+    const orphan = !exact && (families.get(norm(t)) || groups.get(norm(t)));
+    const e = orphan ? null : findAny(book, t);
     const group = groups.get(norm(e ? e.title : t));
-    if (e) { found.push(e.id); out.push(renderFull(e, { fieldMax: 1000, textMax: 4000 }) + (group ? '\n' + groupList(group, true) : '') + groupCommon(groups, e)); continue; }
+    const fam = families.get(norm(e ? e.title : t));
+    if (e) {
+      found.push(e.id);
+      out.push(renderFull(e, { fieldMax: 1000, textMax: 4000, parent: creatureParent(book, e) }) + (group ? '\n' + groupList(group, true) : '') +
+        (fam && e.kind === 'creature' ? '\n' + variantList(fam, true) : '') + groupCommon(groups, e));
+      continue;
+    }
+    // Особые виды без общей статьи о типовом: находятся по названию из поля.
+    if (fam) { out.push(`• ${fam.title} [${KIND_LABEL.creature}]\n` + variantList(fam, true)); continue; }
     // Группа без общей статьи: название есть только в поле разновидностей.
     if (group) { out.push(`• ${group.title} [${KIND_LABEL.magic}]\n` + groupList(group, true)); continue; }
     const similar = book.filter((x) => nameMatches(x, t)).map((x) => x.title).slice(0, 6);

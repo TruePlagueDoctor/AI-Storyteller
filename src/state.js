@@ -995,7 +995,8 @@ export async function updateLoreEntry(id, { title, keys, content, always, enable
   if (e.title !== before.title) {
     const flat = (t) => String(t || '').trim().toLowerCase().replace(/ё/g, 'е');
     for (const x of state.lorebook) {
-      if (x.id === e.id || x.kind !== 'magic' || !x.fields || flat(x.fields.group) !== flat(before.title)) continue;
+      // Группа — в пределах раздела: магия за магией, особые варианты существ за своим типовым.
+      if (x.id === e.id || x.kind !== e.kind || !['magic', 'creature'].includes(x.kind) || !x.fields || flat(x.fields.group) !== flat(before.title)) continue;
       const was = deepCopy(x);
       x.fields = { ...x.fields, group: e.title };
       noteManual('lore', x.id, was, x);
