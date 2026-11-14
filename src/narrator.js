@@ -11,7 +11,7 @@ import { statusRollMod, describeStatus, statusCatalogOf } from './statuses.js';
 import { recordRoll } from './progress.js';
 import { sceneBlock } from './scene.js';
 import { chronicleBlock } from './chronicle.js';
-import { callOpenRouter, stripToolMarkup, applyLeakedCalls } from './llm.js';
+import { callOpenRouter, stripToolMarkup, applyLeakedCalls, parseLeakedToolCalls } from './llm.js';
 import { journalEntry } from './journal.js';
 
 const MAX_TOOL_ROUNDS = 6;
@@ -203,7 +203,7 @@ function npcBlock(state) {
     'Говори за каждого его собственным голосом: следуй записанному характеру и манере речи, ' +
     'персонажи не должны звучать одинаково.\n' +
     'КАК ИГРАТЬ ПЕРСОНАЖА: у него есть своё желание — он двигает его в каждой сцене, ' +
-    'герой для него помеха или средство, а не центр мира. Если есть тайна — НЕ раскрывай её, ' +
+    'герой для него — один из многих, а не центр мира. Если есть тайна — НЕ раскрывай её, ' +
     'играй через оговорки, странные реакции, недомолвки; герой может заметить неладное, ' +
     'если присмотрится (это повод для проверки «Проницательность»). Изюминка — не упоминай, а показывай. ' +
     'Тайна — это то, что персонаж прячет ради СЕБЯ; она не повод утаивать имена, адреса и сведения, ' +
@@ -255,7 +255,7 @@ function npcBlock(state) {
     if (n.quirk) line += `\n  Изюминка: ${n.quirk}`;
     if (n.wants) line += `\n  ХОЧЕТ: ${n.wants}`;
     // «Играет сам»: тайну знает только он — рассказчику её не показываем, проболтаться нечем.
-    if (n.secret && n.self) line += '\n  СКРЫВАЕТ: что-то своё — что именно, знает только он сам. Не выдумывай и не раскрывай за него.';
+    if (n.secret && n.self) line += '\n  СКРЫВАЕТ: что-то своё — что именно, знает только сам персонаж. Не выдумывай и не раскрывай за него.';
     else if (n.secret) line += `\n  СКРЫВАЕТ (герой не знает): ${n.secret}`;
     if (n.links) line += `\n  Связи: ${n.links}`;
     if (n.history) line += `\n  Было с героем: ${tailItems(n.history, 4, 500)}`;
@@ -290,11 +290,23 @@ function voicesBlock(state) {
   s += voices.map((v) => {
     const bits = [];
     if (v.decision) bits.push(`делает: ${v.decision}`);
-    if (v.line) bits.push(`его слова: «${v.line}»`);
+    if (v.line) bits.push(`слова персонажа: «${v.line}»`);
     if (v.tell) bits.push(`снаружи заметно: ${v.tell}`);
     return `• ${v.name} (персонаж, не герой) — ${bits.join('; ')}`;
   }).join('\n');
   return s;
+}
+
+// Что рассказчику сказано об инструментах — ровно то, что ему на самом деле предложено в двухпроходном режиме.
+// Раньше здесь стояло «инструменты недоступны», хотя бросок и кодекс предлагались: послушная модель их не вызывала.
+function narratorToolsLine(state) {
+  const dice = state.diceEnabled !== false;
+  const look = hasCodex(state);
+  const how = ' Вызывай штатным вызовом инструмента до того, как писать сцену, а не текстом: никаких тегов invoke/function/tool_call и служебной разметки в рассказе. Других инструментов у тебя нет.';
+  if (dice && look) return 'У тебя два инструмента: roll_check — проверка, когда исход действия героя не предрешён, и codex_lookup — прочитать статью кодекса перед описанием.' + how;
+  if (dice) return 'У тебя один инструмент: roll_check — проверка, когда исход действия героя не предрешён.' + how;
+  if (look) return 'У тебя один инструмент: codex_lookup — прочитать статью кодекса перед описанием.' + how;
+  return 'Инструментов у тебя нет: не выводи вызовов инструментов, тегов invoke/function/tool_call и служебной разметки — только художественный текст истории.';
 }
 
 // Чёрный список оборотов игрока — в правила (постоянная часть запроса): лучше не написать, чем получить замечание.
@@ -326,7 +338,7 @@ export function composeStorySystem(state, opts = {}) {
 // «classic» — как было: всё одним системным сообщением (оно менялось каждый ход, и кэш не работал).
 export const promptLayoutOf = (state) => (state.promptLayout === 'classic' ? 'classic' : 'cache');
 
-const LATE_OPEN = '[СОСТОЯНИЕ МИРА НА ЭТОТ ХОД — служебные данные для рассказчика. Игрок этого не писал; не пересказывай и не цитируй их, а опирайся на них.]';
+const LATE_OPEN = '[СОСТОЯНИЕ МИРА НА ЭТОТ ХОД — служебные данные для рассказчика. Игрок этого не писал и не видит: опирайся на них, но сами данные (карточки, списки, пометки) в тексте истории не упоминай.]';
 const LATE_CLOSE = '[КОНЕЦ СЛУЖЕБНЫХ ДАННЫХ]';
 
 // Запрос по частям: system — постоянная часть, late — блок состояния для конца запроса ('' в прежней раскладке).
@@ -397,9 +409,7 @@ export function storyPromptSections(state, { withTools = false, layout = 'classi
   } else {
     tail +=
       `Веди только повествование. Опирайся на состояние ${cache ? 'мира (служебный блок перед ходом игрока)' : 'выше'}, но не описывай игровую механику ` +
-      'и не пиши служебных пометок — учёт инвентаря, статусов и характеристик ведёт отдельная система. ' +
-      'На этом шаге инструменты недоступны: НЕ выводи никаких вызовов инструментов, тегов invoke/function/tool_call ' +
-      'и любой служебной разметки — только художественный текст истории.';
+      'и не пиши служебных пометок: лист героя (инвентарь, состояния, характеристики) ведёт отдельная система — ты его не меняешь. ' + narratorToolsLine(state);
   }
   tail += '\n\n' + PEOPLE_RULES;
   tail += '\n\n' + (NARRATION_DIRECTIVES[state.narration] || NARRATION_DIRECTIVES.second_ty) +
@@ -450,11 +460,15 @@ export function storyPromptSections(state, { withTools = false, layout = 'classi
     'Не предлагай в конце варианты действий («1. … 2. …», «Что ты будешь делать?») — игрок решит сам.\n\n' +
     'ЖИВАЯ СЦЕНА (обязательно):\n' +
     '• Игрок заявляет НАМЕРЕНИЕ, исход решаешь ты. Если игрок пишет «это было несложно», «мне поверили», «провёл вечер как положено» — ' +
-    'это заявка, а не факт: разыграй её, а где исход не предрешён — запроси проверку. Перевоплощение, обман, убеждение среди ' +
-    'внимательных людей — всегда проверка.\n' +
-    '• Как игрок подошёл к делу — важно. Продуманная, подготовленная заявка (план, подходящее средство, удачный момент, веский довод) ' +
-    'даёт в проверке преимущество; небрежная или в спешке — помеху. Если после подготовки исход уже не вызывает сомнений — описывай успех без проверки. ' +
-    'Считается то, что герой действительно сделал или имеет, а не слова «у меня всё продумано».\n' +
+    (state.diceEnabled !== false
+      ? 'это заявка, а не факт: разыграй её, а где исход не предрешён — запроси проверку. Перевоплощение, обман, убеждение среди ' +
+        'внимательных людей — всегда проверка.\n' +
+        '• Как игрок подошёл к делу — важно. Продуманная, подготовленная заявка (план, подходящее средство, удачный момент, веский довод) ' +
+        'даёт в проверке преимущество; небрежная или в спешке — помеху. Если после подготовки исход уже не вызывает сомнений — описывай успех без проверки. ' +
+        'Считается то, что герой действительно сделал или имеет, а не слова «у меня всё продумано».\n'
+      // Кубики выключены: инструмента проверки нет — исход рассказчик решает сам, но по тем же соображениям.
+      : 'это заявка, а не факт: разыграй её, а где исход не предрешён — реши его сам, честно: по умениям героя, обстоятельствам и тому, кто ему противостоит. ' +
+        'Продуманная, подготовленная заявка должна удаваться чаще небрежной; считается то, что герой действительно сделал или имеет.\n') +
     '• Где есть люди — есть речь. В каждой сцене с персонажами хотя бы один живой обмен репликами прямой речью, с именами говорящих. ' +
     'Пересказ «он представился, они поговорили» вместо реплик — запрещён.\n' +
     '• «Провожу два часа», «осматриваюсь», «жду» — не повод для одной атмосферы: в таком отрезке что-то происходит — ' +
@@ -582,6 +596,10 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
       messages,
       apiKey,
       tools,
+      // Бросок и кодекс необязательны: модель без поддержки инструментов ведёт рассказ без них.
+      toolsOptional: !withTools,
+      // Последний раунд — писать сцену, а не вызывать инструмент ещё раз (иначе ход остался бы без текста).
+      toolChoice: tools && rounds > 1 && round === rounds - 1 ? 'none' : 'auto',
       temperature: state.temperature ?? 0.8,
       presencePenalty: state.repetitionPenalty ?? 0.3,
       frequencyPenalty: state.frequencyPenalty ?? 0,
@@ -602,22 +620,18 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
       if (clean) narrationParts.push(clean);
     }
 
-    const calls = msg.tool_calls || [];
-    if (!calls.length) {
-      if (withTools) applyLeakedCalls(msg.content, state);
-      break;
-    }
-
-    for (const call of calls) {
-      let args = {};
-      try { args = JSON.parse(call.function.arguments || '{}'); } catch { args = {}; }
+    // Исполнить вызов инструмента рассказчика: бросок, чтение кодекса или (в однопроходном режиме) запись в лист.
+    const runTool = (name, args) => {
       let result;
-      if (call.function.name === 'codex_lookup') {
+      if (name === 'codex_lookup') {
         const r = lookupCodex(state, args.titles ?? args.title);
         for (const id of r.found) codexSeen.add(id);
         lookups.push(...(Array.isArray(args.titles) ? args.titles : [args.titles ?? args.title]).filter(Boolean).map(String));
         result = r.text;
-      } else if (call.function.name === 'roll_check') {
+      } else if (name === 'roll_check' && !String(args.skill || '').trim()) {
+        // Пустые или битые аргументы: без этого выходил бессмысленный бросок «—» со средней сложностью.
+        result = 'Ошибка: не указано, что проверяем. Повтори вызов roll_check с skill (умение героя или навык по смыслу) и difficulty.';
+      } else if (name === 'roll_check') {
         const character = resolveCharacterFor(state, args.character);
         // Черты цели влияют на исход: труса легче запугать, упрямца труднее убедить.
         const tgt = String(args.target || '').trim().toLowerCase();
@@ -644,9 +658,29 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
         rolls.push(r);
         result = describeRoll(r);
       } else {
-        result = executeTool(call.function.name, args, state);
-        if (journal) journal.push(journalEntry(call.function.name, args, result, round + 1));
+        result = executeTool(name, args, state);
+        if (journal) journal.push(journalEntry(name, args, result, round + 1));
       }
+      return result;
+    };
+    const calls = msg.tool_calls || [];
+    if (!calls.length) {
+      if (withTools) { applyLeakedCalls(msg.content, state); break; }
+      // Вызов броска или кодекса «утёк» в текст (так бывает у DeepSeek): исполняем его, результат отдаём модели
+      // обычным сообщением и просим дописать сцену — иначе бросок пропал бы, а рассказ оборвался на разметке.
+      const leaked = parseLeakedToolCalls(msg.content).filter((c) => c.name === 'roll_check' || (c.name === 'codex_lookup' && lookup));
+      if (!leaked.length || round >= rounds - 1) break;
+      const results = leaked.map((c) => runTool(c.name, c.args));
+      messages[messages.length - 1] = { role: 'assistant', content: stripToolMarkup(msg.content) || '…' };
+      messages.push({ role: 'user', content: '[Результат инструмента — служебное, игрок этого не видит]\n' + results.join('\n') +
+        '\nПродолжи сцену по этому результату с того места, где остановился. Не повторяй написанное и не пиши служебной разметки.' });
+      continue;
+    }
+
+    for (const call of calls) {
+      let args = {};
+      try { args = JSON.parse(call.function.arguments || '{}'); } catch { args = {}; }
+      const result = runTool(call.function.name, args);
       const toolMsg = { role: 'tool', tool_call_id: call.id, content: result };
       messages.push(toolMsg);
       if (withTools) state.messages.push(toolMsg);

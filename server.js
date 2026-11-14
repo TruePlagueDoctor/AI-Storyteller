@@ -718,7 +718,7 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
   state._growth = [];
   try {
     clearPreSync();
-    const { narration, rolls, issues, truncated, sync, timing, lookups, voices, voiceNote, fallbackNote } = await runTurn({ state, apiKey: apiKey(), skipSync: ooc, beforeSync: capturePreSync });
+    const { narration, rolls, issues, truncated, sync, timing, lookups, voices, voiceNote, fallbackNote, toolsNote } = await runTurn({ state, apiKey: apiKey(), skipSync: ooc, beforeSync: capturePreSync });
     const growth = state._growth || [];
     if (ooc) {
       // Ответ на реплику вне истории не должен попасть в предысторию.
@@ -739,6 +739,7 @@ async function runPlayerTurn(state, res, { ooc = false, regen = false } = {}) {
       voices: voices || undefined,
       voiceNote: voiceNote || undefined,
       fallbackNote: fallbackNote || undefined,
+      toolsNote: toolsNote || undefined,
     };
     state.log.push(entry);
     bindPreSync(state.log.length - 1);

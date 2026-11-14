@@ -92,6 +92,7 @@ export async function runTurn({ state, apiKey, skipSync = false, beforeSync = nu
     sync: syncInfo,
     lookups: lookups && lookups.length ? lookups : undefined,
     voices: voices.length ? [...voices] : undefined,
+    toolsNote: narrTimer.some((t) => t.noTools) ? 'Модель рассказа не принимает инструменты — ход написан без бросков и кодекса. Для проверок выбери модель с поддержкой инструментов.' : undefined,
     fallbackNote: (() => { const f = narrTimer.find((t) => t.fallback); return f ? `Основная модель (${state.model}) отказалась из-за содержания — ответила запасная (${f.model}).` : undefined; })(),
     voiceNote: (voices.missed || []).length ? `${voices.missed.join(', ')} — не ответил вовремя, его сыграл рассказчик` : undefined,
     timing: { narrate: narrTimer, voices: voiceTimer.length ? voiceTimer : undefined },

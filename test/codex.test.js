@@ -147,7 +147,9 @@ test('оглавление: длинный кодекс укладывается
     ...Array.from({ length: 30 }, (_, i) => entry({ title: `Народ ${i}`, kind: 'people' })),
   ];
   const idx = narratorIndex(makeState({ lorebook: lore }));
-  assert.ok(idx.length / 3.2 <= INDEX_BUDGET_TOKENS, `размер ${Math.round(idx.length / 3.2)}`);
+  // Предел — на названия (строки после вступления); небольшой запас — на подписи разделов и «и ещё N».
+  const names = idx.split('\n').slice(1).join('\n');
+  assert.ok(names.length / 3.2 <= INDEX_BUDGET_TOKENS + 20, `размер ${Math.round(names.length / 3.2)}`);
   assert.match(idx, /Народы: Народ 0/);
   assert.match(idx, /\(и ещё \d+\)/);
   assert.equal(narratorIndex(makeState({ lorebook: [] })), '');
