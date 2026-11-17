@@ -38,7 +38,8 @@ try {
     if (viewport.name === 'mobile') await stack.api('POST', '/api/reset');
     const page = await browser.newPage({ viewport });
     let aborting = false; // прерванный ход честно отвечает 502 — браузер пишет это в консоль
-    page.on('console', (m) => { if (m.type() === 'error' && !(aborting && /502/.test(m.text()))) errors.push(`[${viewport.name}] console: ${m.text()}`); });
+    let duplicating = false; // «такое имя уже есть» — ответ 409, тоже попадает в консоль
+    page.on('console', (m) => { if (m.type() === 'error' && !(aborting && /502/.test(m.text())) && !(duplicating && /409/.test(m.text()))) errors.push(`[${viewport.name}] console: ${m.text()}`); });
     page.on('pageerror', (e) => errors.push(`[${viewport.name}] ${e.message}`));
     await page.goto(stack.base + '/');
     await page.waitForSelector('#startBtn', { state: 'visible' });
@@ -338,6 +339,29 @@ try {
     await stack.api('DELETE', `/api/lore/${varId}`);
     await stack.api('DELETE', `/api/lore/${typ.id}`);
     step('бестиарий: особые варианты существа');
+
+    // Библиотека персонажей: сохранить НПС из досье, взять его же копией, убрать из библиотеки.
+    const libNpc = (await stack.api('GET', '/api/state')).data.npcs[0];
+    await page.keyboard.press('Escape');
+    await page.evaluate((id) => openNpcView(id), libNpc.id);
+    await page.waitForSelector('#npcViewModal:not([hidden])');
+    await page.click('#npcViewToLibrary');
+    await page.waitForFunction(() => /библиотек/i.test(document.getElementById('toast').textContent));
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => openLibrary());
+    await page.waitForSelector('#libraryList .lib-card');
+    if (!(await page.textContent('#libraryList')).includes(libNpc.name)) errors.push(`[${viewport.name}] сохранённого персонажа нет в библиотеке`);
+    if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-library.png`), fullPage: false });
+    duplicating = true;
+    page.once('dialog', (d) => d.accept()); // такое имя уже есть в истории — «добавить ещё одного»
+    await page.click('#libraryList .lib-card [data-act="npc"]');
+    await page.waitForSelector('#libraryModal', { state: 'hidden' });
+    const afterImport = (await stack.api('GET', '/api/state')).data.npcs.filter((n) => n.name === libNpc.name);
+    if (afterImport.length !== 2) errors.push(`[${viewport.name}] копия из библиотеки не добавилась: ${afterImport.length}`);
+    for (const extra of afterImport.filter((n) => n.id !== libNpc.id)) await stack.api('DELETE', `/api/npcs/${extra.id}`);
+    for (const it of (await stack.api('GET', '/api/library')).data.items) await stack.api('DELETE', `/api/library/${it.id}`);
+    duplicating = false;
+    step('библиотека персонажей: сохранить, взять копией');
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     if (overflow > 1) errors.push(`[${viewport.name}] горизонтальная прокрутка: лишние ${overflow}px`);

@@ -32,6 +32,7 @@ import { advanceStatuses, statusCatalogOf } from './src/statuses.js';
 import { PUBLIC_DIR, AVATAR_DIR, SCENE_DIR } from './src/paths.js';
 import { makeBackup, listBackups, maybeDailyBackup, readBackupSlot } from './src/backup.js';
 import { accessConfig, accessGuard, lanAddresses } from './src/access.js';
+import { listLibrary, saveToLibrary, importFromLibrary, removeFromLibrary, exportEntry, uploadEntry } from './src/library.js';
 import { createServer } from 'node:http';
 
 const app = express();
@@ -232,6 +233,41 @@ app.post('/api/traits/merge', async (_req, res) => {
 
 app.put('/api/scene', async (req, res) => {
   try { await updateSceneManual(req.body || {}); ok(res); } catch (e) { fail(res, e, 400); }
+});
+
+// ---- Библиотека персонажей (общая для всех историй) ----
+const libFail = (res, e) => res.status(Number.isInteger(e.code) ? e.code : 500).json({ error: String(e.message || e), duplicate: e.duplicate || undefined });
+app.get('/api/library', async (_req, res) => {
+  try { res.json({ items: await listLibrary() }); } catch (e) { libFail(res, e); }
+});
+// Сохранить героя или НПС из текущей истории.
+app.post('/api/library', async (req, res) => {
+  try {
+    const { updated } = await saveToLibrary({ kind: req.body?.kind === 'hero' ? 'hero' : 'npc', id: String(req.body?.id || '') });
+    res.json({ items: await listLibrary(), updated });
+  } catch (e) { libFail(res, e); }
+});
+// Загрузить персонажа из файла. Стоит раньше маршрутов с :id.
+app.post('/api/library/upload', async (req, res) => {
+  try { const { updated } = await uploadEntry(req.body?.file); res.json({ items: await listLibrary(), updated }); } catch (e) { libFail(res, e); }
+});
+// Взять персонажа в текущую историю копией — героем или НПС.
+app.post('/api/library/:id/import', whileIdle, async (req, res) => {
+  try {
+    const imported = await importFromLibrary(req.params.id, { as: req.body?.as === 'hero' ? 'hero' : 'npc', separate: req.body?.separate === true, force: req.body?.force === true });
+    await saveState();
+    res.json({ ...publicState(), imported });
+  } catch (e) { libFail(res, e); }
+});
+app.get('/api/library/:id/export', async (req, res) => {
+  try {
+    const doc = await exportEntry(req.params.id);
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(doc.name)}.character.json`);
+    res.json(doc);
+  } catch (e) { libFail(res, e); }
+});
+app.delete('/api/library/:id', async (req, res) => {
+  try { await removeFromLibrary(req.params.id); res.json({ items: await listLibrary() }); } catch (e) { libFail(res, e); }
 });
 
 // ---- Диагностика запросов к модели ----

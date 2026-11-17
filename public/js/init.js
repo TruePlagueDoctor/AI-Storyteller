@@ -313,6 +313,7 @@ async function init() {
     installQol();
     installSearch();
     installDossiers();
+    installLibrary();
   } catch (err) {
     toast('Не удалось загрузить состояние: ' + err.message);
   }

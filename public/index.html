@@ -88,6 +88,7 @@
                   <button class="link-btn" id="dossierBtn" title="Досье героя">досье</button>
                   <button class="link-btn" id="charEditBtn" title="Изменить героя">изменить</button>
                   <button class="link-btn" id="charAddBtn" title="Добавить ещё одного героя в историю">＋ герой</button>
+                  <button class="link-btn" id="libraryHeroBtn" title="Библиотека персонажей: взять готового героя или НПС из другой истории">библиотека</button>
                 </div>
               </div>
             </div>
@@ -103,6 +104,7 @@
             <div class="sheet-title-row">
               <span class="panel-caption">Встреченные персонажи</span>
               <div class="sheet-head-actions">
+                <button class="icon-btn" id="libraryBtn" title="Библиотека персонажей: взять готового героя или НПС из другой истории">📚</button>
                 <button class="icon-btn" id="npcAddBtn" title="Добавить персонажа">＋</button>
               </div>
             </div>
@@ -589,6 +591,8 @@
       </div>
       <div class="modal-body" id="dossierBody"></div>
       <div class="modal-foot">
+        <button class="btn ghost" id="dossierToLibrary" title="Сохранить героя в библиотеку персонажей: описание, внешность, умения, портрет. Предметы и показатели остаются в этой истории.">📚 В библиотеку</button>
+        <span class="foot-spacer"></span>
         <button class="btn ghost" id="dossierEdit">Изменить</button>
       </div>
     </div>
@@ -603,8 +607,34 @@
       </div>
       <div class="modal-body" id="npcViewBody"></div>
       <div class="modal-foot">
+        <button class="btn ghost" id="npcViewToLibrary" title="Сохранить персонажа в библиотеку: кто это, внешность, характер, голос, желания, тайна, портрет. Отношение к герою и история с ним остаются в этой истории.">📚 В библиотеку</button>
         <span class="foot-spacer"></span>
         <button class="btn ghost" id="npcViewEdit">Изменить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Библиотека персонажей -->
+  <div class="modal-overlay" id="libraryModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="libraryTitle">
+      <div class="modal-head">
+        <h2 id="libraryTitle">Библиотека персонажей</h2>
+        <button class="btn ghost close" id="libraryClose">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <p class="field-note lore-hint">Общая для всех историй. В историю персонаж попадает копией и дальше живёт своей жизнью: отношение к герою, прошлое с ним и настроение у него в каждой истории свои.</p>
+        <div id="libraryList"></div>
+      </div>
+      <div class="modal-foot">
+        <label class="lib-mode" id="libraryHeroModeWrap">Героя брать
+          <select id="libraryHeroMode" class="trait-cat">
+            <option value="separate">со своей отдельной историей</option>
+            <option value="companion">спутником нынешнего героя</option>
+          </select>
+        </label>
+        <span class="foot-spacer"></span>
+        <input type="file" id="libraryFile" accept=".json,application/json" hidden />
+        <button class="btn ghost" id="libraryUpload" title="Добавить в библиотеку персонажа из файла, сохранённого кнопкой «⬇ Файл»">Загрузить из файла</button>
       </div>
     </div>
   </div>
@@ -1246,6 +1276,7 @@
   <script src="js/qol.js"></script>
   <script src="js/search.js"></script>
   <script src="js/dossier.js"></script>
+  <script src="js/library.js"></script>
   <script src="js/init.js"></script>
 </body>
 </html>
