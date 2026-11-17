@@ -2091,3 +2091,17 @@ body[data-daypart="day"] .chronicle { box-shadow: inset 0 0 90px rgba(200, 180, 
 
 /* ---- Бросок: за что преимущество или помеха ---- */
 .roll-edge { flex-basis: 100%; font-family: 'Spectral', serif; font-size: 12.5px; font-style: italic; color: var(--text-dim); }
+
+/* ---- Библиотека персонажей ---- */
+.lib-card { display: flex; gap: 14px; padding: 12px 13px; margin-bottom: 8px; background: var(--ink-3); border: 1px solid var(--edge-soft); border-left: 3px solid var(--brass-dim); border-radius: 8px; }
+.lib-face { flex: 0 0 64px; height: 96px; border-radius: 6px; border: 1px solid var(--edge); background: var(--ink) center/cover no-repeat; display: flex; align-items: center; justify-content: center; font-family: 'Cormorant Garamond', serif; font-size: 30px; color: var(--brass-dim); }
+.lib-face.has-image { color: transparent; }
+.lib-main { flex: 1; min-width: 0; }
+.lib-name { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; color: var(--text-warm); }
+.lib-sub { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+.lib-about { font-size: 14px; color: var(--text-dim); margin-top: 6px; line-height: 1.45; }
+.lib-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.lib-acts a.btn { text-decoration: none; }
+.lib-mode { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-dim); }
+.lib-mode[hidden] { display: none; }
+.lib-mode select { width: auto; max-width: 100%; }
