@@ -148,7 +148,10 @@ export function findQuestionIssues(state, narration) {
   const prev = viewMessages(state).filter((m) => m.role === 'assistant' && !m.ooc && typeof m.content === 'string').map((m) => m.content);
   if (prev.length && prev[prev.length - 1] === text) prev.pop(); // текущий ответ уже лежит в истории
   const fin = finalQuestion(text).trim();
-  if (fin && INVITE.test(fin)) {
+  // Приглашение может стоять и перед последним вопросом: «Что скажешь, Мита? Или всё ещё думаешь о своём?»
+  const before = fin ? sentencesOf(text.trim().slice(0, text.trim().lastIndexOf(fin))).slice(-1)[0] || '' : '';
+  const invite = fin && (INVITE.test(fin) || (/\?$/.test(before) && INVITE.test(before.replace(/^[—–\s«"“]+/, ''))));
+  if (invite) {
     issues.push({
       kind: 'question-invite',
       text: 'Ответ закончился вопросом персонажа, который ничего не выясняет, а просто передаёт ход игроку («что скажешь?», «а ты?», «идём?»). Не дописывай такой вопрос: закончи тем, что персонаж сделал или сказал по делу, — игрок ответит сам.',
