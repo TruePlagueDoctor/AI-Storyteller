@@ -95,6 +95,7 @@ export function applyLeakedCalls(content, state) {
 
 // Модели, которые отказались работать без reasoning, — чтобы не дёргать их дважды каждый ход.
 const REASONING_MANDATORY = new Set();
+export const REASONING_HEADROOM_TOKENS = 2000; // запас на размышления, когда их нельзя отключить
 const RELAXED = new Set(); // модели, которым параметры шлём по минимуму
 
 // Модели, которые не принимают tool_choice: "required" — им шлём auto.
@@ -191,6 +192,10 @@ async function postOpenRouter({ model, messages, apiKey, tools: toolsArg, toolsO
   // Потолок ответа. Без него зациклившаяся модель пишет до предела провайдера (131 тыс. токенов,
   // ~$0.9 и 10 минут за запрос — так было с тегами портрета). Свой потолок — у коротких служебных запросов.
   body.max_tokens = maxTokens || DEFAULT_MAX_TOKENS;
+  // Короткий служебный запрос рассчитан на ответ без «размышлений». Если модель не даёт их отключить,
+  // они съедают весь потолок (380 из 400 токенов — и от ответа остаётся обрывок): добавляем запас.
+  const wantsQuiet = !!toolsArg || noReasoning;
+  if (maxTokens && wantsQuiet && (relaxed || _noReasoningFlag || REASONING_MANDATORY.has(model))) body.max_tokens = maxTokens + REASONING_HEADROOM_TOKENS;
   if (!relaxed && frequencyPenalty) body.frequency_penalty = frequencyPenalty;
   if (!relaxed && presencePenalty) body.presence_penalty = presencePenalty;
   if (tools) {
