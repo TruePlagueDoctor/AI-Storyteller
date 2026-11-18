@@ -107,6 +107,22 @@ test('откаты: tool_choice required → auto, обязательный reas
   assert.equal(fake.requests[2].reasoning, undefined);
 });
 
+test('обязательный reasoning: короткому запросу добавляется запас на размышления, иначе ответ обрывается', async () => {
+  fake = installFakeFetch([
+    { status: 400, text: 'Reasoning is mandatory for this endpoint and cannot be disabled' },
+    reply('ok'), reply('ok'), reply('ok'),
+  ]);
+  const ask = (extra) => callOpenRouter({ purpose: 'тест', model: 'm/thinker', messages: [], apiKey: 'k', ...extra });
+  await ask({ noReasoning: true, maxTokens: 400 });
+  assert.equal(fake.requests[0].max_tokens, 400);
+  assert.ok(fake.requests[1].max_tokens >= 2400, 'повтор — с запасом');
+  await ask({ noReasoning: true, maxTokens: 400 });
+  assert.ok(fake.requests[2].max_tokens >= 2400, 'модель запомнена — запас сразу');
+  // Запрос, где размышления и не отключались, идёт со своим потолком.
+  await ask({ maxTokens: 400 });
+  assert.equal(fake.requests[3].max_tokens, 400);
+});
+
 test('понятная ошибка вместо сырой', async () => {
   fake = installFakeFetch([{ status: 402, text: 'Insufficient credits' }]);
   await assert.rejects(callOpenRouter({ purpose: 'тест', model: 'm/x', messages: [], apiKey: 'k' }), /закончились деньги.*Insufficient credits/);
