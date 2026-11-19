@@ -74,6 +74,7 @@ function emptyState() {
 
 export const DIFFICULTIES = ['story', 'normal', 'hard', 'brutal'];
 export const NARRATIONS = ['third', 'second_ty', 'second_vy'];
+export const PACES = ['calm', 'driven'];
 
 // Приводит любое загруженное состояние к актуальной схеме
 // (в т.ч. миграция со старого формата с общим массивом blocks).
@@ -140,6 +141,7 @@ function migrate(s) {
   if (typeof out.directorNote !== 'string') out.directorNote = '';
   if (!DIFFICULTIES.includes(out.difficulty)) out.difficulty = 'normal';
   if (!NARRATIONS.includes(out.narration)) out.narration = 'second_ty';
+  if (!PACES.includes(out.pace)) out.pace = 'calm';
   out.stateSync = out.stateSync !== false;
   if (typeof out.summary !== 'string') out.summary = '';
   out.autoSummarize = out.autoSummarize !== false;
@@ -1277,6 +1279,7 @@ export async function updateSettings({ systemPrompt, worldPrompt, scenarioPrompt
   if (typeof scenarioPrompt === 'string') state.scenarioPrompt = scenarioPrompt;
   if (DIFFICULTIES.includes(difficulty)) state.difficulty = difficulty;
   if (NARRATIONS.includes(narration)) state.narration = narration;
+  if (PACES.includes(rest.pace)) state.pace = rest.pace;
   if (typeof stateSync === 'boolean') state.stateSync = stateSync;
   if (typeof loreAutoWrite === 'boolean') state.loreAutoWrite = loreAutoWrite;
   if (rest.syncPromptStyle === 'legacy' || rest.syncPromptStyle === 'technical') state.syncPromptStyle = rest.syncPromptStyle;

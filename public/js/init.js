@@ -116,7 +116,7 @@ async function init() {
   $('settingsSave').addEventListener('click', saveSettings);
   $('settingsModal').addEventListener('click', (e) => { if (e.target.id === 'settingsModal') closeSettings(); });
 
-  for (const group of ['#difficultySeg', '#narrationSeg']) {
+  for (const group of ['#difficultySeg', '#narrationSeg', '#paceSeg']) {
     for (const seg of document.querySelectorAll(group + ' .seg')) {
       seg.addEventListener('click', () => {
         document.querySelectorAll(group + ' .seg').forEach((x) => x.classList.remove('active'));
