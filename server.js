@@ -98,6 +98,7 @@ function publicState() {
     imageClipSkip: s.imageClipSkip, faceFix: s.faceFix, sceneHires: s.sceneHires, handFix: s.handFix, portraitHires: s.portraitHires, imageScheduler: s.imageScheduler, hiresScale: s.hiresScale, hiresDenoise: s.hiresDenoise, hiresUpscaler: s.hiresUpscaler,
     difficulty: s.difficulty,
     narration: s.narration,
+    pace: s.pace === 'driven' ? 'driven' : 'calm',
     stateSync: s.stateSync,
     loreAutoWrite: s.loreAutoWrite,
     syncPromptStyle: s.syncPromptStyle || 'technical',

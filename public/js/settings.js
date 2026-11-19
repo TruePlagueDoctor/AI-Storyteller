@@ -152,6 +152,9 @@ async function openSettings() {
     for (const seg of document.querySelectorAll('#difficultySeg .seg')) {
       seg.classList.toggle('active', seg.dataset.value === (s.difficulty || 'normal'));
     }
+    for (const seg of document.querySelectorAll('#paceSeg .seg')) {
+      seg.classList.toggle('active', seg.dataset.value === (s.pace === 'driven' ? 'driven' : 'calm'));
+    }
     for (const seg of document.querySelectorAll('#narrationSeg .seg')) {
       seg.classList.toggle('active', seg.dataset.value === (s.narration || 'second_ty'));
     }
@@ -234,6 +237,7 @@ async function saveSettings() {
         hiresUpscaler: $('hiresUpscalerInput').value,
         difficulty,
         narration,
+        pace: document.querySelector('#paceSeg .seg.active')?.dataset.value || 'calm',
         stateSync: $('stateSyncInput').checked,
         loreAutoWrite: $('loreAutoWriteInput').checked,
         syncPromptStyle: $('syncPromptStyleInput').value,

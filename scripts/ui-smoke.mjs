@@ -191,6 +191,19 @@ try {
     if (!cliches.length) errors.push(`[${viewport.name}] список заезженных оборотов пуст по умолчанию`);
     if (!(await page.$('#clicheInput'))) errors.push(`[${viewport.name}] в настройках нет поля заезженных оборотов`);
 
+    // Темп истории: по умолчанию спокойный, переключается и сохраняется.
+    await page.click('#settingsBtn');
+    await page.waitForSelector('#settingsModal:not([hidden])');
+    await page.click('.settings-nav button[data-target="set-story"]').catch(() => {});
+    if (!(await page.$('#paceSeg .seg.active[data-value="calm"]'))) errors.push(`[${viewport.name}] темп по умолчанию не «спокойный»`);
+    await page.click('#paceSeg .seg[data-value="driven"]');
+    if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-pace.png`), fullPage: false });
+    await page.click('#settingsSave');
+    await page.waitForSelector('#settingsModal', { state: 'hidden' });
+    if ((await stack.api('GET', '/api/state')).data.pace !== 'driven') errors.push(`[${viewport.name}] темп не сохранился`);
+    await stack.api('POST', '/api/settings', { pace: 'calm' });
+    step('темп истории: спокойный по умолчанию, переключается');
+
     // Правки v59: «Заново» ушло из шапки в список историй; на телефоне место и время — строкой над лентой.
     if (await page.$('#resetBtn')) errors.push(`[${viewport.name}] кнопка «Заново» осталась в шапке`);
     if (!(await page.$('#slotList .slot.active [data-act="reset"]'))) errors.push(`[${viewport.name}] в списке историй нет «начать заново» у текущей`);
