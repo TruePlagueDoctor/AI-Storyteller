@@ -45,7 +45,7 @@ test('реальный сервер: включение по истории, о�
     assert.equal(data.scaleEnabled, false);
     await request('POST', '/api/settings', { scaleEnabled: true });
     await request('POST', `/api/characters/${hid}/blocks`, { type: 'item', name: 'Домкрат', power: { kind: 'сила', tier: 1, charges: 1 } });
-    const args = { approach: 'сила', source: 'Домкрат', target: 'Машина у склада', obstacle_tier: 1, skill: 'Ремесло', difficulty: 'обычно' };
+    const args = { approach: 'сила', source: 'Домкрат', target: 'Машина у склада', obstacle_tier: 1 };
     let fail = true;
     s.handlers.narrator = (body) => {
       if (!body.messages.some((m) => m.role === 'tool')) {

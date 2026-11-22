@@ -594,9 +594,9 @@ function rollToolFor(state) {
     props.talent = { type: 'string', description: 'Особый талант героя, если действие — именно его применение (название точно из списка): ' +
       gifts.join('; ') + '. skill при этом всё равно укажи — ближайший по смыслу.' };
   }
-  const description = state.scaleEnabled ? f.description + ' Для физических возможностей вызови до описания даже очевидного исхода. Укажи подход и точную цель, в том числе имя преграды. Для обычного навыка укажи обычное.' : f.description;
+  const description = state.scaleEnabled ? f.description + ' Для физических возможностей вызови до описания даже очевидного исхода. Укажи подход и точную цель, в том числе имя преграды. Для обычного навыка укажи обычное. skill и difficulty нужны только для броска.' : f.description;
   return { ...ROLL_TOOL, function: { ...f, description, parameters: { ...f.parameters, properties: props,
-    required: state.scaleEnabled ? [...f.parameters.required, 'approach'] : f.parameters.required } } };
+    required: state.scaleEnabled ? ['approach'] : f.parameters.required } } };
 }
 
 export async function narrate(state, apiKey, withTools, { allowDice = true, journal = null, timer = null } = {}) {
@@ -669,7 +669,7 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
         result = r.text;
       } else if (name === 'roll_check' && !dice) {
         result = 'Проверки отключены.';
-      } else if (name === 'roll_check' && !String(args.skill || '').trim()) {
+      } else if (name === 'roll_check' && (!state.scaleEnabled || !args.approach || args.approach === 'обычное') && !String(args.skill || '').trim()) {
         // Пустые или битые аргументы: без этого выходил бессмысленный бросок «—» со средней сложностью.
         result = `Ошибка: не указано, что проверяем. Повтори вызов roll_check с skill (навык из списка: ${catalogOf(state).map((x) => x.name).join(', ')}) и difficulty.`;
       } else if (name === 'roll_check') {
@@ -704,7 +704,12 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
           if (!partyOf(state).includes(character) || (actor && !names.some((s) => s.toLowerCase() === actor))) {
             return 'Ошибка: укажи героя текущей сцены.';
           }
-          try { r = resolveScaled(scaleWorld, character, args, applications, roll); }
+          try {
+            r = resolveScaled(scaleWorld, character, args, applications, () => {
+              if (!String(args.skill || '').trim() || !args.difficulty) throw new RangeError('Для ставки укажи skill и difficulty.');
+              return roll();
+            });
+          }
           catch (err) { if (err instanceof RangeError) return 'Ошибка: ' + err.message; throw err; }
         } else {
           if (state.scaleEnabled && !args.approach) return 'Ошибка: укажи approach (обычное для стандартной проверки).';
