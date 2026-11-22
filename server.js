@@ -160,7 +160,7 @@ app.get('/api/prompt/breakdown', (_req, res) => {
 });
 
 app.post('/api/settings', async (req, res) => {
-  try { await updateSettings(req.body || {}); ok(res); } catch (e) { fail(res, e); }
+  try { await updateSettings(req.body || {}); ok(res); } catch (e) { fail(res, e, e instanceof RangeError ? 400 : 500); }
 });
 
 app.post('/api/reset', whileIdle, async (_req, res) => {

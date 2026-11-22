@@ -275,12 +275,17 @@ try {
     const heroBefore = (await stack.api('GET', '/api/state')).data.activeCharacterId;
     await page.click('#addCharBtn').catch(() => page.evaluate(() => openCharModal(null)));
     await page.waitForSelector('#charModal:not([hidden])');
+    const initialAttrs = await page.locator('#charAttrs input').evaluateAll((xs) => xs.map((x) => x.value));
+    if (initialAttrs.join(',') !== '3,3,3,3,3') errors.push(`[${viewport.name}] характеристики новой героини: ${initialAttrs}`);
+    await page.fill('#charAttrs input[data-attr="dex"]', '5');
     await page.fill('#charName', 'Мира');
     if (await page.isHidden('#charSeparateField')) errors.push(`[${viewport.name}] у нового героя нет выбора «своя отдельная история»`);
     await page.check('#charSeparate');
     await page.click('#charSave');
     await page.waitForSelector('#charModal', { state: 'hidden' });
     await page.waitForSelector('#emptyLog');
+    const newAttrs = await page.evaluate(() => activeChar().attrs);
+    if (newAttrs.dex !== 5 || ['str', 'int', 'wil', 'cha'].some((id) => newAttrs[id] !== 3)) errors.push(`[${viewport.name}] сохранены неверные характеристики новой героини`);
     if (!/У этого героя история ещё не начата/.test(await page.textContent('#emptyLog'))) errors.push(`[${viewport.name}] у новой героини не пустая лента`);
     if (!/лента: Мира/.test(await page.textContent('#scopeBtn'))) errors.push(`[${viewport.name}] нет кнопки ленты героя`);
     stack.handlers.narrator = () => reply('Мира сходит с корабля в порту. Над водой кричат чайки.');

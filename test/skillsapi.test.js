@@ -80,3 +80,66 @@ test('список навыков в настройках: переименов�
   assert.equal(r.status >= 400, true);
   assert.match(r.data.error, /уже есть на листе/);
 });
+
+test('отклонённая правка сохраняет исходные настройки и блоки', async () => {
+  const { data } = await api('GET', '/api/state');
+  const path = `/api/characters/${data.activeCharacterId}/blocks`;
+  const added = await api('POST', path, { type: 'ability', name: 'Езда', value: 'ученик' });
+  assert.equal(added.status, 200);
+  const before = heroOf(added.data).blocks;
+  const riding = before.find((b) => b.skill === 'riding');
+  const target = before.find((b) => b.skill && b.id !== riding.id);
+  const edit = await api('POST', path, { ...riding, name: target.name });
+  assert.equal(edit.status, 400);
+  const settings = await api('POST', '/api/settings', { worldPrompt: 'не сохранять', difficulty: 'brutal', skillCatalogText: 'ошибка' });
+  assert.equal(settings.status, 400);
+  const after = (await api('GET', '/api/state')).data;
+  assert.deepEqual(heroOf(after).blocks, before);
+  for (const k of ['worldPrompt', 'difficulty', 'skillCatalog']) assert.deepEqual(after[k], data[k]);
+});
+
+test('смена жанра, переигровка и восстановление копии сохраняют прогресс', async () => {
+  const fresh = await api('POST', '/api/slots', { name: 'Проверка каталога' });
+  const preset = (id) => fresh.data.skillPresets.find((p) => p.id === id).text;
+  const set = async (text) => {
+    const r = await api('POST', '/api/settings', { skillCatalogText: text });
+    assert.equal(r.status, 200);
+    return r.data;
+  };
+  const turn = async () => {
+    const r = await api('POST', '/api/action', { text: 'Учусь у наставника' });
+    assert.equal(r.status, 200);
+    return r.data;
+  };
+  handlers.narrator = () => reply('Всю первую половину утра ты разучиваешь заклинание вместе с наставником.');
+  const lesson = (skill) => () => reply('', [call('practice', { skill, kind: 'lesson' })]);
+  await set(preset('fantasy'));
+  handlers.sync = lesson('Магия');
+  assert.deepEqual(heroOf(await turn()).skillXp, { 'магия': 2 });
+  handlers.sync = () => reply('', [call('nothing', {})]);
+  await turn();
+  const renamed = preset('fantasy').replace('Магия —', 'Колдовство —');
+  await set(renamed);
+  handlers.sync = lesson('Колдовство');
+  const replay = await api('POST', '/api/regenerate');
+  assert.equal(replay.status, 200);
+  const h = heroOf(replay.data);
+  assert.equal(h.blocks.find((b) => b.skill === 'magic').name, 'Колдовство');
+  assert.deepEqual(h.skillXp, { 'колдовство': 2 });
+  assert.deepEqual(h.practiceDays, { 'колдовство': 1 });
+  await set(renamed.replace('Колдовство —', 'Магия —'));
+  const modern = await set(preset('modern'));
+  const saved = heroOf(modern);
+  assert.ok(saved.blocks.find((b) => b.name === 'Магия' && b.talent));
+  assert.ok(!saved.blocks.some((b) => b.name === 'Техника'));
+  assert.deepEqual(saved.skillXp, { 'магия': 2 });
+  const backup = (await api('POST', '/api/backups')).data.backup;
+  const slotId = (await api('GET', '/api/slots')).data.activeSlotId;
+  const restored = await api('POST', `/api/backups/${backup.id}/restore`, { slotId });
+  assert.equal(restored.status, 200);
+  assert.deepEqual(restored.data.skillCatalog, modern.skillCatalog);
+  for (const k of ['attrs', 'blocks', 'skillXp', 'practiceDays']) assert.deepEqual(heroOf(restored.data)[k], saved[k]);
+  const back = heroOf(await set(preset('fantasy')));
+  assert.equal(back.blocks.find((b) => b.skill === 'magic').name, 'Магия');
+  assert.deepEqual(back.skillXp, { 'магия': 2 });
+});

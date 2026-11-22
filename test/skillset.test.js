@@ -118,3 +118,19 @@ test('промты: учётчик видит список навыков и п�
   H(st).attrs = { str: 5, dex: 3, int: 3, wil: 2, cha: 3 };
   assert.match(composeStorySystem(st), /Характеристики \(1–6, 3 — обычный человек\): Сила 5, Ловкость 3, Ум 3, Воля 2, Обаяние 3/);
 });
+
+test('миграция дублей хранит закреплённую запись, опыт и день тренировки в обоих порядках', () => {
+  for (const reverse of [false, true]) {
+    const blocks = [
+      { id: 'auto', name: 'Слежка', value: 'мастер' },
+      { id: 'manual', name: 'Скрытность', value: 'ученик', description: 'Моя запись', locked: true },
+    ];
+    const c = hero(reverse ? blocks.reverse() : blocks, { skillXp: { 'слежка': 5 }, practiceDays: { 'слежка': 6, 'скрытность': 4 } });
+    adoptSkills(c, cat);
+    assert.equal(c.blocks.length, 1);
+    assert.deepEqual(c.blocks[0], { ...blocks.find((b) => b.locked), type: 'ability', skill: 'stealth' });
+    assert.deepEqual(c.skillXp, { 'скрытность': 5 });
+    assert.deepEqual(c.practiceDays, { 'скрытность': 6 });
+    assert.equal(adoptSkills(c, cat), false);
+  }
+});
