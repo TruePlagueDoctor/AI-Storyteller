@@ -246,30 +246,71 @@ function renderDossier() {
     }
   }
 
-  // Умения: уровень делениями и опыт до следующего.
-  const ab = section('Умения', 'var(--relation)');
-  const abilities = ofType('ability');
-  if (abilities.length) {
-    for (const a of abilities) {
-      const lvl = SKILL_LEVELS.indexOf(String(a.value || '').trim().toLowerCase());
-      const r = row(a.name, null, a.description);
-      const top = r.firstChild;
-      const pips = el('span', 'skill-pips');
-      if (lvl >= 0) {
-        for (let i = 0; i < SKILL_LEVELS.length; i++) pips.appendChild(el('i', i <= lvl ? 'on' : ''));
-        pips.title = a.value;
-      }
-      top.appendChild(el('span', 'dossier-row-value', a.value || ''));
-      top.appendChild(pips);
-      const next = lvl >= 0 ? SKILL_LEVELS[lvl + 1] : null;
-      if (next) {
-        const key = a.name.trim().toLowerCase();
-        const xp = Math.max((c.skillXp || {})[key] || 0, SKILL_NEED[SKILL_LEVELS[lvl]] || 0);
-        r.appendChild(el('div', 'skill-xp', `опыт ${xp} из ${SKILL_NEED[next]} до «${next}» — растёт от удачных проверок и тренировок`));
-      }
-      ab.appendChild(r);
+  // Характеристики: значение и модификатор к броску.
+  const at = section('Характеристики');
+  const atGrid = el('div', 'attr-grid');
+  for (const a of (app.attributes || [])) {
+    const v = heroAttr(c, a.id);
+    const cell = el('div', 'attr-cell' + (v > 3 ? ' high' : v < 3 ? ' low' : ''));
+    cell.title = `${a.name}: ${a.hint}. К броску: ${v - 3 > 0 ? '+' : v - 3 < 0 ? '−' : ''}${Math.abs(v - 3)}`;
+    cell.appendChild(el('span', 'attr-name', a.name));
+    cell.appendChild(el('span', 'attr-value', String(v)));
+    cell.appendChild(el('span', 'attr-mod', v === 3 ? '±0' : (v > 3 ? '+' : '−') + Math.abs(v - 3)));
+    atGrid.appendChild(cell);
+  }
+  at.appendChild(atGrid);
+  if (!c.attrsSet) at.appendChild(el('div', 'skill-xp', 'пока у всех 3 — обычный человек; учётчик расставит по описанию героя на ближайшем ходу, либо задай сам в редакторе героя'));
+
+  // Умение: уровень делениями и опыт до следующего.
+  const abilityRow = (name, a, desc) => {
+    const lvl = a ? SKILL_LEVELS.indexOf(String(a.value || '').trim().toLowerCase()) : 0;
+    const r = row(name, null, desc);
+    const top = r.firstChild;
+    const pips = el('span', 'skill-pips');
+    if (lvl >= 0) {
+      for (let i = 0; i < SKILL_LEVELS.length; i++) pips.appendChild(el('i', i <= lvl ? 'on' : ''));
+      pips.title = a ? a.value : 'новичок';
     }
-  } else empty(ab, 'Пока никаких. Появятся, когда герой чему-то научится.');
+    top.appendChild(el('span', 'dossier-row-value', a ? (a.value || '') : 'новичок'));
+    top.appendChild(pips);
+    const next = lvl >= 0 ? SKILL_LEVELS[lvl + 1] : null;
+    const key = (a ? a.name : name).trim().toLowerCase();
+    const got = (c.skillXp || {})[key] || 0;
+    if (next && (a || got)) {
+      const xp = Math.max(got, SKILL_NEED[SKILL_LEVELS[lvl]] || 0);
+      r.appendChild(el('div', 'skill-xp', `опыт ${xp} из ${SKILL_NEED[next]} до «${next}»`));
+    }
+    return r;
+  };
+  // Навыки: весь список истории. Чем герой владеет — сверху, остальное («новичок») — приглушённо.
+  const abilities = ofType('ability');
+  const sk = section('Навыки', 'var(--relation)');
+  const catalog = app.skillCatalog || [];
+  const attrShort = (id) => ((app.attributes || []).find((x) => x.id === id) || {}).name || '';
+  const owned = catalog.map((d) => ({ d, a: abilities.find((x) => x.skill === d.id) || null }));
+  const rank = (x) => (x.a ? SKILL_LEVELS.indexOf(String(x.a.value || '').trim().toLowerCase()) : 0);
+  for (const x of owned.filter((o) => rank(o) > 0).sort((p, q) => rank(q) - rank(p))) {
+    sk.appendChild(abilityRow(x.d.name, x.a, `${attrShort(x.d.attr)}${x.d.alt ? ' или ' + attrShort(x.d.alt) : ''} · ${x.d.desc || ''}${x.a.description ? ' · ' + x.a.description : ''}`));
+  }
+  const rest = owned.filter((o) => rank(o) <= 0);
+  if (rest.length) {
+    const box = el('div', 'skill-rest');
+    box.appendChild(el('span', 'skill-rest-label', 'новичок: '));
+    rest.forEach((x, i) => {
+      const t = el('span', 'skill-rest-item', x.d.name + (i < rest.length - 1 ? ', ' : ''));
+      const got = (c.skillXp || {})[x.d.name.toLowerCase()] || 0;
+      t.title = `${attrShort(x.d.attr)}${x.d.alt ? ' или ' + attrShort(x.d.alt) : ''} · ${x.d.desc || ''}${got ? ` · опыт ${got} из ${SKILL_NEED[SKILL_LEVELS[1]]}` : ''}`;
+      box.appendChild(t);
+    });
+    sk.appendChild(box);
+  }
+  sk.appendChild(el('div', 'skill-xp', 'растут от удачных проверок и тренировок; список навыков — в настройках истории'));
+  // Особые таланты — то, чего нет в списке навыков.
+  const gifts = abilities.filter((x) => !x.skill);
+  if (gifts.length) {
+    const gs = section('Особые таланты', 'var(--relation)');
+    for (const g of gifts) gs.appendChild(abilityRow(g.name, g, g.description));
+  }
 
   // Снаряжение
   const items = ofType('item');

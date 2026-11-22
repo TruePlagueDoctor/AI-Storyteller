@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { normalizeScene, advanceClock, parseTimeHint, clockLabel, dayPart } from './scene.js';
 import { findSimilar, EVENT_TYPES, OUTCOMES, typeLabel, outcomeLabel } from './chronicle.js';
 import { matchAbility, COMPETENCE } from './skills.js';
+import { adoptSkills, catalogOf, matchSkill, skillBlock, talentsOf, ATTRIBUTES, ATTR_MIN, ATTR_MAX, ATTR_BUDGET, attrId, attrValue, normalizeAttrs, attrsLine } from './skillset.js';
 import { addXp, nextLevel, LEVELS } from './progress.js';
 import { normalizeEntry } from './codex.js';
 
@@ -23,7 +24,7 @@ export const ROLL_TOOL = {
     parameters: {
       type: 'object',
       properties: {
-        skill: { type: 'string', description: 'Что проверяем: название умения героя или навык по смыслу ("Скрытность", "Убеждение").' },
+        skill: { type: 'string', description: 'Навык из списка навыков истории, под который подходит действие.' },
         difficulty: { type: 'string', enum: ['легко', 'обычно', 'сложно', 'очень сложно'], description: 'Насколько это трудно в данных обстоятельствах.' },
         character: { type: 'string', description: 'Имя героя. Без него — активный.' },
         target: { type: 'string', description: 'Имя НПС, против которого проверка (убеждение, обман, запугивание, бой). Его черты и умелость повлияют на исход.' },
@@ -42,7 +43,7 @@ const typeEnum = {
   enum: BLOCK_TYPES,
   description:
     'status — состояние, item — предмет, stat — показатель (value+max), ' +
-    'ability — умение (value = уровень), relationship — отношения с группой.',
+    'ability — навык из списка навыков истории (name точно из списка, value = уровень) или особый талант героя вне списка, relationship — отношения с группой.',
 };
 
 const characterParam = { type: 'string', description: 'Имя героя. Без него — активный.' };
@@ -212,12 +213,12 @@ export const TOOL_DEFINITIONS = [
     function: {
       name: 'practice',
       description:
-        'Опыт умению героя за обучение: тренировался, упражнялся, учился у наставника, долго практиковал ремесло. ' +
-        'Только для умения, которое уже есть в листе. Применение умения в деле — не практика (опыт за это даёт бросок).',
+        'Опыт навыку героя за обучение: тренировался, упражнялся, учился у наставника, долго практиковал ремесло. ' +
+        'skill — навык из списка навыков истории или особый талант с листа. Применение навыка в деле — не практика (опыт за это даёт бросок).',
       parameters: {
         type: 'object',
         properties: {
-          skill: { type: 'string', description: 'Умение из листа героя.' },
+          skill: { type: 'string', description: 'Навык точно из списка навыков или особый талант с листа героя.' },
           kind: { type: 'string', enum: ['practice', 'lesson'], description: 'practice — сам (+1), lesson — у наставника или учителя (+2).' },
           reason: { type: 'string', description: 'Что делал, одной фразой.' },
           character: characterParam,
@@ -245,6 +246,11 @@ export const TOOL_DEFINITIONS = [
           social: { type: 'string', description: 'Общественное положение — коротко, 2–5 слов: кто он в обществе («беглый каторжник», «капитан городской стражи»). Без истории и объяснений.' },
           race: { type: 'string', description: 'Новая раса — только при превращении. Название народа из КОДЕКСА, если подходит.' },
           name: { type: 'string', description: 'Новое постоянное имя. Прежнее сохранится как «известен также как».' },
+          attributes: {
+            type: 'object',
+            description: `Характеристики — ТОЛЬКО один раз, при первом заполнении листа, по описанию героя. Каждая от ${ATTR_MIN} до ${ATTR_MAX} (3 — обычный человек), сумма не больше ${ATTR_BUDGET}.`,
+            properties: Object.fromEntries(ATTRIBUTES.map((a) => [a.name, { type: 'integer', description: a.hint }])),
+          },
         },
       },
     },
@@ -557,11 +563,19 @@ function executePracticeTool(args, state) {
   const skill = String(a.skill || '').trim();
   if (!skill) return 'Ошибка: укажи skill — умение из листа героя.';
   const c = resolveCharacter(state, a.character);
-  const block = matchAbility(c.blocks, skill);
+  // Навык из списка есть у каждого героя (пока не учился — новичок); талант — только записанный на листе.
+  const catalog = catalogOf(state);
+  adoptSkills(c, catalog);
+  const found = matchSkill(catalog, skill);
+  let block = found.skill ? skillBlock(c, found.skill.id) : matchAbility(talentsOf(c), skill);
+  if (!block && found.skill) {
+    block = { id: randomUUID(), type: 'ability', name: found.skill.name, value: 'новичок', skill: found.skill.id };
+    c.blocks.push(block);
+  }
   if (!block) {
-    const have = (c.blocks || []).filter((b) => b.type === 'ability').map((b) => b.name);
-    return `Ошибка: у героя «${c.name}» нет умения «${skill}».` + (have.length ? ` Есть: ${have.join(', ')}.` : '') +
-      ' Если он начал учиться новому — заведи его: block type:ability value:новичок.';
+    const gifts = talentsOf(c).map((b) => b.name);
+    return `Ошибка: навыка «${skill}» нет.` + (found.similar.length ? ` Похожие: ${found.similar.join(', ')} — выбери один.` : '') +
+      ` Навыки: ${catalog.map((s) => s.name).join(', ')}.` + (gifts.length ? ` Особые таланты героя: ${gifts.join(', ')}.` : '') + ' Возьми название точно из списка.';
   }
   if (block.locked) return `Умение «${block.name}» закреплено игроком — опыт не начисляется.`;
   if (LEVELS.indexOf(String(block.value || '').trim().toLowerCase()) === LEVELS.length - 1) return `«${block.name}»: герой уже мастер — расти некуда.`;
@@ -582,11 +596,29 @@ function executePracticeTool(args, state) {
 
 const SOCIAL_MAX_WORDS = 7;
 function executeHeroTool(args, state) {
-  const { character, appearance, appearance_change: change, social, race, name: newName } = args || {};
+  const { character, appearance, appearance_change: change, social, race, name: newName, attributes } = args || {};
   const c = resolveCharacter(state, character);
   const locked = Array.isArray(c.locked) ? c.locked : [];
   const changed = [];
   const notes = [];
+  // Характеристики учётчик расставляет один раз — по описанию героя; дальше их меняет только игрок.
+  if (attributes && typeof attributes === 'object' && Object.keys(attributes).length) {
+    if (c.attrsSet) notes.push(`Характеристики героя уже заданы (${attrsLine(c)}) — не изменены: их правит только игрок.`);
+    else {
+      const next = { ...normalizeAttrs(c.attrs) };
+      const bad = [];
+      for (const [k, v] of Object.entries(attributes)) {
+        const id = attrId(k); const n = Math.round(Number(v));
+        if (!id || !Number.isFinite(n) || n < ATTR_MIN || n > ATTR_MAX) { bad.push(`${k}: ${v}`); continue; }
+        next[id] = n;
+      }
+      const sum = Object.values(next).reduce((x, y) => x + y, 0);
+      if (bad.length) return `Ошибка: характеристики — ${ATTRIBUTES.map((a) => a.name).join(', ')}, каждая от ${ATTR_MIN} до ${ATTR_MAX}. Не понято: ${bad.join('; ')}. Не записано.`;
+      if (sum > ATTR_BUDGET) return `Ошибка: сумма характеристик ${sum}, а можно не больше ${ATTR_BUDGET} (3 — обычный человек). Убавь что-нибудь и повтори. Не записано.`;
+      c.attrs = next; c.attrsSet = true;
+      changed.push(`характеристики: ${attrsLine(c)}`);
+    }
+  }
   const prevLook = (c.appearance || '').trim();
   // Кто видел перемену: остальные НПС о ней не знают (иначе принц, не видевший героиню
   // полсотни ходов, рассуждает о её новых ушах). То же — о новой расе и новом имени.
@@ -934,7 +966,25 @@ export function executeTool(name, args, state) {
     const cat = catalogStatusName(state, wantName);
     if (cat && findIndex(blocks, type, wantName) === -1) { notes += ` (записано по каталогу как «${cat}»)`; wantName = cat; }
   }
+  // Умение: навык из списка истории пишется его точным названием; уровень записанного навыка растёт только
+  // от бросков и обучения. Всё, что в список не ложится, — особый талант героя.
+  let skillDef = null;
+  if (type === 'ability') {
+    adoptSkills(char, catalogOf(state));
+    skillDef = matchSkill(catalogOf(state), wantName, { strict: true }).skill;
+    if (skillDef) {
+      const own = skillBlock(char, skillDef.id);
+      if (name === 'remove_block') return `«${skillDef.name}» — навык из списка, он не удаляется. Оставь как есть.`;
+      const lv = (v) => Math.max(0, LEVELS.indexOf(String(v || '').trim().toLowerCase()));
+      if (own && value !== undefined && lv(value) !== lv(own.value)) {
+        return `Ошибка: «${skillDef.name}» у героя «${char.name}» уже есть (${own.value}). Уровень навыка растёт от бросков и обучения — если герой тренировался или учился, вызови practice. Не записано.`;
+      }
+      if (wantName.toLowerCase() !== skillDef.name.toLowerCase()) notes += ` (по списку навыков — «${skillDef.name}»)`;
+      wantName = own ? own.name : skillDef.name;
+    }
+  }
   let idx = findIndex(blocks, type, wantName);
+  if (skillDef && idx !== -1 && blocks[idx].skill !== skillDef.id) idx = blocks.findIndex((b) => b.skill === skillDef.id);
   // Удаление прощает неточности: «Отравлена» → каталожное «Отравлен», не тот type —
   // если по имени однозначно находится один блок, убираем его (и пишем, что нашли).
   if (name === 'remove_block' && idx === -1) {
@@ -997,6 +1047,10 @@ export function executeTool(name, args, state) {
     if (val !== undefined) block.value = String(val).trim();
     if (max !== undefined) block.max = coerceNumber(max);
     if (description) block.description = String(description);
+    if (type === 'ability') {
+      if (skillDef) { block.skill = skillDef.id; block.value = LEVELS[Math.max(0, LEVELS.indexOf(String(block.value || '').toLowerCase()))]; }
+      else { block.talent = true; notes += ' Записано как особый талант: в списке навыков такого нет.'; }
+    }
     blocks.push(block);
     return `У героя «${char.name}» создан блок "${block.name}" (${type})${block.value ? `: ${block.value}` : ''}.${notes}`;
   }

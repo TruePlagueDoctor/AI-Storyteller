@@ -68,14 +68,29 @@ async function switchChar(id) {
 // ---- Лист активного героя ----
 function renderSheet(character, animate) {
   const blocks = character ? character.blocks : [];
+  const attrStrip = () => {
+    const strip = document.createElement('div');
+    strip.className = 'attr-strip';
+    for (const a of (app.attributes || [])) {
+      const v = heroAttr(character, a.id);
+      const cell = document.createElement('span');
+      cell.className = 'attr-chip' + (v > 3 ? ' high' : v < 3 ? ' low' : '');
+      cell.title = `${a.name}: ${a.hint}. К броску: ${v === 3 ? '±0' : (v > 3 ? '+' : '−') + Math.abs(v - 3)}`;
+      cell.innerHTML = `<i>${a.name.slice(0, 3)}</i><b>${v}</b>`;
+      strip.appendChild(cell);
+    }
+    return strip;
+  };
   if (!blocks.length) {
     sheetEl.innerHTML = '';
+    if (character) sheetEl.appendChild(attrStrip());
     sheetEl.appendChild(sheetEmpty);
     sheetEmpty.style.display = '';
     if (!animate) blockSignatures = {};
     return;
   }
   sheetEl.innerHTML = '';
+  sheetEl.appendChild(attrStrip());
   const nextSigs = {};
   const types = Object.keys(TYPE_META).sort((a, b) => TYPE_META[a].order - TYPE_META[b].order);
   for (const type of types) {
@@ -117,6 +132,7 @@ function renderBlock(b, animate) {
   name.className = 'block-name';
   name.textContent = b.name;
   nameWrap.appendChild(name);
+  if (b.type === 'ability' && !b.skill) { name.title = 'Особый талант — вне списка навыков истории'; nameWrap.insertAdjacentHTML('beforeend', '<span class="block-talent">талант</span>'); }
   if (b.locked || b.descLocked) {
     const lock = document.createElement('span');
     lock.className = 'block-lock';

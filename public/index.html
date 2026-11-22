@@ -267,6 +267,15 @@
         </section>
         <section class="settings-sec" id="set-rules">
           <h3 class="settings-sec-title">Механика</h3>
+        <div class="field">
+          <span class="field-label">Навыки истории</span>
+          <textarea id="skillCatalogInput" rows="10" spellcheck="false"></textarea>
+          <div class="skill-preset-row">
+            <select id="skillPresetSelect" class="trait-cat"></select>
+            <button type="button" class="btn ghost small" id="skillPresetApply">Подставить заготовку</button>
+          </div>
+          <span class="field-hint">По навыку в строке: «Название — Характеристика — что сюда входит». Вторая характеристика через косую черту («Сила/Ловкость») — берётся лучшая. Рассказчик выбирает навык для проверки только из этого списка; описание помогает ему понять, что к какому навыку относится. Характеристики: Сила, Ловкость, Ум, Воля, Обаяние. Переименуешь строку — навык переименуется и на листах героев; уберёшь — у героев он останется особым талантом. Список свой у каждой истории.</span>
+        </div>
         <label class="field toggle-field">
           <input type="checkbox" id="diceEnabledInput" />
           <span class="toggle-text">
@@ -509,6 +518,11 @@
             <span class="field-label">Положение <button type="button" class="lock-btn" data-lock="social" title="Закрепить: учётчик не меняет положение">🔓</button></span>
             <input type="text" id="charSocial" placeholder="наёмник, дворянин…" />
           </label>
+        </div>
+        <div class="field">
+          <span class="field-label">Характеристики</span>
+          <div class="attr-inputs" id="charAttrs"></div>
+          <span class="field-hint">От 1 до 6; 3 — обычный человек. К броску идёт разница с тройкой: 5 даёт +2, 2 даёт −1. Не трогай — и учётчик расставит их сам по описанию героя; заданное тобой он не меняет.</span>
         </div>
         <div class="field">
           <span class="field-label">Внешность</span>
@@ -940,6 +954,7 @@
             <span class="field-label">Название</span>
             <input type="text" id="blockName" list="statusNames" placeholder="Отравлен, Здоровье, Ржавый меч…" />
             <datalist id="statusNames"></datalist>
+            <datalist id="skillNames"></datalist>
           </label>
         </div>
         <div class="field-row" id="blockStatRow">

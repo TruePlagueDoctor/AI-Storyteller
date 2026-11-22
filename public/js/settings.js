@@ -149,6 +149,9 @@ async function openSettings() {
     $('scenarioInput').value = s.scenarioPrompt || '';
     $('promptInput').value = s.systemPrompt || '';
     $('clicheInput').value = (s.clichePhrases || []).join('\n');
+    $('skillCatalogInput').value = s.skillCatalogText || '';
+    $('skillCatalogInput').dataset.loaded = s.skillCatalogText || '';
+    $('skillPresetSelect').innerHTML = (s.skillPresets || []).map((p) => `<option value="${p.id}">${p.label}</option>`).join('');
     for (const seg of document.querySelectorAll('#difficultySeg .seg')) {
       seg.classList.toggle('active', seg.dataset.value === (s.difficulty || 'normal'));
     }
@@ -238,6 +241,8 @@ async function saveSettings() {
         difficulty,
         narration,
         pace: document.querySelector('#paceSeg .seg.active')?.dataset.value || 'calm',
+        // Список навыков уходит, только если его правили: иначе незачем перебирать листы героев.
+        skillCatalogText: $('skillCatalogInput').value.trim() !== ($('skillCatalogInput').dataset.loaded || '').trim() ? $('skillCatalogInput').value : undefined,
         stateSync: $('stateSyncInput').checked,
         loreAutoWrite: $('loreAutoWriteInput').checked,
         syncPromptStyle: $('syncPromptStyleInput').value,
@@ -275,6 +280,14 @@ function openCharModal(char) {
   $('charRace').value = char ? (char.race || '') : '';
   $('charSocial').value = char ? (char.social || '') : '';
   $('charAppearance').value = char ? (char.appearance || '') : '';
+  $('charAttrs').innerHTML = '';
+  for (const a of (app.attributes || [])) {
+    const lab = document.createElement('label');
+    lab.className = 'attr-input';
+    lab.title = a.hint;
+    lab.innerHTML = `<span>${a.name}</span><input type="number" min="1" max="6" step="1" data-attr="${a.id}" value="${heroAttr(char, a.id)}" />`;
+    $('charAttrs').appendChild(lab);
+  }
   $('charLookLock').checked = Boolean(char && Array.isArray(char.locked) && char.locked.includes('appearance'));
   charLocks = new Set(char && Array.isArray(char.locked) ? char.locked : []);
   renderCharLocks();
@@ -384,13 +397,18 @@ async function saveChar() {
   const social = $('charSocial').value;
   const appearance = $('charAppearance').value;
   const editing = editingCharId ? app.characters.find((c) => c.id === editingCharId) : null;
+  // Характеристики уходят на сервер, только если игрок их менял: нетронутые расставит учётчик.
+  const typed = {};
+  for (const inp of $('charAttrs').querySelectorAll('input[data-attr]')) typed[inp.dataset.attr] = Math.min(6, Math.max(1, Math.round(Number(inp.value) || 3)));
+  const attrsChanged = Object.keys(typed).some((id) => typed[id] !== heroAttr(editing, id));
+  const attrs = attrsChanged ? typed : undefined;
   const locked = new Set(editing ? charLocks : []);
   if ($('charLookLock').checked) locked.add('appearance'); else locked.delete('appearance');
   if (!name) { toast('У героя должно быть имя.'); return; }
   try {
     const data = editingCharId
-      ? await api(`/api/characters/${editingCharId}`, { method: 'PUT', body: JSON.stringify({ name, persona, race, social, appearance, locked: [...locked], ...charGroupChange(editing, present) }) })
-      : await api('/api/characters', { method: 'POST', body: JSON.stringify({ name, persona, race, social, appearance, separate: $('charSeparate').checked }) });
+      ? await api(`/api/characters/${editingCharId}`, { method: 'PUT', body: JSON.stringify({ name, persona, race, social, appearance, attrs, locked: [...locked], ...charGroupChange(editing, present) }) })
+      : await api('/api/characters', { method: 'POST', body: JSON.stringify({ name, persona, race, social, appearance, attrs, separate: $('charSeparate').checked }) });
     closeCharModal();
     blockSignatures = {};
     applyState(data, { animate: false });

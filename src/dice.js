@@ -1,6 +1,9 @@
 // Движок проверок. Исход решает код, а не модель:
 // бросок d20 + бонус за уровень владения против порога сложности.
 import { matchAbility } from './skills.js';
+import { adoptSkills, matchSkill, talentsOf, skillBlock, attrValue, attrMod, attrName, defaultCatalog } from './skillset.js';
+
+const BASE_CATALOG = defaultCatalog();
 
 export const SKILL_BONUS = {
   'новичок': 0,
@@ -25,15 +28,31 @@ export const EDGE_MOD = { 'помеха': -2, 'нет': 0, 'преимущест
 // Граница слова — через (?!\p{L}): обычный \b в JS не видит кириллицу, и «Сила» не находилась.
 export const VITAL_STAT = /(здоров|жизн|(?<![\p{L}])hp(?![\p{L}])|рассуд|психик|вынослив|бодр|энерг|стамин|(?<![\p{L}])сил[аы](?![\p{L}]))/iu;
 
-// Насколько уровень владения влияет на бросок. Умение не найдено — без бонуса.
-// Умение ищется по смыслу (см. skills.js): «Взлом» находит «Взлом замков».
-function bonusFor(character, skillName) {
-  if (!character || !skillName) return { bonus: 0, level: 'без подготовки', block: null };
-  const block = matchAbility(character.blocks, skillName);
-  if (!block) return { bonus: 0, level: 'без подготовки', block: null };
-  const level = String(block.value || '').trim().toLowerCase();
-  const bonus = SKILL_BONUS[level] ?? 1; // нестандартный уровень — минимальный бонус
-  return { bonus, level: block.value || 'освоено', block };
+// Что даёт герою бросок: характеристика навыка (лучшая из двух, если у навыка их две) и уровень владения.
+// Навык берётся из списка истории; особый талант с листа («Дар медиума») даёт свой уровень, когда его применяют.
+// Названия нет ни в списке, ни среди талантов — бросок «без подготовки», как у любого человека с улицы.
+function bonusFor(character, skillName, { catalog = BASE_CATALOG, talent = '' } = {}) {
+  const none = { bonus: 0, level: 'без подготовки', block: null, attr: '', attrMod: 0, def: null, unlisted: true };
+  if (!character || !skillName) return none;
+  adoptSkills(character, catalog); // умения, записанные до появления списка, раскладываются по нему
+  const def = matchSkill(catalog, skillName).skill;
+  const talents = talentsOf(character);
+  const gift = (talent && matchAbility(talents, talent)) || (!def ? matchAbility(talents, skillName) : null);
+  if (!def && !gift) return none;
+  let attr = ''; let mod = 0;
+  if (def) {
+    const ids = [def.attr, def.alt].filter(Boolean);
+    const best = ids.sort((x, y) => attrMod(attrValue(character, y)) - attrMod(attrValue(character, x)))[0];
+    attr = attrName(best); mod = attrMod(attrValue(character, best));
+  }
+  const own = def ? skillBlock(character, def.id) : null;
+  const lv = (blk) => (blk ? (SKILL_BONUS[String(blk.value || '').trim().toLowerCase()] ?? 1) : 0); // нестандартный уровень — минимальный бонус
+  const useGift = gift && lv(gift) >= lv(own) && (lv(gift) > 0 || !def);
+  const block = useGift ? gift : own;
+  return {
+    bonus: lv(block), level: block ? (block.value || 'освоено') : 'новичок', block, attr, attrMod: mod, def,
+    talent: useGift ? gift.name : undefined, unlisted: false,
+  };
 }
 
 // Штраф за тяжёлое состояние: раненый герой действует хуже.
@@ -54,10 +73,10 @@ function conditionPenalty(character) {
 const d20 = () => 1 + Math.floor(Math.random() * 20);
 
 // Выполняет проверку и возвращает подробный, но компактный результат.
-export function rollCheck({ character, skill, difficulty, traitMod = 0, traitReasons = [], edge: edgeKey = 'нет', edgeReason = '' }) {
+export function rollCheck({ character, skill, talent, catalog, difficulty, traitMod = 0, traitReasons = [], edge: edgeKey = 'нет', edgeReason = '' }) {
   const diffKey = String(difficulty || 'обычно').trim().toLowerCase();
   const target = DIFFICULTY_TARGET[diffKey] ?? DIFFICULTY_TARGET['обычно'];
-  const { bonus, level, block } = bonusFor(character, skill);
+  const { bonus, level, block, attr, attrMod: am, def, talent: gift, unlisted } = bonusFor(character, skill, { catalog, talent });
   const { penalty, reason } = conditionPenalty(character);
 
   // Преимущество — только с названной причиной: её видит игрок, и «+4 просто так» не проходит.
@@ -67,7 +86,7 @@ export function rollCheck({ character, skill, difficulty, traitMod = 0, traitRea
   const edgeDenied = wanted > 0 && !why;
 
   const roll = d20();
-  const total = roll + bonus - penalty + traitMod + edge;
+  const total = roll + am + bonus - penalty + traitMod + edge;
 
   let outcome;
   if (roll === 1) outcome = 'критический провал';
@@ -79,9 +98,12 @@ export function rollCheck({ character, skill, difficulty, traitMod = 0, traitRea
 
   const success = outcome.includes('успех');
   return {
-    // Нашлось умение — в журнал и опыт идёт его настоящее название, а не формулировка модели.
-    skill: block ? block.name : (skill || '—'),
-    asked: block && block.name.toLowerCase() !== String(skill || '').trim().toLowerCase() ? skill : undefined,
+    // В журнал и опыт идёт название навыка из списка, а не формулировка модели.
+    skill: def ? def.name : block ? block.name : (skill || '—'),
+    skillId: def ? def.id : undefined,
+    asked: (def || block) && (def ? def.name : block.name).toLowerCase() !== String(skill || '').trim().toLowerCase() ? skill : undefined,
+    attr: attr || undefined, attrMod: am,
+    talent: gift, unlisted: unlisted || undefined,
     level,
     difficulty: diffKey,
     roll, bonus, penalty, traitMod, traitReasons, edge, edgeReason: edge ? why : undefined, edgeDenied: edgeDenied || undefined, total, target,
@@ -93,11 +115,12 @@ export function rollCheck({ character, skill, difficulty, traitMod = 0, traitRea
 // Как результат подаётся модели: коротко и однозначно.
 export function describeRoll(r) {
   const parts = [
-    `Проверка «${r.skill}» (${r.level}), сложность: ${r.difficulty}.`,
-    `Бросок ${r.roll} + ${r.bonus}${r.penalty ? ` − ${r.penalty} (${r.penaltyReason})` : ''}` +
+    `Проверка «${r.skill}»${r.talent ? ` с талантом «${r.talent}»` : ''} (${r.level}${r.attr ? `, ${r.attr}` : ''}), сложность: ${r.difficulty}.`,
+    `Бросок ${r.roll}${r.attr ? ` ${r.attrMod < 0 ? '−' : '+'} ${Math.abs(r.attrMod)} (${r.attr})` : ''} + ${r.bonus}${r.penalty ? ` − ${r.penalty} (${r.penaltyReason})` : ''}` +
       `${r.traitMod ? ` ${r.traitMod > 0 ? '+' : '−'} ${Math.abs(r.traitMod)} (${(r.traitReasons || []).join('; ')})` : ''}` +
       `${r.edge ? ` ${r.edge > 0 ? '+' : '−'} ${Math.abs(r.edge)} (обстоятельства${r.edgeReason ? ': ' + r.edgeReason : ''})` : ''}` +
       ` = ${r.total} против ${r.target}.`,
+    ...(r.unlisted ? ['Такого навыка в списке нет — бросок без подготовки. В следующий раз бери skill точно из списка навыков.'] : []),
     ...(r.edgeDenied ? ['Преимущество не засчитано: не названо, чем оно заслужено (edge_reason).'] : []),
     `ИСХОД: ${r.outcome.toUpperCase()}.`,
   ];

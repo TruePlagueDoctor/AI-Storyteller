@@ -17,14 +17,16 @@ function makeEntryEl(role, text, index, entry) {
       chip.className = 'roll' + (r.success ? ' ok' : ' bad');
       const label = document.createElement('span');
       label.className = 'roll-label';
-      label.textContent = `${r.skill} · ${r.difficulty}`;
-      if (r.asked) label.title = `Рассказчик назвал проверку «${r.asked}» — засчитано умение «${r.skill}»`;
+      label.textContent = `${r.talent ? r.talent : r.skill}${r.attr ? ` (${r.attr})` : ''} · ${r.difficulty}`;
+      if (r.unlisted) label.title = 'Такого навыка в списке нет — бросок без подготовки';
+      else if (r.asked) label.title = `Рассказчик назвал проверку «${r.asked}» — засчитан навык «${r.skill}»`;
       const val = document.createElement('span');
       val.className = 'roll-value';
       // Все слагаемые видны: раньше модификаторы от состояний и черт цели прятались («8 = 5»).
       const sgn = (n) => (n > 0 ? ` +${n}` : ` −${Math.abs(n)}`);
-      val.textContent = `🎲 ${r.roll}${r.bonus ? sgn(r.bonus) : ''}${r.penalty ? sgn(-r.penalty) : ''}${r.traitMod ? sgn(r.traitMod) : ''}${r.edge ? sgn(r.edge) : ''} = ${r.total} против ${r.target}`;
-      val.title = [`бросок d20: ${r.roll}`, r.bonus ? `умение (${r.level}): +${r.bonus}` : `умение: ${r.level}`,
+      val.textContent = `🎲 ${r.roll}${r.attrMod ? sgn(r.attrMod) : ''}${r.bonus ? sgn(r.bonus) : ''}${r.penalty ? sgn(-r.penalty) : ''}${r.traitMod ? sgn(r.traitMod) : ''}${r.edge ? sgn(r.edge) : ''} = ${r.total} против ${r.target}`;
+      val.title = [`бросок d20: ${r.roll}`, r.attr ? `${r.attr}: ${r.attrMod > 0 ? '+' : r.attrMod < 0 ? '−' : '±'}${Math.abs(r.attrMod || 0)}` : '',
+        r.bonus ? `${r.talent ? `талант «${r.talent}»` : 'навык'} (${r.level}): +${r.bonus}` : `навык: ${r.level}`,
         r.penalty ? `${r.penaltyReason}: −${r.penalty}` : '', ...(r.traitReasons || []),
         r.edge ? `обстоятельства: ${r.edge > 0 ? '+' : '−'}${Math.abs(r.edge)}${r.edgeReason ? ' — ' + r.edgeReason : ''}` : '',
         r.target_npc ? `против: ${r.target_npc}` : '', `нужно ${r.target} (${r.difficulty})`].filter(Boolean).join('\n');

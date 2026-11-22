@@ -4,6 +4,7 @@
 // умения, портрет); привязанное к истории — отношение к герою, «что между ними было», где он сейчас, настроение —
 // остаётся в истории. Герой и НПС взаимозаменяемы: НПС можно взять героем и наоборот.
 import { readFile, writeFile, rename, mkdir, copyFile, unlink } from 'node:fs/promises';
+import { normalizeAttrs } from './skillset.js';
 import { join, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DATA_DIR, AVATAR_DIR } from './paths.js';
@@ -71,6 +72,7 @@ export async function saveToLibrary({ kind, id }) {
     savedAt: Date.now(),
     card: cardOf(kind, src),
     abilities: kind === 'hero' ? abilitiesOf(src) : [],
+    attrs: kind === 'hero' && src.attrsSet ? normalizeAttrs(src.attrs) : undefined,
     avatar: await copyAvatar(src.avatar),
   };
   if (old) { await dropAvatar(old.avatar); items[items.indexOf(old)] = entry; } else items.push(entry);
@@ -94,13 +96,14 @@ export async function importFromLibrary(entryId, { as = 'npc', separate = false,
   const card = entry.card || {};
   const avatar = await copyAvatar(entry.avatar);
   if (as === 'hero') {
-    const hero = await addCharacter({ name: entry.name, persona: personaOf(card), race: card.race, social: card.social, appearance: card.appearance, separate });
+    const hero = await addCharacter({ name: entry.name, persona: personaOf(card), race: card.race, social: card.social, appearance: card.appearance, separate, attrs: entry.attrs });
     // Умения: свои (если был героем) плюс умения из карточки НПС.
     const seen = new Set();
     for (const a of [...(entry.abilities || []), ...(card.skills || []).map((name) => ({ name, value: '' }))]) {
       if (!str(a.name) || seen.has(str(a.name).toLowerCase())) continue;
       seen.add(str(a.name).toLowerCase());
-      await upsertBlock(hero.id, { type: 'ability', name: a.name, value: a.value || '', description: a.description || '' });
+      // Умение ложится на навык из списка этой истории; два умения об одном навыке — остаётся первое.
+      try { await upsertBlock(hero.id, { type: 'ability', name: a.name, value: a.value || '', description: a.description || '' }); } catch { /* такой навык уже записан */ }
     }
     if (avatar) await setCharacterAvatar(hero.id, avatar);
     if (card.portraitTags) hero.portraitTags = card.portraitTags;
@@ -136,7 +139,7 @@ export async function exportEntry(entryId) {
     try { avatarData = `data:${MIME[extname(entry.avatar).toLowerCase()] || 'image/png'};base64,` + (await readFile(join(AVATAR_DIR, entry.avatar))).toString('base64'); }
     catch { /* портрета нет — файл без него */ }
   }
-  return { format: FILE_FORMAT, version: 1, name: entry.name, from: entry.from, card: entry.card, abilities: entry.abilities || [], avatarData };
+  return { format: FILE_FORMAT, version: 1, name: entry.name, from: entry.from, card: entry.card, abilities: entry.abilities || [], attrs: entry.attrs, avatarData };
 }
 
 // Загрузить персонажа из файла. Поля берутся только известные; запись с тем же именем обновляется.
@@ -156,7 +159,7 @@ export async function uploadEntry(file) {
     .map((a) => ({ name: str(a.name, 80), value: str(a.value, 40), description: str(a.description, 400) || undefined })).slice(0, 40);
   const items = await readAll();
   const old = items.find((x) => same(x.name, name));
-  const entry = { id: old ? old.id : randomUUID(), name, from: file.from === 'hero' ? 'hero' : 'npc', savedAt: Date.now(), card, abilities, avatar };
+  const entry = { id: old ? old.id : randomUUID(), name, from: file.from === 'hero' ? 'hero' : 'npc', savedAt: Date.now(), card, abilities, attrs: file.attrs && typeof file.attrs === 'object' ? normalizeAttrs(file.attrs) : undefined, avatar };
   if (old) { await dropAvatar(old.avatar); items[items.indexOf(old)] = entry; } else items.push(entry);
   await writeAll(items);
   return { entry, updated: Boolean(old) };

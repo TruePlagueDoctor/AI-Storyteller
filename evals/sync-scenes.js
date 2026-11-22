@@ -193,11 +193,12 @@ export const SCENES = [
     narration: 'Ты просыпаешься в придорожной канаве. Голова гудит, но меч по-прежнему у пояса, а кольчуга на плечах.',
     must: [
       ['заведено Здоровье', (st) => find(st, 'stat', 'здоров', 'жизн', 'hp')],
-      ['заведено умение владения мечом', (st) => find(st, 'ability', 'меч', 'фехт', 'клин')],
+      ['владение мечом записано навыком из списка', (st) => H(st).blocks.some((b) => b.type === 'ability' && b.skill === 'melee')],
+      ['заданы характеристики', (st) => H(st).attrsSet === true],
       ['меч в инвентаре', (st) => find(st, 'item', 'меч')],
     ],
     forbid: [],
-    ideal: [['block', { type: 'stat', name: 'Здоровье', value: '18', max: 20 }], ['block', { type: 'ability', name: 'Фехтование', value: 'мастер' }], ['block', { type: 'ability', name: 'Травничество', value: 'новичок' }], ['block', { type: 'item', name: 'Меч' }], ['block', { type: 'item', name: 'Старая кольчуга' }]],
+    ideal: [['update_hero', { attributes: { 'Сила': 4, 'Ловкость': 4, 'Ум': 3, 'Воля': 3, 'Обаяние': 2 } }], ['block', { type: 'stat', name: 'Здоровье', value: '18', max: 20 }], ['block', { type: 'ability', name: 'Холодное оружие', value: 'мастер' }], ['block', { type: 'ability', name: 'Травничество', value: 'новичок' }], ['block', { type: 'item', name: 'Меч' }], ['block', { type: 'item', name: 'Старая кольчуга' }]],
   },
   {
     id: 'locked-block', title: 'Закреплённое не трогать',
@@ -250,13 +251,13 @@ export const SCENES = [
   },
   {
     id: 'training', title: 'Урок у наставника',
-    setup: and(hero([{ type: 'ability', name: 'Фехтование', value: 'ученик' }, { type: 'stat', name: 'Здоровье', value: '20', max: 20 }]),
+    setup: and(hero([{ type: 'ability', name: 'Холодное оружие', value: 'ученик', skill: 'melee' }, { type: 'stat', name: 'Здоровье', value: '20', max: 20 }]),
       npcs({ name: 'Мастер Горан' }), scene({ present: ['Мастер Горан'] })),
     action: 'Прошу Горана поучить меня',
     narration: 'До самого вечера мастер Горан гоняет тебя по двору, показывая, как уходить от удара и сразу колоть. «Плечо ниже! Ещё раз!» К закату выпады выходят у тебя заметно чище.',
-    must: [['фехтованию начислен опыт', (st) => (H(st).skillXp || {})['фехтование'] > 3]],
-    forbid: [['уровень не прыгнул через ступень', (st) => /мастер/.test(find(st, 'ability', 'фехт')?.value || '')], ['не заведено новое умение-дубль', (st) => H(st).blocks.filter((b) => b.type === 'ability').length > 1]],
-    ideal: [['practice', { skill: 'Фехтование', kind: 'lesson', reason: 'Горан весь день учил уходить от удара и колоть' }], ['scene', { elapsed_minutes: 360 }], ['npc', { name: 'Мастер Горан', history: 'учил героя фехтованию', voice_sample: 'Плечо ниже! Ещё раз!' }]],
+    must: [['навыку «Холодное оружие» начислен опыт', (st) => (H(st).skillXp || {})['холодное оружие'] > 3]],
+    forbid: [['уровень не прыгнул через ступень', (st) => /мастер/.test(find(st, 'ability', 'оруж')?.value || '')], ['не заведено новое умение-дубль', (st) => H(st).blocks.filter((b) => b.type === 'ability').length > 1]],
+    ideal: [['practice', { skill: 'Холодное оружие', kind: 'lesson', reason: 'Горан весь день учил уходить от удара и колоть' }], ['scene', { elapsed_minutes: 360 }], ['npc', { name: 'Мастер Горан', history: 'учил героя фехтованию', voice_sample: 'Плечо ниже! Ещё раз!' }]],
   },
   {
     id: 'skill-used', title: 'Умение в деле — не тренировка',

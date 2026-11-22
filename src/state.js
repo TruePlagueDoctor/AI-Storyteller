@@ -4,6 +4,7 @@
 import { DEFAULT_CLICHE_PHRASES, normalizeCliches } from './contradictions.js';
 import { switchRelations, dropRelations, migrateRelations, reconcileRelations, groupOf, companionIds } from './relations.js';
 import { switchLine, dropLine, migrateLines, reconcileLines } from './lines.js';
+import { defaultCatalog, catalogOf, normalizeAttrs, adoptAllSkills, adoptSkills, matchSkill, skillBlock, parseCatalogText, applyCatalogChange, SKILL_PRESETS, attrId } from './skillset.js';
 import { emptyScene, normalizeScene } from './scene.js';
 import { normalizeEvents, EVENT_TYPES } from './chronicle.js';
 import { DEFAULT_IMAGE_SETTINGS } from './images.js';
@@ -115,6 +116,7 @@ function migrate(s) {
     // чтобы рассказчик не вплетал персонажей, которых в сцене нет.
     if (typeof c.present !== 'boolean') c.present = true;
     if (!c.skillXp || typeof c.skillXp !== 'object') c.skillXp = {};
+    c.attrs = normalizeAttrs(c.attrs); // характеристики: 1–6, 3 — обычный человек
     if (!c.practiceDays || typeof c.practiceDays !== 'object') c.practiceDays = {}; // умение → игровой день последней тренировки
     if (!Array.isArray(c.appearanceLog)) c.appearanceLog = []; // перемены внешности, расы, имени и кто их видел
     if (!Array.isArray(c.aliases)) c.aliases = []; // прежние имена героя («известен также как»)
@@ -142,6 +144,9 @@ function migrate(s) {
   if (!DIFFICULTIES.includes(out.difficulty)) out.difficulty = 'normal';
   if (!NARRATIONS.includes(out.narration)) out.narration = 'second_ty';
   if (!PACES.includes(out.pace)) out.pace = 'calm';
+  // Список навыков истории; умения, записанные до его появления, раскладываются по нему.
+  if (!Array.isArray(out.skillCatalog) || !out.skillCatalog.length) out.skillCatalog = defaultCatalog();
+  adoptAllSkills(out);
   out.stateSync = out.stateSync !== false;
   if (typeof out.summary !== 'string') out.summary = '';
   out.autoSummarize = out.autoSummarize !== false;
@@ -460,7 +465,7 @@ function captureFullSnapshot() {
   return {
     at: stamp(),
     blocksByChar: Object.fromEntries(state.characters.map((c) => [c.id, deepCopy(c.blocks)])),
-    charsByid: Object.fromEntries(state.characters.map((c) => [c.id, { skillXp: deepCopy(c.skillXp || {}), practiceDays: deepCopy(c.practiceDays || {}), appearanceLog: deepCopy(c.appearanceLog || []), appearance: c.appearance, social: c.social, name: c.name, race: c.race, aliases: deepCopy(c.aliases || []) }])),
+    charsByid: Object.fromEntries(state.characters.map((c) => [c.id, { skillXp: deepCopy(c.skillXp || {}), practiceDays: deepCopy(c.practiceDays || {}), appearanceLog: deepCopy(c.appearanceLog || []), attrs: deepCopy(c.attrs || {}), attrsSet: !!c.attrsSet, appearance: c.appearance, social: c.social, name: c.name, race: c.race, aliases: deepCopy(c.aliases || []) }])),
     npcs: deepCopy(state.npcs),
     threads: deepCopy(state.threads),
     scene: deepCopy(state.scene),
@@ -483,6 +488,7 @@ function applyFullSnapshot(snap) {
   if (snap.activeCharacterId && state.characters.some((c) => c.id === snap.activeCharacterId)) state.activeCharacterId = snap.activeCharacterId;
   reconcileRelations(state, snap);
   reconcileLines(state, snap);
+  adoptAllSkills(state);
 }
 
 // Номер варианта и их число — свойства ленты, в файл хода не пишем.
@@ -682,8 +688,9 @@ export function getState() {
 
 
 // ---- Управление героями ----
-export async function addCharacter({ name, persona, separate, race, social, appearance } = {}) {
+export async function addCharacter({ name, persona, separate, race, social, appearance, attrs } = {}) {
   const c = newCharacter((name || 'Новый герой').trim(), (persona || '').trim());
+  setAttrs(c, attrs);
   // Раньше народ, положение и внешность из формы нового героя терялись — сохранялись только при правке.
   if (typeof race === 'string') c.race = race;
   if (typeof social === 'string') c.social = social;
@@ -706,10 +713,20 @@ export async function addCharacter({ name, persona, separate, race, social, appe
 }
 
 export const HERO_LOCKS = ['appearance', 'social', 'name', 'race'];
-export async function updateCharacter(id, { name, persona, race, social, appearance, present, locked, separate } = {}) {
+// Характеристики, заданные игроком: учётчик их после этого не трогает.
+function setAttrs(c, attrs) {
+  if (!attrs || typeof attrs !== 'object') return;
+  const next = normalizeAttrs(c.attrs);
+  for (const [k, v] of Object.entries(attrs)) { const id = attrId(k); if (id && String(v).trim() !== '') next[id] = v; }
+  c.attrs = normalizeAttrs(next);
+  c.attrsSet = true;
+}
+
+export async function updateCharacter(id, { name, persona, race, social, appearance, present, locked, separate, attrs } = {}) {
   const c = state.characters.find((x) => x.id === id);
   if (!c) throw new Error('Герой не найден.');
-  const before = { appearance: c.appearance, social: c.social, name: c.name, race: c.race };
+  const before = { appearance: c.appearance, social: c.social, name: c.name, race: c.race, attrs: deepCopy(c.attrs), attrsSet: c.attrsSet };
+  setAttrs(c, attrs);
   if (typeof name === 'string' && name.trim()) c.name = name.trim();
   if (typeof persona === 'string') c.persona = persona;
   if (typeof race === 'string') c.race = race;
@@ -723,7 +740,7 @@ export async function updateCharacter(id, { name, persona, race, social, appeara
     else if (!separate && alone && c.id !== state.activeCharacterId) joinActive(c);
   }
   if (Array.isArray(locked)) c.locked = locked.filter((f) => HERO_LOCKS.includes(f));
-  noteManual('char', c.id, before, { appearance: c.appearance, social: c.social, name: c.name, race: c.race }); // откатываемые поля героя
+  noteManual('char', c.id, before, { appearance: c.appearance, social: c.social, name: c.name, race: c.race, attrs: deepCopy(c.attrs), ...(c.attrsSet ? { attrsSet: true } : {}) }); // откатываемые поля героя
   await saveState();
   return c;
 }
@@ -836,6 +853,7 @@ function applySnapshot(snap, { reconcile = true } = {}) {
       c.skillXp = deepCopy(extra.skillXp || {});
       c.practiceDays = deepCopy(extra.practiceDays || {});
       c.appearanceLog = deepCopy(extra.appearanceLog || []);
+      if (extra.attrs) { c.attrs = normalizeAttrs(extra.attrs); if (extra.attrsSet) c.attrsSet = true; else delete c.attrsSet; }
       if (extra.appearance !== undefined) c.appearance = extra.appearance;
       if (extra.social !== undefined) c.social = extra.social;
       if (extra.name) c.name = extra.name;
@@ -851,6 +869,7 @@ function applySnapshot(snap, { reconcile = true } = {}) {
   if (typeof snap.turn === 'number') state.turn = snap.turn;
   if ('correctionNote' in snap) state.correctionNote = snap.correctionNote;
   if (reconcile) reconcileRelations(state, snap);
+  adoptAllSkills(state); // снимок мог быть сделан до появления списка навыков
   applyManualOverlay(Number(snap.at) || 0);
 }
 
@@ -1044,6 +1063,13 @@ export async function upsertBlock(characterId, data = {}) {
   }
   b.type = type;
   b.name = name;
+  // Умение: название, целиком относящееся к навыку из списка, записывается этим навыком (без дублей); остальное — особый талант.
+  if (type === 'ability') {
+    const def = matchSkill(catalogOf(state), name, { strict: true }).skill;
+    const twin = def ? skillBlock(c, def.id) : null;
+    if (def && twin && twin !== b) { if (!before) c.blocks = c.blocks.filter((x) => x !== b); throw new Error(`Навык «${def.name}» уже есть на листе — измени его уровень.`); }
+    if (def) { b.name = def.name; b.skill = def.id; delete b.talent; } else { delete b.skill; b.talent = true; }
+  } else { delete b.skill; delete b.talent; }
   const num = (v) => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : undefined; };
   if (type === 'stat') {
     b.value = data.value != null && String(data.value).trim() !== '' ? String(data.value).trim() : (b.value ?? '0');
@@ -1280,6 +1306,14 @@ export async function updateSettings({ systemPrompt, worldPrompt, scenarioPrompt
   if (DIFFICULTIES.includes(difficulty)) state.difficulty = difficulty;
   if (NARRATIONS.includes(narration)) state.narration = narration;
   if (PACES.includes(rest.pace)) state.pace = rest.pace;
+  // Список навыков истории — текстом, по строке на навык. Прежние навыки узнаются по названию, переименованные — по месту.
+  if (typeof rest.skillCatalogText === 'string') {
+    const parsed = parseCatalogText(rest.skillCatalogText, catalogOf(state));
+    if (parsed.errors.length) throw new Error(`Список навыков: не понял строку «${parsed.errors[0]}». Нужно: Название — Характеристика — что сюда входит.`);
+    if (parsed.catalog.length < 4) throw new Error('Список навыков: нужно хотя бы четыре навыка.');
+    state.skillCatalog = parsed.catalog;
+    applyCatalogChange(state, parsed);
+  }
   if (typeof stateSync === 'boolean') state.stateSync = stateSync;
   if (typeof loreAutoWrite === 'boolean') state.loreAutoWrite = loreAutoWrite;
   if (rest.syncPromptStyle === 'legacy' || rest.syncPromptStyle === 'technical') state.syncPromptStyle = rest.syncPromptStyle;

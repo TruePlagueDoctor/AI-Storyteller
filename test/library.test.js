@@ -77,19 +77,20 @@ test('НПС из библиотеки можно взять героем; ге�
   await api('POST', `/api/characters/${hero.id}/blocks`, { type: 'ability', name: 'Фехтование', value: 'опытный' });
   await api('POST', `/api/characters/${hero.id}/blocks`, { type: 'item', name: 'Кинжал' });
   await api('POST', `/api/characters/${hero.id}/blocks`, { type: 'stat', name: 'Здоровье', value: '5', max: 10 });
-  await api('PUT', `/api/characters/${hero.id}`, { name: 'Лилит Алая', social: 'беглая жрица' });
+  await api('PUT', `/api/characters/${hero.id}`, { name: 'Лилит Алая', social: 'беглая жрица', attrs: { 'Обаяние': 5, 'Сила': 2 } });
   r = await api('POST', '/api/library', { kind: 'hero', id: hero.id });
   const saved = r.data.items.find((x) => x.name === 'Лилит Алая');
   assert.equal(saved.from, 'hero');
   assert.equal(saved.card.social, 'беглая жрица');
-  assert.deepEqual(saved.abilities.map((a) => `${a.name}:${a.value}`).sort(), ['Фехтование:опытный', 'обольщение:']);
+  assert.deepEqual(saved.abilities.map((a) => `${a.name}:${a.value}`).sort(), ['Холодное оружие:опытный', 'обольщение:'], 'умение легло на навык из списка, особое осталось талантом');
+  assert.deepEqual(saved.attrs, { str: 2, dex: 3, int: 3, wil: 3, cha: 5 }, 'характеристики сохраняются вместе с героем');
   assert.ok(!JSON.stringify(saved).includes('Кинжал') && !JSON.stringify(saved).includes('Здоровье'));
 
   // Бывшего героя — в историю как НПС.
   r = await api('POST', `/api/library/${saved.id}/import`, { as: 'npc', force: true }); // герой с этим именем тут уже есть
   const asNpc = r.data.npcs.find((n) => n.name === 'Лилит Алая');
   assert.match(asNpc.description, /Суккуб, хозяйка купален/);
-  assert.deepEqual(asNpc.skills.sort(), ['Фехтование', 'обольщение']);
+  assert.deepEqual(asNpc.skills.sort(), ['Холодное оружие', 'обольщение']);
 });
 
 test('файл: персонаж выгружается с портретом и загружается обратно; мусор не принимается; удаление убирает и портрет', async () => {

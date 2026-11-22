@@ -2,6 +2,7 @@
 // и нити в соответствие с только что написанным фрагментом истории.
 
 import { partyOf } from './relations.js';
+import { catalogOf, talentsOf, ATTRIBUTES, ATTR_MIN, ATTR_MAX, ATTR_BUDGET } from './skillset.js';
 import { viewMessages } from './lines.js';
 import { toolsFor, NOTHING_TOOL, executeTool, isUnnamedName } from './tools.js';
 import { TRAIT_CATEGORIES } from './traits.js';
@@ -96,8 +97,8 @@ function legacySyncHead(state) {
     'ЛИСТ ГЕРОЯ:',
     '- Показатели (stat) — числами: урон, усталость, траты уменьшают value; отдых, лечение, плата увеличивают. В пределах 0..max.',
     '- Новый показатель заводи, когда появилось то, что стоит измерять и что будет меняться: «Рассудок», «Репутация», «Заряд амулета». Разово упомянутое — нет.',
-    '- Умение (ability, value — новичок/ученик/опытный/мастер) заводи, когда у героя проявилась или появилась устойчивая компетенция: обучился, давно практикует, это его ремесло. Разовое действие («открыл дверь») — не умение. Рост уровня от бросков считает код.',
-    '- Герой тренировался или учился уже записанному умению — practice (у наставника — kind lesson).',
+    '- Умение (ability, value — новичок/ученик/опытный/мастер). Обычную компетенцию бери из НАВЫКОВ ИСТОРИИ (name точно из списка) и записывай, когда выяснилось, что герой этим владеет: обучен, давно практикует, это его ремесло. Вне списка — только особый талант: дар, врождённая или магическая способность. Разовое действие («открыл дверь») — не умение. Уровень записанного навыка не меняй: он растёт от бросков и practice.',
+    '- Герой тренировался или учился — practice с навыком из списка или талантом с листа (у наставника — kind lesson).',
     '- Состояния — по названиям из каталога ниже, их эффекты применит код. Вылеченное — block action remove; истёкшие код снимет сам.',
     '- Инвентарь честно: отдано, потеряно, сломано, израсходовано, осталось недоступным — block action remove.',
     '- Внешность героя (update_hero) — только если она в тексте изменилась надолго: шрам, стрижка, превращение. ' +
@@ -149,8 +150,8 @@ function technicalSyncHead(state) {
     '- предмет получен / отдан / потерян / израсходован / сломан → block type:item (set | action:remove); количество — в value',
     '- урон, лечение, трата, отдых, изменение измеряемого → block type:stat, value — НОВОЕ число в 0..max (не разница)',
     '- ранение, яд, болезнь, состояние с эффектом → block type:status, имя из КАТАЛОГА; вылечено → action:remove; истечение по времени снимает код',
-    '- обучение, ремесло, давняя практика → block type:ability, value: новичок|ученик|опытный|мастер. Разовое действие — не умение; рост от бросков считает код',
-    '- герой тренировался или учился умению, которое уже есть в листе → practice (kind:lesson — у наставника); применение в деле — не практика',
+    '- выяснилось, что герой владеет ремеслом или делом → block type:ability, name ТОЧНО из НАВЫКОВ ИСТОРИИ, value: новичок|ученик|опытный|мастер. Вне списка — только особый талант (дар, магическая способность). Разовое действие — не умение; уровень записанного навыка не меняй — он растёт от бросков и practice',
+    '- герой тренировался или учился → practice, skill из НАВЫКОВ ИСТОРИИ или талант с листа (kind:lesson — у наставника); применение в деле — не практика',
     '- отношение группы или фракции к герою → block type:relationship',
     '- внешность или положение героя изменились надолго → update_hero (appearance_change | social — 2–5 слов). Грязь, растрёпанность — не перемена; ' +
       'превращение в другое существо → race; герой навсегда сменил имя → name (легенда и маска — нет)',
@@ -214,6 +215,8 @@ export function composeSyncSystem(state, narration = '') {
   // начало запроса от хода к ходу оплачивается со скидкой. Поэтому сначала —
   // всё постоянное, в конце — то, что меняется от хода к ходу.
   const lines = state.syncPromptStyle === 'legacy' ? legacySyncHead(state) : technicalSyncHead(state);
+  // Список навыков истории постоянен — стоит в неизменной части запроса.
+  lines.push('', 'НАВЫКИ ИСТОРИИ (умения героев — только отсюда, названия точные): ' + catalogOf(state).map((x) => x.name).join(', ') + '.');
 
   const cat = statusCatalogOf(state);
   if (cat.length) {
@@ -237,10 +240,16 @@ export function composeSyncSystem(state, narration = '') {
   if (anyLocked) extra.push('- Закреплённое игроком (🔒, «закреплено») не меняй.');
   const manyStatuses = (state.characters || []).some((c) => c.blocks.filter((b) => b.type === 'status').length > 4);
   if (manyStatuses) extra.push('- Состояний много: прошедшие убирай, взаимоисключающие не держи вместе, похожие объединяй.');
+  const noAttrs = partyOf(state).filter((c) => !c.attrsSet && (c.blocks || []).length);
+  if (noAttrs.length) {
+    extra.push(`- ХАРАКТЕРИСТИКИ НЕ ЗАДАНЫ у: ${noAttrs.map((c) => c.name).join(', ')}. Задай их сейчас по ОПИСАНИЮ ГЕРОЯ: update_hero attributes ` +
+      `(${ATTRIBUTES.map((a) => a.name).join(', ')}; от ${ATTR_MIN} до ${ATTR_MAX}, 3 — обычный человек, сумма не больше ${ATTR_BUDGET}).`);
+  }
   const emptyHeroes = partyOf(state).filter((c) => !(c.blocks || []).length);
   if (emptyHeroes.length) {
     extra.push(`- ЛИСТ ПУСТ у: ${emptyHeroes.map((c) => c.name).join(', ')}. Заведи лист сейчас — здесь можно опираться на ОПИСАНИЕ ГЕРОЯ из данных, ` +
-      'не только на фрагмент: 1–3 показателя по жанру (Здоровье и то, что важно в этом мире), умения из его ремесла и прошлого (с уровнем), ' +
+      `не только на фрагмент: характеристики (update_hero attributes; 3 — обычный человек, сумма не больше ${ATTR_BUDGET}), ` +
+      '1–3 показателя по жанру (Здоровье и то, что важно в этом мире), 3–6 навыков из НАВЫКОВ ИСТОРИИ, которыми он владеет по ремеслу и прошлому (с уровнем; остальные и так «новичок»), особый талант, если он есть, ' +
       'то, что при нём по описанию и тексту. ' + ((state.turn || 0) > 1 ? 'История уже идёт — бери положение героя на СЕЙЧАС, а не стартовое. ' : '') +
       'Мелочей и выдуманных подробностей не добавляй.');
   }
@@ -366,9 +375,10 @@ export function completenessHints(state, narration, calls) {
     if (!recorded) hints.push(`Во фрагменте накладывают или снимают «${d.name}» (магия из кодекса): на героя — block type:status name:"${d.name}" (снято — action:remove); на НПС — его status.`);
   }
   if (!blockTouched('item') && !aboutHero(RE_PAY) && aboutHero(RE_USE)) hints.push('Во фрагменте израсходован или использован предмет — инвентарь не менялся.' + sheetNote);
-  const heroSkills = ((state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0] || {}).blocks || []).filter((b) => b.type === 'ability');
-  if (heroSkills.length && !used.has('practice') && aboutHero(RE_TRAIN)) {
-    hints.push(`Во фрагменте герой тренировался или учился — опыт умению не начислен (practice). Умения: ${heroSkills.map((b) => b.name).join(', ')}.`);
+  if (!used.has('practice') && aboutHero(RE_TRAIN)) {
+    const gifts = talentsOf(state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0]).map((b) => b.name);
+    hints.push(`Во фрагменте герой тренировался или учился — опыт не начислен (practice). Навыки: ${catalogOf(state).map((x) => x.name).join(', ')}` +
+      (gifts.length ? `; таланты: ${gifts.join(', ')}` : '') + '.');
   }
   const sceneCalls = calls.filter((c) => c.name === 'scene');
   const clockMoved = sceneCalls.some((c) => !c.args || Number(c.args.elapsed_minutes) > 0 || (typeof c.args.time === 'string' && c.args.time.trim()));

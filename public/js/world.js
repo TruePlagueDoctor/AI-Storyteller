@@ -484,7 +484,8 @@ function syncBlockRows() {
   $('blockStatRow').style.display = t === 'stat' ? '' : 'none';
   $('blockStatusRows').style.display = t === 'status' ? '' : 'none';
   $('blockTextRow').style.display = (t === 'stat' || t === 'status') ? 'none' : '';
-  $('blockName').setAttribute('list', t === 'status' ? 'statusNames' : '');
+  $('blockName').setAttribute('list', t === 'status' ? 'statusNames' : t === 'ability' ? 'skillNames' : '');
+  $('skillNames').innerHTML = (app.skillCatalog || []).map((d) => `<option value="${d.name}"></option>`).join('');
 }
 function openBlockModal(b) {
   editingBlockId = b ? b.id : null;

@@ -9,6 +9,7 @@ import { traitModifier } from './traits.js';
 import { competenceMod } from './skills.js';
 import { statusRollMod, describeStatus, statusCatalogOf } from './statuses.js';
 import { recordRoll } from './progress.js';
+import { catalogOf, catalogLines, talentsOf, matchSkill, attrsLine, adoptSkills } from './skillset.js';
 import { sceneBlock } from './scene.js';
 import { chronicleBlock } from './chronicle.js';
 import { callOpenRouter, stripToolMarkup, applyLeakedCalls, parseLeakedToolCalls } from './llm.js';
@@ -96,10 +97,14 @@ function sheetSnapshot(character, catalog) {
     .map((b) => {
       if (b.type === 'status') return describeStatus(catalog || [], b);
       if (b.type === 'stat' && b.max != null) return `${b.name} ${b.value ?? '?'}/${b.max}`;
+      // Навык из списка на уровне «новичок» ничем не отличает героя — в лист для рассказчика не идёт.
+      if (b.type === 'ability' && b.skill && String(b.value || 'новичок').toLowerCase() === 'новичок') return '';
+      if (b.type === 'ability' && !b.skill) return `${b.name}${b.value ? ` — ${b.value}` : ''} (особый талант)`;
       if (b.value) return `${b.name} — ${b.value}`;
       return b.name;
     })
-    .join('; ');
+    .filter(Boolean)
+    .join('; ') || 'лист пуст';
 }
 
 function threadsBlock(state) {
@@ -147,10 +152,12 @@ function heroesBlock(state) {
       s += '\n  Недавние перемены (внешность, раса, имя — о них знают только видевшие): ' + changes.map((e) =>
         `«${e.text}» — ход ${e.turn}, видели: ${e.seenBy && e.seenBy.length ? e.seenBy.join(', ') : 'никто из НПС'}`).join('; ');
     }
+    s += `\n  Характеристики (1–6, 3 — обычный человек): ${attrsLine(c)}`;
     s += `\n  Лист: ${sheetSnapshot(c, statusCatalogOf(state))}`;
   }
-  if (inScene.some((c) => (c.blocks || []).some((b) => b.type === 'ability'))) {
-    s += '\n\nУМЕНИЯ — НЕ ТОЛЬКО БОНУС К БРОСКУ. Это ещё и то, что герой замечает, понимает и умеет без проверки: ' +
+  if (inScene.length) {
+    s += '\n\nХАРАКТЕРИСТИКИ И УМЕНИЯ — НЕ ТОЛЬКО БОНУС К БРОСКУ. Характеристика — каков герой сам по себе: сильного не сдвинуть плечом, ' +
+      'у слабовольного дрогнет голос, обаятельного слушают охотнее. Умение — ещё и то, что герой замечает, понимает и умеет без проверки: ' +
       'медик по ране поймёт, чем и когда её нанесли; взломщик с одного взгляда оценит замок; фехтовальщик узнает школу противника. ' +
       'Давай такие сведения и возможности сам, когда умение уместно. Без подходящего умения — только то, что видно любому, ' +
       'а сложное действие требует проверки. Уровень умения задаёт глубину: новичок — общее, мастер — тонкости.';
@@ -566,20 +573,25 @@ export function labelHeroes(state, msgs) {
 }
 const stripHeroLabel = (t) => String(t || '').replace(/^\s*\[(?:Эпизод героя|Ход за героя)[^\]]*\]\s*/i, '');
 
-// Описание броска со списком умений героев: модель выбирает из них, а не придумывает
+// Описание броска со списком навыков истории: модель выбирает из него, а не придумывает
 // формулировку, которая потом не найдётся.
 function rollToolFor(state) {
-  const heroes = partyOf(state);
-  const lines = heroes.map((c) => {
-    const ab = (c.blocks || []).filter((b) => b.type === 'ability').map((b) => `${b.name}${b.value ? ` (${b.value})` : ''}`);
-    return ab.length ? `${c.name}: ${ab.join(', ')}` : '';
+  const catalog = catalogOf(state);
+  for (const c of partyOf(state)) adoptSkills(c, catalog); // умения, записанные до появления списка
+  const gifts = partyOf(state).map((c) => {
+    const t = talentsOf(c).map((b) => `${b.name}${b.value ? ` (${b.value})` : ''}`);
+    return t.length ? `${c.name}: ${t.join(', ')}` : '';
   }).filter(Boolean);
-  if (!lines.length) return ROLL_TOOL;
   const f = ROLL_TOOL.function;
-  return { ...ROLL_TOOL, function: { ...f, parameters: { ...f.parameters, properties: { ...f.parameters.properties,
-    skill: { type: 'string', description: 'Что проверяем. Если действие подходит под умение героя — его название ТОЧНО из списка: ' +
-      lines.join('; ') + '. Подходящего нет — навык по смыслу ("Скрытность", "Убеждение"), бросок пойдёт без бонуса.' },
-  } } } };
+  const props = { ...f.parameters.properties,
+    skill: { type: 'string', enum: catalog.map((x) => x.name),
+      description: 'Навык из списка, под который подходит действие (характеристику и уровень героя код подставит сам): ' + catalogLines(catalog) + '.' },
+  };
+  if (gifts.length) {
+    props.talent = { type: 'string', description: 'Особый талант героя, если действие — именно его применение (название точно из списка): ' +
+      gifts.join('; ') + '. skill при этом всё равно укажи — ближайший по смыслу.' };
+  }
+  return { ...ROLL_TOOL, function: { ...f, parameters: { ...f.parameters, properties: props } } };
 }
 
 export async function narrate(state, apiKey, withTools, { allowDice = true, journal = null, timer = null } = {}) {
@@ -648,7 +660,7 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
         result = r.text;
       } else if (name === 'roll_check' && !String(args.skill || '').trim()) {
         // Пустые или битые аргументы: без этого выходил бессмысленный бросок «—» со средней сложностью.
-        result = 'Ошибка: не указано, что проверяем. Повтори вызов roll_check с skill (умение героя или навык по смыслу) и difficulty.';
+        result = `Ошибка: не указано, что проверяем. Повтори вызов roll_check с skill (навык из списка: ${catalogOf(state).map((x) => x.name).join(', ')}) и difficulty.`;
       } else if (name === 'roll_check') {
         const character = resolveCharacterFor(state, args.character);
         // Черты цели влияют на исход: труса легче запугать, упрямца труднее убедить.
@@ -657,15 +669,19 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
           ? (state.npcs || []).find((n) => n.name.toLowerCase() === tgt)
             || (state.npcs || []).find((n) => !n.archived && n.name.toLowerCase().split(/\s+/)[0].slice(0, 4) === tgt.split(/\s+/)[0].slice(0, 4) && tgt.length >= 3)
           : null;
+        // Черты и умелость цели сверяются с названием навыка из списка, а не с формулировкой модели.
+        const catalog = catalogOf(state);
+        const listed = matchSkill(catalog, args.skill).skill;
+        const skillName = listed ? listed.name : args.skill;
         const tm = targetNpc
-          ? traitModifier(state.traitPool || [], targetNpc.traits || [], args.skill)
+          ? traitModifier(state.traitPool || [], targetNpc.traits || [], skillName)
           : { mod: 0, reasons: [] };
         // Умелость цели: мастера-следователя обмануть труднее, чем крестьянина.
-        const cm = competenceMod(targetNpc, args.skill);
+        const cm = competenceMod(targetNpc, skillName);
         if (cm.mod) { tm.mod += cm.mod; tm.reasons = [...tm.reasons, cm.reason]; }
         const sm = statusRollMod(statusCatalogOf(state), character);
         const r = rollCheck({
-          character, skill: args.skill, difficulty: args.difficulty,
+          character, skill: args.skill, talent: args.talent, catalog, difficulty: args.difficulty,
           traitMod: tm.mod + sm.mod,
           traitReasons: [...tm.reasons, ...sm.reasons],
           edge: args.edge, edgeReason: args.edge_reason,
