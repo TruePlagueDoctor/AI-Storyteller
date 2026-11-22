@@ -34,6 +34,9 @@ function openNpcModal(npc) {
   $('npcBound').checked = Boolean(npc && npc.bound);
   $('npcSelf').checked = Boolean(npc && npc.self);
   $('npcVoiceSamples').value = npc && Array.isArray(npc.voiceSamples) ? npc.voiceSamples.join('\n') : '';
+  $('npcBodyFields').hidden = !app.scaleEnabled;
+  $('npcStrength').value = String(npc?.bodyScale?.strength ?? 0);
+  $('npcIntangible').checked = !!npc?.bodyScale?.intangible;
   $('npcCompetence').value = (npc && npc.competence) || '';
   $('npcSkills').value = npc && Array.isArray(npc.skills) ? npc.skills.join(', ') : '';
   npcTraitSel = new Set(npc && Array.isArray(npc.traits) ? npc.traits : []);
@@ -128,6 +131,7 @@ async function saveNpc() {
   const body = { locked: [...npcLocks], traits: [...npcTraitSel], bound: $('npcBound').checked, self: $('npcSelf').checked,
     voiceSamples: $('npcVoiceSamples').value.split('\n').map((s) => s.trim()).filter(Boolean).slice(-8),
     competence: $('npcCompetence').value, skills: $('npcSkills').value.split(/[,;]/).map((s) => s.trim()).filter(Boolean).slice(0, 3) };
+  if (app.scaleEnabled) body.bodyScale = { strength: $('npcStrength').value, intangible: $('npcIntangible').checked };
   for (const [field, id] of Object.entries(NPC_FIELD_IDS)) body[field] = $(id).value;
   if (!body.name.trim()) { toast('У персонажа должно быть имя.'); return; }
   try {

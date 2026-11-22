@@ -4,6 +4,7 @@
 // умения, портрет); привязанное к истории — отношение к герою, «что между ними было», где он сейчас, настроение —
 // остаётся в истории. Герой и НПС взаимозаменяемы: НПС можно взять героем и наоборот.
 import { readFile, writeFile, rename, mkdir, copyFile, unlink } from 'node:fs/promises';
+import { readBody } from './action-scale.js';
 import { normalizeAttrs } from './skillset.js';
 import { join, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -52,6 +53,7 @@ function cardOf(kind, src) {
   for (const k of TEXT) if (str(src[k])) card[k] = str(src[k]);
   for (const k of LISTS) if (Array.isArray(src[k]) && src[k].length) card[k] = src[k].map((x) => str(x, 300)).filter(Boolean);
   if (kind === 'hero' && str(src.persona)) card.description = str(src.persona);
+  if (kind === 'npc' && src.bodyScale) card.bodyScale = readBody(src.bodyScale);
   if (kind === 'npc' && src.self) card.self = true;
   return card;
 }
@@ -109,7 +111,7 @@ export async function importFromLibrary(entryId, { as = 'npc', separate = false,
     if (card.portraitTags) hero.portraitTags = card.portraitTags;
     return { as: 'hero', id: hero.id, name: hero.name };
   }
-  const data = { name: entry.name, self: card.self === true };
+  const data = { name: entry.name, self: card.self === true, bodyScale: card.bodyScale };
   for (const k of TEXT) if (k !== 'social' && k !== 'portraitTags' && card[k]) data[k] = card[k];
   for (const k of LISTS) if (card[k]) data[k] = card[k];
   // Бывший герой как НПС: его положение — в описание, умения героя — в умения НПС (их не больше трёх).

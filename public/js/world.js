@@ -481,6 +481,9 @@ async function deleteThreadNow() {
 let editingBlockId = null;
 function syncBlockRows() {
   const t = $('blockType').value;
+  $('blockPowerFields').hidden = !app.scaleEnabled || !['item', 'status'].includes(t);
+  $('powerTierField').hidden = $('powerKind').value !== 'сила';
+  $('powerConditions').hidden = !$('powerKind').value;
   $('blockStatRow').style.display = t === 'stat' ? '' : 'none';
   $('blockStatusRows').style.display = t === 'status' ? '' : 'none';
   $('blockTextRow').style.display = (t === 'stat' || t === 'status') ? 'none' : '';
@@ -492,6 +495,12 @@ function openBlockModal(b) {
   $('blockModalTitle').textContent = b ? 'Изменить блок' : 'Новый блок';
   $('blockType').value = b ? b.type : 'status';
   $('blockName').value = b ? b.name : '';
+  $('powerKind').value = b?.power?.kind || '';
+  $('powerTier').value = String(b?.power?.tier ?? 0);
+  $('powerWhen').value = b?.power?.when || '';
+  $('powerCharges').value = b?.power?.charges ?? '';
+  $('powerCharges').defaultValue = $('powerCharges').value;
+  $('powerKind').dataset.original = JSON.stringify(b?.power || null);
   $('blockValue').value = b && b.type === 'stat' ? (b.value ?? '') : '';
   $('blockMax').value = b && b.type === 'stat' && b.max != null ? b.max : '';
   $('blockText').value = b && b.type !== 'stat' && b.type !== 'status' ? (b.value ?? '') : '';
@@ -515,6 +524,18 @@ async function saveBlock() {
   if (!c) { toast('Нет активного героя.'); return; }
   const type = $('blockType').value;
   const body = { id: editingBlockId || undefined, type, name: $('blockName').value, description: $('blockDesc').value, locked: $('blockLockMode').value === 'all', descLocked: $('blockLockMode').value === 'desc' };
+  if (!$('blockPowerFields').hidden) {
+    const original = JSON.parse($('powerKind').dataset.original);
+    const kind = $('powerKind').value;
+    const power = kind ? { kind } : null;
+    if (kind === 'сила') power.tier = Number($('powerTier').value);
+    if (power && $('powerWhen').value.trim()) power.when = $('powerWhen').value.trim();
+    if (power && $('powerCharges').value !== '') power.charges = Number($('powerCharges').value);
+    if (JSON.stringify(power) !== JSON.stringify(original)) {
+      body.power = power;
+      body.keepCharges = !!original && $('powerCharges').value === $('powerCharges').defaultValue;
+    }
+  }
   if (type === 'stat') { body.value = $('blockValue').value; body.max = $('blockMax').value; }
   else if (type === 'status') {
     body.rollMod = $('blockRollMod').value.replace('−', '-');

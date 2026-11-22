@@ -4,6 +4,7 @@
 import { DEFAULT_CLICHE_PHRASES, normalizeCliches } from './contradictions.js';
 import { switchRelations, dropRelations, migrateRelations, reconcileRelations, groupOf, companionIds } from './relations.js';
 import { switchLine, dropLine, migrateLines, reconcileLines } from './lines.js';
+import { readPower, readBody, parseBarriers } from './action-scale.js';
 import { defaultCatalog, catalogOf, normalizeAttrs, adoptAllSkills, adoptSkills, matchSkill, skillBlock, parseCatalogText, SKILL_PRESETS, attrId } from './skillset.js';
 import { emptyScene, normalizeScene } from './scene.js';
 import { normalizeEvents, EVENT_TYPES } from './chronicle.js';
@@ -1054,6 +1055,8 @@ export async function upsertBlock(characterId, data = {}) {
   const name = String(data.name || '').trim();
   if (!name) throw new Error('У блока нужно название.');
   const type = BLOCK_TYPES_MANUAL.includes(data.type) ? data.type : 'status';
+  const canPower = type === 'item' || type === 'status';
+  const power = canPower && data.power !== undefined ? readPower(data.power) : null;
   let b = data.id ? c.blocks.find((x) => x.id === data.id) : null;
   const before = b ? deepCopy(b) : null;
   const def = type === 'ability' ? matchSkill(catalogOf(state), name, { strict: true }).skill : null;
@@ -1064,6 +1067,12 @@ export async function upsertBlock(characterId, data = {}) {
     if (type === 'status') b.sinceTurn = state.turn || 0;
     c.blocks.push(b);
   }
+  if (power && data.keepCharges && b.power) {
+    if (b.power.charges == null) delete power.charges;
+    else power.charges = b.power.charges;
+  }
+  if (power) b.power = power;
+  else if (!canPower || data.power !== undefined) delete b.power;
   b.type = type;
   b.name = name;
   // Умение: название, целиком относящееся к навыку из списка, записывается этим навыком (без дублей); остальное — особый талант.
@@ -1122,6 +1131,8 @@ export async function addNpc(data = {}) {
   if (typeof data.bound === 'boolean') npc.bound = data.bound;
   if (data.self === true) npc.self = true;
   if (Array.isArray(data.locked)) npc.locked = data.locked.filter((x) => [...NPC_FIELDS, ...NPC_ARRAY_FIELDS].includes(x));
+  const body = readBody(data.bodyScale);
+  if (body) npc.bodyScale = body;
   state.npcs.push(npc);
   noteManual('npc', npc.id, null, npc);
   await saveState();
@@ -1132,6 +1143,10 @@ export async function updateNpcManual(id, data = {}) {
   const n = state.npcs.find((x) => x.id === id);
   if (!n) throw new Error('Персонаж не найден.');
   const before = deepCopy(n);
+  if (data.bodyScale !== undefined) {
+    const body = readBody(data.bodyScale);
+    if (body) n.bodyScale = body; else delete n.bodyScale;
+  }
   if (typeof data.appearance === 'string' && data.appearance.trim() !== (n.appearance || '')) delete n.portraitTags;
   // Переименовали вручную — прежнее имя остаётся псевдонимом для поиска по истории.
   if (typeof data.name === 'string' && data.name.trim() && n.name && data.name.trim() !== n.name) {
@@ -1292,6 +1307,7 @@ export async function deleteNpc(id) {
 }
 
 export async function updateSettings({ systemPrompt, worldPrompt, scenarioPrompt, directorNote, difficulty, narration, stateSync, loreAutoWrite, diceEnabled, summary, autoSummarize, historyKeep, model, toolModel, temperature, repetitionPenalty, frequencyPenalty, ...rest } = {}) {
+  const barriers = typeof rest.scaleBarrierText === 'string' ? parseBarriers(rest.scaleBarrierText) : null;
   // Список навыков истории — текстом, по строке на навык. Прежние навыки узнаются по названию, переименованные — по месту.
   if (typeof rest.skillCatalogText === 'string') {
     const parsed = parseCatalogText(rest.skillCatalogText, catalogOf(state), rest.skillCatalogPreset);
@@ -1300,6 +1316,8 @@ export async function updateSettings({ systemPrompt, worldPrompt, scenarioPrompt
     state.skillCatalog = parsed.catalog;
     adoptAllSkills(state);
   }
+  if (barriers) state.scaleBarriers = barriers;
+  if (typeof rest.scaleEnabled === 'boolean') state.scaleEnabled = rest.scaleEnabled;
   if (typeof systemPrompt === 'string') state.systemPrompt = systemPrompt;
   if (typeof worldPrompt === 'string') state.worldPrompt = worldPrompt;
   if (typeof directorNote === 'string') state.directorNote = directorNote;

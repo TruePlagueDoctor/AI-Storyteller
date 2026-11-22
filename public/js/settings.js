@@ -166,6 +166,11 @@ async function openSettings() {
     $('loreAutoWriteInput').checked = s.loreAutoWrite === true;
     $('syncPromptStyleInput').value = s.syncPromptStyle === 'legacy' ? 'legacy' : 'technical';
     $('promptLayoutInput').value = s.promptLayout === 'classic' ? 'classic' : 'cache';
+    $('scaleEnabledInput').checked = !!s.scaleEnabled;
+    $('scaleBarrierField').hidden = !s.scaleEnabled;
+    const barriers = (s.scaleBarriers || []).map((b) => b.name + ' | ' + b.tier).join('\n');
+    $('scaleBarrierText').value = barriers;
+    $('scaleBarrierText').dataset.loaded = barriers;
     $('diceEnabledInput').checked = s.diceEnabled !== false;
     $('autoSummarizeInput').checked = s.autoSummarize !== false;
     $('sdUrlInput').value = s.sdUrl || 'http://127.0.0.1:7860';
@@ -249,6 +254,8 @@ async function saveSettings() {
         loreAutoWrite: $('loreAutoWriteInput').checked,
         syncPromptStyle: $('syncPromptStyleInput').value,
         promptLayout: $('promptLayoutInput').value,
+        scaleEnabled: $('scaleEnabledInput').checked,
+        scaleBarrierText: $('scaleBarrierText').value === $('scaleBarrierText').dataset.loaded ? undefined : $('scaleBarrierText').value,
         diceEnabled: $('diceEnabledInput').checked,
         autoSummarize: $('autoSummarizeInput').checked,
         historyKeep: $('historyKeepInput').value,
@@ -257,6 +264,7 @@ async function saveSettings() {
         clichePhrases: $('clicheInput').value,
       }),
     });
+    applyState(data);
     modelLabel.textContent = data.model;
     closeSettings();
   } catch (err) { toast(err.message); }
