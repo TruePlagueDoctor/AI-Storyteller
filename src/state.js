@@ -417,11 +417,12 @@ const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
 // Запоминаем только то, что игрок реально изменил, — по полям и со своим временем у каждого:
 // иначе вместе с правкой «впечатывалось» бы и то, что учётчик записал за отменяемый ход.
 // before === null — создано игроком; after === null — удалено. charId — для блоков листа.
-export function noteManual(kind, id, before, after, charId) {
+export function noteManual(kind, id, before, after, charId, retain = false) {
   if (!state.manual || typeof state.manual !== 'object') state.manual = {};
   const key = `${kind}:${charId ? charId + '/' : ''}${id}`;
   const now = stamp();
   const rec = state.manual[key] || { kind, id, charId, fields: {} };
+  if (retain) rec.retain = true; // Большой импорт должен пережить откат даже к старому снимку.
   rec.at = now;
   if (after == null) { rec.deletedAt = now; state.manual[key] = rec; return; }
   delete rec.deletedAt;
@@ -434,7 +435,8 @@ export function noteManual(kind, id, before, after, charId) {
     rec.fields[k] = k in after ? { at: now, v: deepCopy(after[k]) } : { at: now, del: true };
   }
   state.manual[key] = rec;
-  const all = Object.keys(state.manual);
+  if (rec.retain) return;
+  const all = Object.keys(state.manual).filter((k) => !state.manual[k].retain);
   if (all.length > 600) { // не растём бесконечно: самые старые правки уже есть во всех снимках
     all.sort((x, y) => state.manual[x].at - state.manual[y].at).slice(0, all.length - 600).forEach((k) => delete state.manual[k]);
   }
@@ -990,6 +992,28 @@ function normalizeKeys(keys) {
   if (Array.isArray(keys)) return keys.map((k) => String(k).trim()).filter(Boolean);
   if (typeof keys === 'string') return keys.split(',').map((k) => k.trim()).filter(Boolean);
   return [];
+}
+
+export async function appendImportedLore(entries) {
+  if (!entries.length) return;
+  const previous = new Map();
+  for (const entry of entries) {
+    const key = 'lore:' + entry.id;
+    previous.set(key, deepCopy(state.manual?.[key]));
+    state.lorebook.push(entry);
+    noteManual('lore', entry.id, null, entry, undefined, true);
+  }
+  try {
+    // Импорт относится только к активному слоту. Одна атомарная запись на всю книгу.
+    await writeJson(slotPath(activeSlotId), slotPayload(state));
+  } catch (e) {
+    const added = new Set(entries);
+    state.lorebook = state.lorebook.filter((entry) => !added.has(entry));
+    for (const [key, old] of previous) {
+      if (old) state.manual[key] = old; else delete state.manual[key];
+    }
+    throw e;
+  }
 }
 
 export async function addLoreEntry({ title, keys, content, always, kind, brief, fields, relations } = {}) {

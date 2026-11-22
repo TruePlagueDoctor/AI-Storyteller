@@ -618,3 +618,21 @@ async function deleteEventNow() {
   try { applyState(await api(`/api/events/${editingEventId}`, { method: 'DELETE' })); $('eventModal').hidden = true; }
   catch (err) { toast(err.message); }
 }
+
+async function importLoreFile(event) {
+  const input = event.target;
+  const file = input.files[0];
+  const slot = input.dataset.slot;
+  input.value = '';
+  if (!file) return;
+  $('loreImportBtn').disabled = true;
+  try {
+    if (file.size > 64 * 1024 * 1024) throw new Error('Файл кодекса превышает 64 МБ.');
+    const body = (await file.text()).replace(/^\uFEFF/, '');
+    try { JSON.parse(body); } catch { throw new Error('Не удалось прочитать JSON. Проверьте формат файла.'); }
+    const data = await api('/api/lore/import?slot=' + encodeURIComponent(slot), { method: 'POST', body });
+    if (app.activeSlotId === slot) applyState(data);
+    toast(`Добавлено статей: ${data.imported}. Совпадений пропущено: ${data.skipped.length}.`);
+  } catch (e) { toast(e.message); }
+  finally { $('loreImportBtn').disabled = false; }
+}

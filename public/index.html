@@ -121,6 +121,9 @@
             <div class="sheet-title-row">
               <span class="panel-caption">Кодекс мира</span>
               <div class="sheet-head-actions">
+                <button class="link-btn" id="loreImportBtn" title="Добавить статьи из JSON в текущую историю">Импорт</button>
+                <a class="link-btn" href="/api/lore/export" download>Экспорт</a>
+                <input type="file" id="loreImportFile" accept=".json,application/json" hidden />
                 <button class="icon-btn" id="loreBriefsBtn" title="✨ Написать выжимки всем статьям, у которых их нет" hidden>✨</button>
                 <button class="icon-btn" id="loreAddBtn" title="Добавить статью">＋</button>
               </div>

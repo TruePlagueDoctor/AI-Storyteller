@@ -162,6 +162,11 @@ async function init() {
   $('threadSave').addEventListener('click', saveThread);
   $('threadDelete').addEventListener('click', deleteThreadNow);
   $('threadModal').addEventListener('click', (e) => { if (e.target.id === 'threadModal') closeThreadModal(); });
+  $('loreImportBtn').addEventListener('click', () => {
+    $('loreImportFile').dataset.slot = app.activeSlotId;
+    $('loreImportFile').click();
+  });
+  $('loreImportFile').addEventListener('change', importLoreFile);
   $('loreAddBtn').addEventListener('click', () => openLoreModal(null));
   $('loreList').addEventListener('click', (e) => {
     const card = e.target.closest('.lore');

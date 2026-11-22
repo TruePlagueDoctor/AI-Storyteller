@@ -13,7 +13,7 @@ import {
   captureTurnSnapshot, canRegenerate, rewindLastTurn, setCharacterAvatar, editMessage,
   markTurnFailed, hasPendingTurn, clearTurnFailure, dropPendingTurn, trimFailedTail, restoreWorldSnapshot,
   listSlots, createSlot, switchSlot, renameSlot, deleteSlot, duplicateSlot,
-  addLoreEntry, updateLoreEntry, deleteLoreEntry, addNpc, updateNpcManual, setNpcAvatar, updateTraitPool, mergeDefaultTraits, updateSeedPool, updateStatusCatalog, upsertThread, deleteThread,
+  appendImportedLore, addLoreEntry, updateLoreEntry, deleteLoreEntry, addNpc, updateNpcManual, setNpcAvatar, updateTraitPool, mergeDefaultTraits, updateSeedPool, updateStatusCatalog, upsertThread, deleteThread,
 } from './src/state.js';
 import { runTurn, afterSync } from './src/turn.js';
 import { planSummary, computeSummary, applySummary } from './src/summary.js';
@@ -26,6 +26,7 @@ import { companionIds, groupOf } from './src/relations.js';
 import { portraitTags, sceneTags, codexTags, codexStyle, cleanTags } from './src/art.js';
 import { DEFAULT_IMAGE_SETTINGS } from './src/images.js';
 import { fillField, writeBrief, splitArticle } from './src/fill.js';
+import { exportLorebook, planLoreImport, installLoreImages, LoreFormatError } from './src/lore-transfer.js';
 import { CODEX_KINDS, KIND_LABEL, KIND_FIELDS, findPeople, withInherited } from './src/codex.js';
 import { listRequests, getRequest, clearRequests, diagCounts } from './src/diag.js';
 import { txt2img, pingSd } from './src/images.js';
@@ -43,7 +44,13 @@ const PORT = process.env.PORT || 3000;
 // Доступ: только этот компьютер; из сети — по LAN_ACCESS=1 и паролю (см. src/access.js). Раньше всего остального.
 const access = accessConfig();
 app.use(accessGuard(access));
+app.post('/api/lore/import', express.json({ limit: '64mb' }));
 app.use(express.json({ limit: '6mb' }));
+let importingLore = false;
+app.use((req, res, next) => {
+  if (importingLore && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return res.status(409).json({ error: 'Идёт импорт кодекса. Дождитесь завершения.' });
+  next();
+});
 // Статику не кэшируем: иначе браузер показывает старый app.js после обновления
 // и кажется, что правки не приехали.
 app.use(express.static(PUBLIC_DIR, {
@@ -368,6 +375,28 @@ app.post('/api/backups/:id/restore', whileIdle, async (req, res) => {
 
 // ---- ✨ Выжимки кодекса ----
 // Одна статья (из формы редактора, не сохраняется — игрок посмотрит и сохранит сам).
+app.get('/api/lore/export', async (_req, res) => {
+  try {
+    const { slots, activeSlotId } = listSlots();
+    const name = slots.find((s) => s.id === activeSlotId)?.name || 'Кодекс';
+    const doc = await exportLorebook(structuredClone(getState().lorebook));
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}.lorebook.json`);
+    res.json(doc);
+  } catch (e) { fail(res, e); }
+});
+app.post('/api/lore/import', whileIdle, async (req, res) => {
+  if (importingLore || (req.query.slot && req.query.slot !== listSlots().activeSlotId)) {
+    return res.status(409).json({ error: 'История изменилась или импорт уже выполняется. Выберите файл ещё раз.' });
+  }
+  importingLore = true;
+  try {
+    const { added, skipped } = planLoreImport(req.body, getState().lorebook);
+    await installLoreImages(added, appendImportedLore);
+    res.json({ ...publicState(), imported: added.length, skipped });
+  } catch (e) { fail(res, e, e instanceof LoreFormatError ? 400 : 500); }
+  finally { importingLore = false; }
+});
+
 app.post('/api/lore/brief', async (req, res) => {
   if (!apiKey()) return res.status(400).json({ error: 'Не задан OPENROUTER_API_KEY.' });
   try { res.json({ brief: await writeBrief({ state: getState(), apiKey: apiKey(), entry: req.body?.entry }) }); }
