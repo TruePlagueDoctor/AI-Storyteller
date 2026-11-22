@@ -3,6 +3,7 @@
 
 import { partyOf } from './relations.js';
 import { viewMessages, stamp } from './lines.js';
+import { scaleSchema, resolveScaled, actionText } from './action-scale.js';
 import { ROLL_TOOL, toolsFor, executeTool, resolveCharacterFor } from './tools.js';
 import { rollCheck, describeRoll } from './dice.js';
 import { traitModifier } from './traits.js';
@@ -311,7 +312,8 @@ function voicesBlock(state) {
 function narratorToolsLine(state) {
   const dice = state.diceEnabled !== false;
   const look = hasCodex(state);
-  const how = ' Вызывай штатным вызовом инструмента до того, как писать сцену, а не текстом: никаких тегов invoke/function/tool_call и служебной разметки в рассказе. Других инструментов у тебя нет.';
+  const scale = dice && state.scaleEnabled ? ' Для силового действия, полёта, прохода сквозь материю или прикосновения к бестелесному вызови roll_check даже при очевидном исходе. Для переговоров и обходных планов используй обычное.' : '';
+  const how = scale + ' Вызывай штатным вызовом инструмента до того, как писать сцену, а не текстом: никаких тегов invoke/function/tool_call и служебной разметки в рассказе. Других инструментов у тебя нет.';
   if (dice && look) return 'У тебя два инструмента: roll_check — проверка, когда исход действия героя не предрешён, и codex_lookup — прочитать статью кодекса перед описанием.' + how;
   if (dice) return 'У тебя один инструмент: roll_check — проверка, когда исход действия героя не предрешён.' + how;
   if (look) return 'У тебя один инструмент: codex_lookup — прочитать статью кодекса перед описанием.' + how;
@@ -587,11 +589,14 @@ function rollToolFor(state) {
     skill: { type: 'string', enum: catalog.map((x) => x.name),
       description: 'Навык из списка, под который подходит действие (характеристику и уровень героя код подставит сам): ' + catalogLines(catalog) + '.' },
   };
+  if (state.scaleEnabled) Object.assign(props, scaleSchema(state, partyOf(state)));
   if (gifts.length) {
     props.talent = { type: 'string', description: 'Особый талант героя, если действие — именно его применение (название точно из списка): ' +
       gifts.join('; ') + '. skill при этом всё равно укажи — ближайший по смыслу.' };
   }
-  return { ...ROLL_TOOL, function: { ...f, parameters: { ...f.parameters, properties: props } } };
+  const description = state.scaleEnabled ? f.description + ' Для физических возможностей вызови до описания даже очевидного исхода. Укажи подход и точную цель, в том числе имя преграды. Для обычного навыка укажи обычное.' : f.description;
+  return { ...ROLL_TOOL, function: { ...f, description, parameters: { ...f.parameters, properties: props,
+    required: state.scaleEnabled ? [...f.parameters.required, 'approach'] : f.parameters.required } } };
 }
 
 export async function narrate(state, apiKey, withTools, { allowDice = true, journal = null, timer = null } = {}) {
@@ -606,6 +611,10 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
   const narrationParts = [];
   let finishReason = null;
   const rolls = [];
+  const applications = new Map();
+  // Преграда становится известна миру только после успешного ответа модели.
+  const scaleWorld = { npcs: state.npcs, scaleBarriers: [...(state.scaleBarriers || [])] };
+  const knownCount = scaleWorld.scaleBarriers.length;
   // Подглядывание в кодекс: что рассказчик видел в промте + что прочитал сам. По этому после хода
   // видно, не вывел ли он существо, не зная его статьи.
   const lookup = hasCodex(state);
@@ -658,6 +667,8 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
         for (const id of r.found) codexSeen.add(id);
         lookups.push(...(Array.isArray(args.titles) ? args.titles : [args.titles ?? args.title]).filter(Boolean).map(String));
         result = r.text;
+      } else if (name === 'roll_check' && !dice) {
+        result = 'Проверки отключены.';
       } else if (name === 'roll_check' && !String(args.skill || '').trim()) {
         // Пустые или битые аргументы: без этого выходил бессмысленный бросок «—» со средней сложностью.
         result = `Ошибка: не указано, что проверяем. Повтори вызов roll_check с skill (навык из списка: ${catalogOf(state).map((x) => x.name).join(', ')}) и difficulty.`;
@@ -680,17 +691,33 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
         const cm = competenceMod(targetNpc, skillName);
         if (cm.mod) { tm.mod += cm.mod; tm.reasons = [...tm.reasons, cm.reason]; }
         const sm = statusRollMod(statusCatalogOf(state), character);
-        const r = rollCheck({
+        const roll = () => rollCheck({
           character, skill: args.skill, talent: args.talent, catalog, difficulty: args.difficulty,
           traitMod: tm.mod + sm.mod,
           traitReasons: [...tm.reasons, ...sm.reasons],
           edge: args.edge, edgeReason: args.edge_reason,
         });
+        let r;
+        if (state.scaleEnabled && args.approach && args.approach !== 'обычное') {
+          const actor = String(args.character || '').trim().toLowerCase();
+          const names = [character.name, ...(character.aliases || [])];
+          if (!partyOf(state).includes(character) || (actor && !names.some((s) => s.toLowerCase() === actor))) {
+            return 'Ошибка: укажи героя текущей сцены.';
+          }
+          try { r = resolveScaled(scaleWorld, character, args, applications, roll); }
+          catch (err) { if (err instanceof RangeError) return 'Ошибка: ' + err.message; throw err; }
+        } else {
+          if (state.scaleEnabled && !args.approach) return 'Ошибка: укажи approach (обычное для стандартной проверки).';
+          if (state.scaleEnabled && (args.source || args.obstacle_tier != null)) return 'Ошибка: для источника или масштаба укажи физический подход.';
+          r = roll();
+        }
+        const summary = r.action ? actionText(r) + (r.roll ? '\n' + describeRoll(r) : '') : describeRoll(r);
+        if (rolls.includes(r)) return summary;
         r.target_npc = targetNpc ? targetNpc.name : undefined;
-        const grew = recordRoll(character, r);
+        const grew = r.roll && recordRoll(character, r);
         if (grew) { r.growth = grew; (state._growth ||= []).push(grew); }
         rolls.push(r);
-        result = describeRoll(r);
+        result = summary;
       } else {
         result = executeTool(name, args, state);
         if (journal) journal.push(journalEntry(name, args, result, round + 1));
@@ -754,5 +781,9 @@ export async function narrate(state, apiKey, withTools, { allowDice = true, jour
   // не должны засорять контекст следующих ходов.
   const narration = stripHeroLabel(narrationParts.join('\n\n')).trim();
   if (!withTools && narration) state.messages.push({ role: 'assistant', content: narration, ...stamp(state) });
+  for (const barrier of scaleWorld.scaleBarriers.slice(knownCount)) {
+    const saved = state.scaleBarriers ||= [];
+    if (!saved.some((b) => b.name.toLowerCase() === barrier.name.toLowerCase())) saved.push(barrier);
+  }
   return { narration, rolls, truncated: finishReason === 'length', codexSeen, lookups };
 }

@@ -76,7 +76,7 @@ export async function runTurn({ state, apiKey, skipSync = false, beforeSync = nu
     syncInfo = { status: 'skipped', calls: [] };
   } else {
     try {
-      await syncState(state, apiKey, narration, journal, { timer: syncTimer });
+      await syncState(state, apiKey, narration, journal, { timer: syncTimer, rolls });
       syncInfo = { status: 'done', calls: journal, model: toolModelOf(state), timing: syncTimer };
     } catch (e) {
       // Сбой учёта не должен рушить ход — история важнее. Но он виден в журнале.

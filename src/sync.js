@@ -433,7 +433,7 @@ export function heroLostPlace(narration, hero) {
   return new RegExp(`${esc}[\\p{L}]*[^.!?…]{0,40}${RE_LEFT_3RD}`, 'iu').test(text);
 }
 
-export async function syncState(state, apiKey, narration, journal = [], { model = null, timer = null } = {}) {
+export async function syncState(state, apiKey, narration, journal = [], { model = null, timer = null, rolls = [] } = {}) {
   const active = state.characters.find((c) => c.id === state.activeCharacterId) || state.characters[0];
   const sheets = partyOf(state).map(sheetForSync).join('\n');
 
@@ -444,6 +444,9 @@ export async function syncState(state, apiKey, narration, journal = [], { model 
     .map((x) => `У героя «${x.name}» накопилось ${x.n} состояний — убери устаревшие, объедини похожие.`);
   // Инвентарь — только когда ГЕРОЙ уехал насовсем или лишился вещей. «Ольт уходит» — не повод:
   // раньше это слово запускало подсказку, и учётчик мог стереть вещи героя.
+  for (const r of rolls) {
+    if (r.action?.remaining != null) hints.push(`«${r.action.source}»: заряд уже списан движком, осталось ${r.action.remaining}. Не записывай расход повторно.`);
+  }
   const items = (active?.blocks || []).filter((b) => b.type === 'item');
   if (items.length > 3 && heroLostPlace(narration, active)) {
     hints.push('Похоже, герой покинул место надолго или лишился вещей — проверь инвентарь: ' + items.map((b) => b.name).join(', ') +
@@ -626,12 +629,12 @@ export async function syncNarration({ state, apiKey, narration, force = false })
 
 // Повторный учёт хода (кнопка «переучесть»): мир уже откачен к состоянию
 // до учёта, текст хода — как есть (возможно, исправленный игроком).
-export async function resyncNarration({ state, apiKey, narration, model }) {
+export async function resyncNarration({ state, apiKey, narration, model, rolls = [] }) {
   const journal = [];
   const used = (model && model.trim()) || toolModelOf(state);
   const timer = [];
   try {
-    await syncState(state, apiKey, narration, journal, { model: used, timer });
+    await syncState(state, apiKey, narration, journal, { model: used, timer, rolls });
     return { status: 'done', calls: journal, model: used, resynced: true, timing: timer };
   } catch (e) {
     return { status: 'failed', error: String(e.message || e).slice(0, 200), calls: journal, model: used, resynced: true, timing: timer };

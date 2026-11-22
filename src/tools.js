@@ -1,3 +1,4 @@
+import { readPower, readBody, POWER_KINDS } from './action-scale.js';
 // Определения инструментов (OpenAI-совместимый формат для OpenRouter)
 // и их исполнители. Блоки принадлежат конкретному герою.
 
@@ -862,6 +863,10 @@ function executeNpcTool(name, args, state) {
     if (level) npc.competence = level;
     if (skillList) npc.skills = skillList;
     if (typeof race === 'string' && race.trim()) npc.race = race.trim();
+    if (state.scaleEnabled && args.bodyScale) {
+      try { const body = readBody(args.bodyScale); if (body) npc.bodyScale = body; }
+      catch (e) { return 'Ошибка: ' + e.message; }
+    }
     npc.locked = [];
     npc.updatedTurn = state.turn || 0;
     state.npcs.push(npc);
@@ -1043,6 +1048,10 @@ export function executeTool(name, args, state) {
 
   if (idx === -1) {
     const block = { id: randomUUID(), type, name: wantName };
+    if (state.scaleEnabled && args.power && (type === 'status' || type === 'item')) {
+      try { block.power = readPower(args.power); }
+      catch (e) { return 'Ошибка: ' + e.message; }
+    }
     if (type === 'status') block.sinceTurn = state.turn || 0; // чтобы статус на 1 ход успел сработать
     if (val !== undefined) block.value = String(val).trim();
     if (max !== undefined) block.max = coerceNumber(max);
@@ -1072,5 +1081,18 @@ export function executeTool(name, args, state) {
 export function toolsFor(state) {
   const drop = new Set();
   if (state.loreAutoWrite !== true) drop.add('record_lore');
-  return TOOL_DEFINITIONS.filter((t) => !drop.has(t.function.name));
+  const tools = TOOL_DEFINITIONS.filter((t) => !drop.has(t.function.name));
+  if (!state.scaleEnabled) return tools;
+  const tier = { type: 'integer', minimum: 0, maximum: 3 };
+  const extra = {
+    block: { power: { type: 'object', description: 'Только при создании предмета или состояния с установленной в истории возможностью. charges — начальный запас, опусти для постоянной способности. Расход ведёт движок.',
+      properties: { kind: { type: 'string', enum: POWER_KINDS }, tier, when: { type: 'string', description: 'Точное имя требуемого состояния или формы' }, charges: { type: 'integer', minimum: 0 } }, required: ['kind'] } },
+    npc: { bodyScale: { type: 'object', description: 'При создании сверхъестественного НПС. Только физическая сила 0–3 и бестелесность.',
+      properties: { strength: tier, intangible: { type: 'boolean' } }, required: ['strength'] } },
+  };
+  return tools.map((t) => {
+    const f = t.function;
+    if (!extra[f.name]) return t;
+    return { ...t, function: { ...f, parameters: { ...f.parameters, properties: { ...f.parameters.properties, ...extra[f.name] } } } };
+  });
 }

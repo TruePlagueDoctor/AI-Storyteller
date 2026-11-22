@@ -100,6 +100,8 @@ function publicState() {
     difficulty: s.difficulty,
     narration: s.narration,
     pace: s.pace === 'driven' ? 'driven' : 'calm',
+    scaleEnabled: s.scaleEnabled === true,
+    scaleBarriers: s.scaleBarriers || [],
     skillCatalog: catalogOf(s),
     skillCatalogText: catalogToText(catalogOf(s)),
     skillPresets: Object.entries(SKILL_PRESETS).map(([id, p]) => ({ id, label: p.label, text: catalogToText(p.skills) })),
@@ -889,7 +891,7 @@ app.post('/api/resync', async (req, res) => {
     const last = state.log[state.log.length - 1];
     restorePreSync();
     const model = String(req.body?.model || '').trim();
-    const sync = await resyncNarration({ state, apiKey: apiKey(), narration: last.text, model });
+    const sync = await resyncNarration({ state, apiKey: apiKey(), narration: last.text, model, rolls: last.rolls || [] });
     const { issues } = afterSync(state, last.text, last.rolls || []);
     // Прежний учёт оставляем рядом — для сравнения моделей.
     if (last.sync) last.syncHistory = [...(last.syncHistory || []), last.sync].slice(-4);

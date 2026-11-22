@@ -240,6 +240,8 @@ async function init() {
   $('blockCancel').addEventListener('click', closeBlockModal);
   $('blockSave').addEventListener('click', saveBlock);
   $('blockDelete').addEventListener('click', deleteBlockFromModal);
+  $('scaleEnabledInput').addEventListener('change', () => { $('scaleBarrierField').hidden = !$('scaleEnabledInput').checked; });
+  $('powerKind').addEventListener('change', syncBlockRows);
   $('blockType').addEventListener('change', syncBlockRows);
   $('sdPingBtn').addEventListener('click', async () => {
     const note = $('sdPingNote');

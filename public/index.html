@@ -276,6 +276,13 @@
           </div>
           <span class="field-hint">По навыку в строке: «Название — Характеристика — что сюда входит». Вторая характеристика через косую черту («Сила/Ловкость») — берётся лучшая. Рассказчик выбирает навык для проверки только из этого списка; описание помогает ему понять, что к какому навыку относится. Характеристики: Сила, Ловкость, Ум, Воля, Обаяние. Переименуешь строку — навык переименуется и на листах героев; уберёшь — у героев он останется особым талантом. Список свой у каждой истории.</span>
         </div>
+        <label class="field"><span><input type="checkbox" id="scaleEnabledInput" /> Масштаб физических действий</span>
+          <span class="field-hint">Работает при включённых проверках. Задай возможность в предмете или состоянии героя, а сопротивление — в досье НПС или списке преград.</span>
+        </label>
+        <label class="field" id="scaleBarrierField"><span class="field-label">Силовые преграды истории</span>
+          <textarea id="scaleBarrierText" rows="3" placeholder="Решётка северных ворот | 2"></textarea>
+          <span class="field-hint">Название с местом и ступень через |. От 0 (обычная) до 3 (божественная). Новые преграды из игры появятся здесь.</span>
+        </label>
         <label class="field toggle-field">
           <input type="checkbox" id="diceEnabledInput" />
           <span class="toggle-text">
@@ -770,6 +777,10 @@
                   <input type="text" id="npcSkills" placeholder="следствие, допрос" />
                 </div>
               </div>
+              <div id="npcBodyFields" hidden>
+                <label class="field"><span class="field-label">Масштаб физической силы</span><select id="npcStrength"><option value="0">0 — обычный</option><option value="1">1 — усиленный</option><option value="2">2 — исполинский</option><option value="3">3 — божественный</option></select></label>
+                <label><input type="checkbox" id="npcIntangible" /> Бестелесен</label>
+              </div>
               <p class="field-hint">Проверки героя против его умений труднее: обмануть следователя, проскользнуть мимо стражи, перефехтовать мастера клинка.</p>
             </section>
 
@@ -971,6 +982,16 @@
           <span class="field-label">Значение</span>
           <input type="text" id="blockText" placeholder="кратко: «ученик», «должен 50 монет»…" />
         </label>
+        <div id="blockPowerFields" hidden>
+          <label class="field"><span class="field-label">Возможность предмета или состояния</span>
+            <select id="powerKind"><option value="">Без возможности</option><option>сила</option><option>полёт</option><option>бестелесность</option><option>касание духов</option></select>
+          </label>
+          <label class="field" id="powerTierField"><span class="field-label">Масштаб силы</span><select id="powerTier"><option value="0">0 — обычный</option><option value="1">1 — усиленный</option><option value="2">2 — исполинский</option><option value="3">3 — божественный</option></select></label>
+          <div id="powerConditions">
+            <label class="field"><span class="field-label">Требуемое состояние или форма</span><input id="powerWhen" maxlength="100" placeholder="Пусто — доступно всегда" /></label>
+            <label class="field"><span class="field-label">Осталось применений</span><input id="powerCharges" type="number" min="0" step="1" placeholder="Пусто — без расхода" /></label>
+          </div>
+        </div>
         <div id="blockStatusRows">
           <div class="field-row">
             <label class="field" style="flex:1">

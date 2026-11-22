@@ -132,6 +132,12 @@ function renderBlock(b, animate) {
   name.className = 'block-name';
   name.textContent = b.name;
   nameWrap.appendChild(name);
+  if (app.scaleEnabled && b.power) {
+    const info = document.createElement('small');
+    info.className = 'block-talent';
+    info.textContent = [b.power.kind, b.power.tier, b.power.when, b.power.charges != null ? 'заряды ' + b.power.charges : null].filter((v) => v != null).join(' · ');
+    nameWrap.appendChild(info);
+  }
   if (b.type === 'ability' && !b.skill) { name.title = 'Особый талант — вне списка навыков истории'; nameWrap.insertAdjacentHTML('beforeend', '<span class="block-talent">талант</span>'); }
   if (b.locked || b.descLocked) {
     const lock = document.createElement('span');

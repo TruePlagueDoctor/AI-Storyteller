@@ -95,6 +95,7 @@ function applyState(data, { animate = false } = {}) {
   if (data.traitPool) app.traitPool = data.traitPool;
   if (data.seedPool) app.seedPool = data.seedPool;
   if (data.statusCatalog) app.statusCatalog = data.statusCatalog;
+  if (typeof data.scaleEnabled === 'boolean') app.scaleEnabled = data.scaleEnabled;
   if (Array.isArray(data.skillCatalog)) app.skillCatalog = data.skillCatalog;
   if (Array.isArray(data.skillPresets)) app.skillPresets = data.skillPresets;
   if (Array.isArray(data.attributes)) app.attributes = data.attributes;

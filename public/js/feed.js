@@ -15,6 +15,13 @@ function makeEntryEl(role, text, index, entry) {
     for (const r of entry.rolls) {
       const chip = document.createElement('div');
       chip.className = 'roll' + (r.success ? ' ok' : ' bad');
+      if (r.action) {
+        const a = r.action;
+        const info = document.createElement('span');
+        info.textContent = [a.target, a.source, a.reason, a.stake, a.remaining != null && 'Зарядов: ' + a.remaining].filter(Boolean).join(' · ');
+        chip.appendChild(info);
+        if (!r.roll) { chip.append(' · ' + r.outcome); div.appendChild(chip); continue; }
+      }
       const label = document.createElement('span');
       label.className = 'roll-label';
       label.textContent = `${r.talent ? r.talent : r.skill}${r.attr ? ` (${r.attr})` : ''} · ${r.difficulty}`;
