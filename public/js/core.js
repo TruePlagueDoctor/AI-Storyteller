@@ -124,6 +124,6 @@ function applyState(data, { animate = false } = {}) {
 
 // Характеристика героя (1–6; 3 — обычный человек).
 function heroAttr(c, id) {
-  const v = Number(c && c.attrs && c.attrs[id]);
+  const v = Number(c?.attrs?.[id] ?? 3);
   return Number.isFinite(v) ? Math.min(6, Math.max(1, Math.round(v))) : 3;
 }

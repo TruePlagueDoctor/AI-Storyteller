@@ -5,8 +5,8 @@ import { statusCatalogOf } from './statuses.js';
 import { randomUUID } from 'node:crypto';
 import { normalizeScene, advanceClock, parseTimeHint, clockLabel, dayPart } from './scene.js';
 import { findSimilar, EVENT_TYPES, OUTCOMES, typeLabel, outcomeLabel } from './chronicle.js';
-import { matchAbility, COMPETENCE } from './skills.js';
-import { adoptSkills, catalogOf, matchSkill, skillBlock, talentsOf, ATTRIBUTES, ATTR_MIN, ATTR_MAX, ATTR_BUDGET, attrId, attrValue, normalizeAttrs, attrsLine } from './skillset.js';
+import { COMPETENCE } from './skills.js';
+import { adoptSkills, catalogOf, matchSkill, resolveHeroSkill, skillBlock, talentsOf, ATTRIBUTES, ATTR_MIN, ATTR_MAX, ATTR_BUDGET, attrId, attrValue, normalizeAttrs, attrsLine } from './skillset.js';
 import { addXp, nextLevel, LEVELS } from './progress.js';
 import { normalizeEntry } from './codex.js';
 
@@ -566,8 +566,8 @@ function executePracticeTool(args, state) {
   // Навык из списка есть у каждого героя (пока не учился — новичок); талант — только записанный на листе.
   const catalog = catalogOf(state);
   adoptSkills(c, catalog);
-  const found = matchSkill(catalog, skill);
-  let block = found.skill ? skillBlock(c, found.skill.id) : matchAbility(talentsOf(c), skill);
+  const found = resolveHeroSkill(c, catalog, skill);
+  let block = found.skill ? skillBlock(c, found.skill.id) : found.talent;
   if (!block && found.skill) {
     block = { id: randomUUID(), type: 'ability', name: found.skill.name, value: 'новичок', skill: found.skill.id };
     c.blocks.push(block);

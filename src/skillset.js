@@ -3,7 +3,7 @@
 // навыка без блока герой касается «без подготовки» (уровень «новичок», бонус 0). Блок умения без пометки —
 // особый талант героя («Дар медиума»): свободная запись, которая даёт бонус, когда её применяют.
 // Название навыка в броске и тренировке выбирается из списка, а не сочиняется моделью.
-import { skillStems, synonymGroup } from './skills.js';
+import { skillStems, synonymGroup, matchAbility } from './skills.js';
 
 export const ATTRIBUTES = [
   { id: 'str', name: 'Сила', hint: 'мощь, здоровье, стойкость' },
@@ -29,7 +29,7 @@ export function attrId(text) {
   return hit ? hit.id : '';
 }
 export const attrValue = (character, id) => {
-  const v = Number(character && character.attrs && character.attrs[id]);
+  const v = Number(character?.attrs?.[id] ?? ATTR_DEFAULT);
   return Number.isFinite(v) ? Math.min(ATTR_MAX, Math.max(ATTR_MIN, Math.round(v))) : ATTR_DEFAULT;
 };
 // 1 → −2, 3 → 0, 6 → +3
@@ -79,7 +79,7 @@ export function catalogToText(catalog) {
 }
 // Разобрать текст игрока. Прежние id сохраняются: по названию, а если строк столько же — и по месту (переименование).
 // Возвращает { catalog, renamed: [{id, from, to}], removed: [id], errors: [строки, которые не удалось разобрать] }.
-export function parseCatalogText(text, prev = []) {
+export function parseCatalogText(text, prev = [], presetId) {
   const rows = [];
   const errors = [];
   for (const raw of String(text || '').split('\n')) {
@@ -96,7 +96,18 @@ export function parseCatalogText(text, prev = []) {
   const byName = (n) => prev.find((p) => low(p.name) === low(n) && !used.has(p.id));
   for (const r of rows) { const p = byName(r.name); if (p) { r.id = p.id; used.add(p.id); } }
   const renamed = [];
-  if (rows.length === prev.length) {
+  // Старые клиенты присылают только текст заготовки.
+  const preset = Object.hasOwn(SKILL_PRESETS, presetId) ? SKILL_PRESETS[presetId]
+    : Object.values(SKILL_PRESETS).find((p) => catalogToText(p.skills) === String(text).trim());
+  if (preset) {
+    for (const r of rows) {
+      const def = preset.skills.find((s) => low(s.name) === low(r.name));
+      if (!r.id && def && !used.has(def.id)) {
+        r.id = def.id;
+        used.add(r.id);
+      }
+    }
+  } else if (rows.length === prev.length) {
     rows.forEach((r, i) => {
       if (!r.id && prev[i] && !used.has(prev[i].id)) { r.id = prev[i].id; used.add(r.id); renamed.push({ id: r.id, from: prev[i].name, to: r.name }); }
     });
@@ -138,6 +149,14 @@ const lvl = (v) => Math.max(0, LEVELS.indexOf(low(v)));
 export const isAbility = (b) => b && b.type === 'ability';
 export const skillBlock = (character, id) => ((character && character.blocks) || []).find((b) => isAbility(b) && b.skill === id) || null;
 export const talentsOf = (character) => ((character && character.blocks) || []).filter((b) => isAbility(b) && !b.skill);
+// Дословное имя таланта важнее приблизительного совпадения с названием навыка.
+export function resolveHeroSkill(character, catalog, name) {
+  const found = matchSkill(catalog, name);
+  const talents = talentsOf(character);
+  const exact = talents.find((b) => low(b.name) === low(name));
+  if (exact && low(found.skill?.name) !== low(name)) return { skill: null, talent: exact, similar: [] };
+  return { ...found, talent: found.skill ? null : matchAbility(talents, name) };
+}
 export const skillLevel = (character, id) => { const b = skillBlock(character, id); return b ? (LEVELS[lvl(b.value)]) : 'новичок'; };
 // Навыки выше «новичка» — то, чем герой отличается от любого другого.
 export function trainedSkills(character, catalog) {
@@ -145,33 +164,61 @@ export function trainedSkills(character, catalog) {
     .map((x) => ({ ...x.s, level: LEVELS[lvl(x.b.value)] }));
 }
 
-// Привести умения героя к списку: что относится к навыку — получает его название и пометку, остальное помечается талантом.
-// Безопасно вызывать сколько угодно раз (после загрузки, после восстановления снимка): уже разобранные блоки не трогаются.
+// Ключи прогресса совпадают с ключами addXp и practice (включая «ё»).
+function renameSkillBlock(character, block, name) {
+  const from = block.name.trim().toLowerCase();
+  const to = name.trim().toLowerCase();
+  if (from !== to && !character.blocks.some((b) => b !== block && isAbility(b) && typeof b.name === 'string' && b.name.trim().toLowerCase() === from)) {
+    for (const values of [character.skillXp, character.practiceDays]) {
+      if (!values || !Object.hasOwn(values, from)) continue;
+      values[to] = Math.max(values[to] || 0, values[from]);
+      delete values[from];
+    }
+  }
+  block.name = name;
+}
+
+// Общий путь для загрузки партии, смены каталога и восстановления старого снимка.
 export function adoptSkills(character, catalog) {
   if (!character || !Array.isArray(character.blocks)) return false;
   let changed = false;
-  const xp = (character.skillXp && typeof character.skillXp === 'object') ? character.skillXp : (character.skillXp = {});
-  const ids = new Set((catalog || []).map((s) => s.id));
   for (const b of [...character.blocks]) {
-    if (!isAbility(b)) continue;
-    if (b.skill && !ids.has(b.skill)) { delete b.skill; b.talent = true; changed = true; continue; } // навык убрали из списка — стал талантом
-    if (b.skill || b.talent) continue;
-    const exact = (catalog || []).find((s) => low(s.name) === low(b.name));
+    if (!isAbility(b) || typeof b.name !== 'string') continue;
+    if (b.skill) {
+      const def = skillById(catalog, b.skill);
+      if (def) {
+        if (b.name !== def.name) {
+          renameSkillBlock(character, b, def.name);
+          changed = true;
+        }
+        continue;
+      }
+      delete b.skill;
+      b.talent = true;
+      changed = true;
+    }
+    const exact = catalog.find((s) => low(s.name) === low(b.name));
+    if (b.talent && !exact) continue;
     const found = exact || (b.locked ? null : matchSkill(catalog, b.name, { strict: true }).skill);
     changed = true;
     if (!found) { b.talent = true; continue; }
     const twin = skillBlock(character, found.id);
-    const oldKey = low(b.name); const newKey = low(found.name);
-    const carried = Math.max(xp[oldKey] || 0, xp[newKey] || 0);
-    if (oldKey !== newKey) delete xp[oldKey];
-    if (carried) xp[newKey] = carried;
-    if (twin) { // два умения об одном и том же — остаётся одно, с большим уровнем
-      if (lvl(b.value) > lvl(twin.value) && !twin.locked) twin.value = LEVELS[lvl(b.value)];
-      character.blocks.splice(character.blocks.indexOf(b), 1);
-      continue;
-    }
     if (!exact && !b.description) b.description = `прежде: ${b.name}`;
-    b.name = found.name; b.skill = found.id; b.value = LEVELS[lvl(b.value)];
+    renameSkillBlock(character, b, found.name);
+    b.skill = found.id;
+    delete b.talent;
+    b.value = LEVELS[lvl(b.value)];
+    if (twin) {
+      // Закреплённая запись сохраняет также свой id, описание и ручной уровень.
+      const keep = b.locked && !twin.locked ? b : twin;
+      const drop = keep === b ? twin : b;
+      if (!keep.locked && lvl(drop.value) > lvl(keep.value)) keep.value = drop.value;
+      if (drop.descLocked && !keep.descLocked && !keep.locked) {
+        keep.descLocked = true;
+        keep.description = drop.description;
+      }
+      character.blocks.splice(character.blocks.indexOf(drop), 1);
+    }
   }
   return changed;
 }
@@ -184,19 +231,7 @@ export function adoptAllSkills(state) {
   return changed;
 }
 
-// Список сменили: переименованные навыки переименовываются и на листах, убранные становятся талантами.
-export function applyCatalogChange(state, { renamed = [] } = {}) {
-  for (const c of (state.characters || [])) {
-    for (const r of renamed) {
-      const b = skillBlock(c, r.id);
-      if (!b) continue;
-      const xp = c.skillXp || (c.skillXp = {});
-      if (xp[low(b.name)] != null) { xp[low(r.to)] = xp[low(b.name)]; delete xp[low(b.name)]; }
-      b.name = r.to;
-    }
-    adoptSkills(c, catalogOf(state));
-  }
-}
+export { adoptAllSkills as applyCatalogChange };
 
 // Список для рассказчика и учётчика: «Скрытность (Ловкость) — прокрасться, спрятаться…»
 export function catalogLines(catalog) {

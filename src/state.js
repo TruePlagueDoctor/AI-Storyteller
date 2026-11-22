@@ -4,7 +4,7 @@
 import { DEFAULT_CLICHE_PHRASES, normalizeCliches } from './contradictions.js';
 import { switchRelations, dropRelations, migrateRelations, reconcileRelations, groupOf, companionIds } from './relations.js';
 import { switchLine, dropLine, migrateLines, reconcileLines } from './lines.js';
-import { defaultCatalog, catalogOf, normalizeAttrs, adoptAllSkills, adoptSkills, matchSkill, skillBlock, parseCatalogText, applyCatalogChange, SKILL_PRESETS, attrId } from './skillset.js';
+import { defaultCatalog, catalogOf, normalizeAttrs, adoptAllSkills, adoptSkills, matchSkill, skillBlock, parseCatalogText, SKILL_PRESETS, attrId } from './skillset.js';
 import { emptyScene, normalizeScene } from './scene.js';
 import { normalizeEvents, EVENT_TYPES } from './chronicle.js';
 import { DEFAULT_IMAGE_SETTINGS } from './images.js';
@@ -869,8 +869,8 @@ function applySnapshot(snap, { reconcile = true } = {}) {
   if (typeof snap.turn === 'number') state.turn = snap.turn;
   if ('correctionNote' in snap) state.correctionNote = snap.correctionNote;
   if (reconcile) reconcileRelations(state, snap);
-  adoptAllSkills(state); // снимок мог быть сделан до появления списка навыков
   applyManualOverlay(Number(snap.at) || 0);
+  adoptAllSkills(state); // и снимок, и ручная запись могли сохранить прежнее название
 }
 
 export function canRegenerate() {
@@ -1056,6 +1056,9 @@ export async function upsertBlock(characterId, data = {}) {
   const type = BLOCK_TYPES_MANUAL.includes(data.type) ? data.type : 'status';
   let b = data.id ? c.blocks.find((x) => x.id === data.id) : null;
   const before = b ? deepCopy(b) : null;
+  const def = type === 'ability' ? matchSkill(catalogOf(state), name, { strict: true }).skill : null;
+  const twin = def && skillBlock(c, def.id);
+  if (twin && twin !== b) throw new Error(`Навык «${def.name}» уже есть на листе — измени его уровень.`);
   if (!b) {
     b = { id: randomUUID(), type, name };
     if (type === 'status') b.sinceTurn = state.turn || 0;
@@ -1065,9 +1068,6 @@ export async function upsertBlock(characterId, data = {}) {
   b.name = name;
   // Умение: название, целиком относящееся к навыку из списка, записывается этим навыком (без дублей); остальное — особый талант.
   if (type === 'ability') {
-    const def = matchSkill(catalogOf(state), name, { strict: true }).skill;
-    const twin = def ? skillBlock(c, def.id) : null;
-    if (def && twin && twin !== b) { if (!before) c.blocks = c.blocks.filter((x) => x !== b); throw new Error(`Навык «${def.name}» уже есть на листе — измени его уровень.`); }
     if (def) { b.name = def.name; b.skill = def.id; delete b.talent; } else { delete b.skill; b.talent = true; }
   } else { delete b.skill; delete b.talent; }
   const num = (v) => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : undefined; };
@@ -1292,6 +1292,14 @@ export async function deleteNpc(id) {
 }
 
 export async function updateSettings({ systemPrompt, worldPrompt, scenarioPrompt, directorNote, difficulty, narration, stateSync, loreAutoWrite, diceEnabled, summary, autoSummarize, historyKeep, model, toolModel, temperature, repetitionPenalty, frequencyPenalty, ...rest } = {}) {
+  // Список навыков истории — текстом, по строке на навык. Прежние навыки узнаются по названию, переименованные — по месту.
+  if (typeof rest.skillCatalogText === 'string') {
+    const parsed = parseCatalogText(rest.skillCatalogText, catalogOf(state), rest.skillCatalogPreset);
+    if (parsed.errors.length) throw new RangeError(`Список навыков: не понял строку «${parsed.errors[0]}». Нужно: Название — Характеристика — что сюда входит.`);
+    if (parsed.catalog.length < 4) throw new RangeError('Список навыков: нужно хотя бы четыре навыка.');
+    state.skillCatalog = parsed.catalog;
+    adoptAllSkills(state);
+  }
   if (typeof systemPrompt === 'string') state.systemPrompt = systemPrompt;
   if (typeof worldPrompt === 'string') state.worldPrompt = worldPrompt;
   if (typeof directorNote === 'string') state.directorNote = directorNote;
@@ -1306,14 +1314,6 @@ export async function updateSettings({ systemPrompt, worldPrompt, scenarioPrompt
   if (DIFFICULTIES.includes(difficulty)) state.difficulty = difficulty;
   if (NARRATIONS.includes(narration)) state.narration = narration;
   if (PACES.includes(rest.pace)) state.pace = rest.pace;
-  // Список навыков истории — текстом, по строке на навык. Прежние навыки узнаются по названию, переименованные — по месту.
-  if (typeof rest.skillCatalogText === 'string') {
-    const parsed = parseCatalogText(rest.skillCatalogText, catalogOf(state));
-    if (parsed.errors.length) throw new Error(`Список навыков: не понял строку «${parsed.errors[0]}». Нужно: Название — Характеристика — что сюда входит.`);
-    if (parsed.catalog.length < 4) throw new Error('Список навыков: нужно хотя бы четыре навыка.');
-    state.skillCatalog = parsed.catalog;
-    applyCatalogChange(state, parsed);
-  }
   if (typeof stateSync === 'boolean') state.stateSync = stateSync;
   if (typeof loreAutoWrite === 'boolean') state.loreAutoWrite = loreAutoWrite;
   if (rest.syncPromptStyle === 'legacy' || rest.syncPromptStyle === 'technical') state.syncPromptStyle = rest.syncPromptStyle;

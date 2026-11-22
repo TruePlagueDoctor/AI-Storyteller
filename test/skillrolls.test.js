@@ -62,3 +62,14 @@ test('навыка нет в списке и среди талантов — б�
   assert.match(describeRoll(r), /в списке нет/);
   assert.equal(recordRoll(c, r), null); assert.equal(c.blocks.length, 0);
 });
+
+test('«Магия крови» с листа получает собственный бонус и опыт тренировки', async () => {
+  const { executeTool } = await import('../src/tools.js');
+  const c = hero({}, [{ name: 'Магия крови', talent: true, value: 'ученик' }]);
+  const r = fixed(10, () => rollCheck({ character: c, skill: 'Магия крови', catalog, difficulty: 'обычно' }));
+  assert.equal(r.talent, 'Магия крови');
+  assert.equal(r.bonus, 2);
+  executeTool('practice', { skill: 'Магия крови' }, { characters: [c], activeCharacterId: c.id, skillCatalog: catalog });
+  assert.deepEqual(c.skillXp, { 'магия крови': 4 });
+  assert.equal(skillBlock(c, 'magic'), null);
+});

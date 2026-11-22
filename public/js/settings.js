@@ -151,6 +151,7 @@ async function openSettings() {
     $('clicheInput').value = (s.clichePhrases || []).join('\n');
     $('skillCatalogInput').value = s.skillCatalogText || '';
     $('skillCatalogInput').dataset.loaded = s.skillCatalogText || '';
+    delete $('skillCatalogInput').dataset.preset;
     $('skillPresetSelect').innerHTML = (s.skillPresets || []).map((p) => `<option value="${p.id}">${p.label}</option>`).join('');
     for (const seg of document.querySelectorAll('#difficultySeg .seg')) {
       seg.classList.toggle('active', seg.dataset.value === (s.difficulty || 'normal'));
@@ -243,6 +244,7 @@ async function saveSettings() {
         pace: document.querySelector('#paceSeg .seg.active')?.dataset.value || 'calm',
         // Список навыков уходит, только если его правили: иначе незачем перебирать листы героев.
         skillCatalogText: $('skillCatalogInput').value.trim() !== ($('skillCatalogInput').dataset.loaded || '').trim() ? $('skillCatalogInput').value : undefined,
+        skillCatalogPreset: $('skillCatalogInput').dataset.preset,
         stateSync: $('stateSyncInput').checked,
         loreAutoWrite: $('loreAutoWriteInput').checked,
         syncPromptStyle: $('syncPromptStyleInput').value,

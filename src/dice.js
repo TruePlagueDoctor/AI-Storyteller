@@ -1,7 +1,7 @@
 // Движок проверок. Исход решает код, а не модель:
 // бросок d20 + бонус за уровень владения против порога сложности.
 import { matchAbility } from './skills.js';
-import { adoptSkills, matchSkill, talentsOf, skillBlock, attrValue, attrMod, attrName, defaultCatalog } from './skillset.js';
+import { adoptSkills, resolveHeroSkill, talentsOf, skillBlock, attrValue, attrMod, attrName, defaultCatalog } from './skillset.js';
 
 const BASE_CATALOG = defaultCatalog();
 
@@ -35,9 +35,9 @@ function bonusFor(character, skillName, { catalog = BASE_CATALOG, talent = '' } 
   const none = { bonus: 0, level: 'без подготовки', block: null, attr: '', attrMod: 0, def: null, unlisted: true };
   if (!character || !skillName) return none;
   adoptSkills(character, catalog); // умения, записанные до появления списка, раскладываются по нему
-  const def = matchSkill(catalog, skillName).skill;
+  const { skill: def, talent: namedGift } = resolveHeroSkill(character, catalog, skillName);
   const talents = talentsOf(character);
-  const gift = (talent && matchAbility(talents, talent)) || (!def ? matchAbility(talents, skillName) : null);
+  const gift = (talent && matchAbility(talents, talent)) || namedGift;
   if (!def && !gift) return none;
   let attr = ''; let mod = 0;
   if (def) {
