@@ -1,6 +1,8 @@
 // Прогресс умений: опыт дают удачные проверки (бросок) и тренировки/уроки в истории
 // (инструмент учётчика practice). На порогах уровень растёт.
 
+import { randomUUID } from 'node:crypto';
+
 export const LEVELS = ['новичок', 'ученик', 'опытный', 'мастер'];
 export const THRESHOLDS = { 'ученик': 3, 'опытный': 7, 'мастер': 14 };
 
@@ -12,18 +14,23 @@ function levelForXp(xp) {
   return lvl;
 }
 
-// Опыт копится только у умений, которые есть в листе (их находит dice.js по смыслу и
-// подставляет настоящее название). Раньше после трёх удач по любой формулировке
-// заводилось новое умение — так появлялись дубли и «умения» вроде «Открыть дверь».
-// Заводить умения — дело учётчика: он видит, устойчивая ли это компетенция.
+// Опыт за удачный бросок получает то, что дало герою уровень: навык из списка или применённый особый талант.
+// Навыка из списка ещё нет на листе — он появляется «новичком»: название каноническое, дублей не бывает.
+// Бросок по формулировке вне списка опыта не даёт.
 export function recordRoll(character, roll) {
-  if (!character || !roll || !roll.skill || roll.skill === '—') return null;
-  const k = key(roll.skill);
-  const block = (character.blocks || []).find((b) => b.type === 'ability' && key(b.name) === k);
-  if (!block) return null;
-  if (block.locked) return null; // закреплённое игроком умение не растёт само
+  if (!character || !roll || !roll.skill || roll.skill === '—' || roll.unlisted) return null;
   const gain = roll.outcome === 'критический успех' ? 2 : roll.success ? 1 : 0;
   if (!gain) return null;
+  const abil = (character.blocks || (character.blocks = [])).filter((b) => b.type === 'ability');
+  let block = roll.talent
+    ? abil.find((b) => !b.skill && key(b.name) === key(roll.talent))
+    : roll.skillId ? abil.find((b) => b.skill === roll.skillId) : abil.find((b) => key(b.name) === key(roll.skill));
+  if (!block && roll.skillId && !roll.talent) {
+    block = { id: randomUUID(), type: 'ability', name: roll.skill, value: 'новичок', skill: roll.skillId };
+    character.blocks.push(block);
+  }
+  if (!block) return null;
+  if (block.locked) return null; // закреплённое игроком умение не растёт само
   return addXp(character, block, gain).grew;
 }
 

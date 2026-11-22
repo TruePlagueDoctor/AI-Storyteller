@@ -34,11 +34,12 @@ test('skillMatches: убеждение = убедить, запугивание 
 });
 
 test('бросок: бонус по уровню, исход по порогу, умение по смыслу', () => {
-  const character = { name: 'Ян', blocks: [abil('Взлом замков', 'мастер')] };
+  const character = { name: 'Ян', blocks: [abil('Взлом замков', 'мастер')] }; // старое умение станет навыком «Взлом»
   for (let i = 0; i < 200; i++) {
-    const r = rollCheck({ character, skill: 'взлом', difficulty: 'сложно' });
-    assert.equal(r.skill, 'Взлом замков');
-    assert.equal(r.asked, 'взлом');
+    const r = rollCheck({ character, skill: 'вскрыть замок', difficulty: 'сложно' });
+    assert.equal(r.skill, 'Взлом');
+    assert.equal(r.asked, 'вскрыть замок');
+    assert.equal(r.attrMod, 0, 'характеристики не заданы — обычный человек');
     assert.equal(r.bonus, 6);
     assert.equal(r.target, 14);
     assert.equal(r.total, r.roll + 6);
@@ -53,11 +54,14 @@ test('бросок: бонус по уровню, исход по порогу, 
 });
 
 test('бросок без умения и с неизвестной сложностью', () => {
-  const r = rollCheck({ character: { name: 'Ян', blocks: [] }, skill: 'Плавание', difficulty: 'адски' });
+  const r = rollCheck({ character: { name: 'Ян', blocks: [] }, skill: 'Игра на лютне', difficulty: 'адски' });
   assert.equal(r.bonus, 0);
   assert.equal(r.level, 'без подготовки');
   assert.equal(r.target, 11);
-  assert.equal(r.skill, 'Плавание');
+  assert.equal(r.skill, 'Игра на лютне');
+  // Навык из списка без записи на листе — «новичок».
+  const r2 = rollCheck({ character: { name: 'Ян', blocks: [] }, skill: 'Плавание', difficulty: 'обычно' });
+  assert.equal(r2.skill, 'Атлетика'); assert.equal(r2.level, 'новичок');
   assert.match(describeRoll(r), /ИСХОД: /);
 });
 

@@ -144,7 +144,7 @@ try {
     await page.click('#dossierBtn');
     await page.waitForSelector('#dossierModal:not([hidden])');
     const sections = await page.$$eval('#dossierBody .dossier-section > h3', (h) => h.map((x) => x.textContent));
-    for (const want of ['Внешность', 'Состояние', 'Умения', 'Снаряжение']) {
+    for (const want of ['Внешность', 'Состояние', 'Характеристики', 'Навыки', 'Снаряжение']) {
       if (!sections.includes(want)) errors.push(`[${viewport.name}] в досье нет раздела «${want}»: ${sections.join(', ')}`);
     }
     await page.click('#dossierClose');
@@ -203,6 +203,38 @@ try {
     if ((await stack.api('GET', '/api/state')).data.pace !== 'driven') errors.push(`[${viewport.name}] темп не сохранился`);
     await stack.api('POST', '/api/settings', { pace: 'calm' });
     step('темп истории: спокойный по умолчанию, переключается');
+
+    // Характеристики и навыки: полоска на листе, редактор героя, досье, список навыков в настройках.
+    const skHero = (await stack.api('GET', '/api/state')).data;
+    await page.evaluate(() => openCharModal(activeChar()));
+    await page.waitForSelector('#charModal:not([hidden])');
+    await page.fill('#charAttrs input[data-attr="dex"]', '5');
+    await page.click('#charSave');
+    await page.waitForSelector('#charModal', { state: 'hidden' });
+    const skAfter = (await stack.api('GET', '/api/state')).data.characters.find((c) => c.id === skHero.activeCharacterId);
+    if (skAfter.attrs.dex !== 5 || !skAfter.attrsSet) errors.push(`[${viewport.name}] характеристика из редактора героя не сохранилась`);
+    await stack.api('POST', `/api/characters/${skAfter.id}/blocks`, { type: 'ability', name: 'Взлом замков', value: 'опытный' });
+    await stack.api('POST', `/api/characters/${skAfter.id}/blocks`, { type: 'ability', name: 'Дар медиума', value: 'ученик' });
+    await page.evaluate(async () => { applyState(await api('/api/state')); openDossier(); });
+    await page.waitForSelector('#dossierModal:not([hidden]) .attr-cell');
+    if (await page.evaluate(() => document.querySelectorAll('#sheet .attr-chip').length) !== 5) errors.push(`[${viewport.name}] на листе нет пяти характеристик`);
+    const dossierText = await page.textContent('#dossierBody');
+    if (!/Навыки/.test(dossierText) || !/Взлом/.test(dossierText) || !/Особые таланты/.test(dossierText) || !/Дар медиума/.test(dossierText)) errors.push(`[${viewport.name}] в досье нет навыков или талантов`);
+    if (/Взлом замков/.test(dossierText)) errors.push(`[${viewport.name}] умение не легло на навык из списка`);
+    if (shots) await page.screenshot({ path: join(shots, `${viewport.name}-skills.png`), fullPage: false });
+    await page.keyboard.press('Escape');
+    await page.click('#settingsBtn');
+    await page.waitForSelector('#settingsModal:not([hidden])');
+    await page.click('.settings-nav button[data-target="set-rules"]');
+    const listText = await page.inputValue('#skillCatalogInput');
+    if (!/Скрытность — Ловкость/.test(listText)) errors.push(`[${viewport.name}] в настройках нет списка навыков`);
+    await page.fill('#skillCatalogInput', listText.replace('Взлом —', 'Вскрытие —'));
+    await page.click('#settingsSave');
+    await page.waitForSelector('#settingsModal', { state: 'hidden' });
+    const renamed = (await stack.api('GET', '/api/state')).data;
+    if (!renamed.characters.find((c) => c.id === skAfter.id).blocks.some((b) => b.name === 'Вскрытие' && b.skill === 'lockpick')) errors.push(`[${viewport.name}] переименование навыка не дошло до листа героя`);
+    await stack.api('POST', '/api/settings', { skillCatalogText: listText });
+    step('характеристики и навыки: лист, редактор героя, досье, список в настройках');
 
     // Правки v59: «Заново» ушло из шапки в список историй; на телефоне место и время — строкой над лентой.
     if (await page.$('#resetBtn')) errors.push(`[${viewport.name}] кнопка «Заново» осталась в шапке`);

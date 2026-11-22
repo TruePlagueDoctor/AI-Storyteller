@@ -46,23 +46,26 @@ test('полный ход: рассказ → учёт → проверка по
 
 test('бросок: модель просит проверку, исход считает код и он попадает в журнал', async () => {
   const st = makeState({ messages: [{ role: 'user', content: 'Вскрываю замок' }], stateSync: false, diceEnabled: true });
-  hero(st).blocks = [{ type: 'ability', name: 'Взлом замков', value: 'мастер' }];
+  hero(st).blocks = [{ type: 'ability', name: 'Взлом замков', value: 'мастер' }]; // старое умение — станет навыком «Взлом»
   fake = installFakeFetch([
     (body) => {
       assert.ok(body.tools.some((t) => t.function.name === 'roll_check'));
-      assert.match(body.tools.find((t) => t.function.name === 'roll_check').function.parameters.properties.skill.description, /Взлом замков \(мастер\)/);
-      return reply('', [call('roll_check', { skill: 'взлом', difficulty: 'сложно' })]);
+      const props = body.tools.find((t) => t.function.name === 'roll_check').function.parameters.properties;
+      assert.ok(props.skill.enum.includes('Взлом'), 'навык выбирается из списка');
+      assert.match(props.skill.description, /Взлом \(Ловкость или Ум\)/);
+      assert.equal(props.talent, undefined, 'особых талантов у героя нет — и параметра нет');
+      return reply('', [call('roll_check', { skill: 'Взлом', difficulty: 'сложно' })]);
     },
     (body) => {
       const tool = body.messages.at(-1);
       assert.equal(tool.role, 'tool');
-      assert.match(tool.content, /Проверка «Взлом замков» \(мастер\)/);
+      assert.match(tool.content, /Проверка «Взлом» \(мастер, Ловкость\)/);
       return reply('Замок щёлкает.');
     },
   ]);
   const out = await runTurn({ state: st, apiKey: 'k' });
   assert.equal(out.rolls.length, 1);
-  assert.equal(out.rolls[0].skill, 'Взлом замков');
+  assert.equal(out.rolls[0].skill, 'Взлом');
   assert.equal(out.narration, 'Замок щёлкает.');
   assert.equal(out.sync.status, 'inline');
 });

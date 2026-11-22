@@ -1,5 +1,5 @@
 // Версия сборки — видна в консоли браузера (F12), помогает проверить, что файл обновился.
-console.log('AI Storyteller UI v72 — темп истории: спокойный или событийный');
+console.log('AI Storyteller UI v73 — характеристики и постоянный список навыков');
 
 // ---- Метаданные типов блоков ----
 const TYPE_META = {
@@ -95,6 +95,9 @@ function applyState(data, { animate = false } = {}) {
   if (data.traitPool) app.traitPool = data.traitPool;
   if (data.seedPool) app.seedPool = data.seedPool;
   if (data.statusCatalog) app.statusCatalog = data.statusCatalog;
+  if (Array.isArray(data.skillCatalog)) app.skillCatalog = data.skillCatalog;
+  if (Array.isArray(data.skillPresets)) app.skillPresets = data.skillPresets;
+  if (Array.isArray(data.attributes)) app.attributes = data.attributes;
   if (data.statusEffective) app.statusEffective = data.statusEffective;
   if (data.threads) app.threads = data.threads;
   if (data.scene) app.scene = data.scene;
@@ -117,4 +120,10 @@ function applyState(data, { animate = false } = {}) {
   renderLore();
   // Сменился герой — показываем его ленту.
   if (heroChanged) { feedScope = 'hero'; renderLog(Array.isArray(data.log) ? data.log : app.log); decorateLastNarrator(); }
+}
+
+// Характеристика героя (1–6; 3 — обычный человек).
+function heroAttr(c, id) {
+  const v = Number(c && c.attrs && c.attrs[id]);
+  return Number.isFinite(v) ? Math.min(6, Math.max(1, Math.round(v))) : 3;
 }

@@ -314,6 +314,10 @@ async function init() {
     installSearch();
     installDossiers();
     installLibrary();
+    $('skillPresetApply').addEventListener('click', () => {
+      const p = (app.skillPresets || []).find((x) => x.id === $('skillPresetSelect').value);
+      if (p && ($('skillCatalogInput').value.trim() === p.text.trim() || confirm(`Заменить список навыков заготовкой «${p.label}»? Сохранится после нажатия «Сохранить».`))) $('skillCatalogInput').value = p.text;
+    });
   } catch (err) {
     toast('Не удалось загрузить состояние: ' + err.message);
   }

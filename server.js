@@ -17,6 +17,7 @@ import {
 } from './src/state.js';
 import { runTurn, afterSync } from './src/turn.js';
 import { planSummary, computeSummary, applySummary } from './src/summary.js';
+import { catalogOf, catalogToText, SKILL_PRESETS, ATTRIBUTES } from './src/skillset.js';
 import { storyPromptSections, storyRequestParts, promptLayoutOf } from './src/narrator.js';
 import { syncNarration, resyncNarration } from './src/sync.js';
 import { replayRequest, requestsInFlight, cancelTurnRequests, resetTurnCancel } from './src/llm.js';
@@ -99,6 +100,10 @@ function publicState() {
     difficulty: s.difficulty,
     narration: s.narration,
     pace: s.pace === 'driven' ? 'driven' : 'calm',
+    skillCatalog: catalogOf(s),
+    skillCatalogText: catalogToText(catalogOf(s)),
+    skillPresets: Object.entries(SKILL_PRESETS).map(([id, p]) => ({ id, label: p.label, text: catalogToText(p.skills) })),
+    attributes: ATTRIBUTES,
     stateSync: s.stateSync,
     loreAutoWrite: s.loreAutoWrite,
     syncPromptStyle: s.syncPromptStyle || 'technical',

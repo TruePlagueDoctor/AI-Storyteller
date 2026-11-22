@@ -242,11 +242,12 @@ test('тренировка: опыт и рост уровня в ленте, р�
   ({ data } = await api('POST', '/api/action', { text: 'Учусь у Горана' }));
   const n = lastNarr(data);
   assert.ok(n.sync.calls.some((c) => c.name === 'practice' && /\+2 опыта/.test(c.result)), JSON.stringify(n.sync.calls));
-  assert.equal(data.characters[0].skillXp['фехтование'], 2);
+  assert.equal(data.characters[0].skillXp['холодное оружие'], 2);
+  assert.ok(data.characters[0].blocks.some((b) => b.skill === 'melee' && b.name === 'Холодное оружие'), 'умение, вписанное игроком, легло на навык из списка');
   handlers.sync = () => reply('', [call('nothing', {})]);
   handlers.narrator = () => reply('Ты весь день просидел в таверне, глядя, как дождь заливает двор.');
   ({ data } = await api('POST', '/api/regenerate'));
-  assert.equal(data.characters[0].skillXp['фехтование'], undefined, 'опыт откатился вместе с ходом');
+  assert.equal(data.characters[0].skillXp['холодное оружие'], undefined, 'опыт откатился вместе с ходом');
   assert.deepEqual(data.characters[0].practiceDays, {});
 });
 

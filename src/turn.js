@@ -8,6 +8,7 @@ import { syncState, syncWorthwhile } from './sync.js';
 import { sameName } from './tools.js';
 import { codexMisses } from './codex.js';
 import { npcVoices } from './voices.js';
+import { adoptAllSkills } from './skillset.js';
 
 // После хода: кто был рядом с героем — тот его видел. Последняя встреча нужна рассказчику,
 // чтобы давно не видевшие героя НПС не знали того, что с ним случилось потом.
@@ -49,6 +50,7 @@ export function afterSync(state, narration, rolls = [], { codexSeen = null } = {
 
 export async function runTurn({ state, apiKey, skipSync = false, beforeSync = null }) {
   const narrTimer = [];
+  adoptAllSkills(state); // умения, попавшие на лист в обход списка навыков, раскладываются по нему до хода
   if (skipSync) {
     // OOC/служебный ход: чистое повествование, без инструментов и без прохода учёта.
     const { narration, truncated } = await narrate(state, apiKey, false, { allowDice: false, timer: narrTimer });
